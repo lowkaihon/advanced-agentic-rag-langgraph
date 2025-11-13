@@ -1,6 +1,6 @@
-from src.graph import advanced_rag_graph
-from src.config import setup_retriever
-import src.nodes as nodes
+from src.orchestration import advanced_rag_graph
+from src.core import setup_retriever
+import src.orchestration.nodes as nodes
 import uuid
 
 def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True):

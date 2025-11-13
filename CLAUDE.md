@@ -2,11 +2,15 @@
 
 This Advanced Agentic RAG uses LangGraph to implement features including multi-strategy retrieval (semantic + keyword), LLM-based reranking, intelligent query expansion and rewriting, automatic strategy switching, and self-correcting agent loops with quality evaluation.
 
+**Framework Status**: LangChain 1.0 & LangGraph 1.0 (production-ready, stability commitment)
+**Requirements**: Python 3.10+
+**Migration Guide**: https://docs.langchain.com/oss/python/migrate/langchain-v1
+
 ## Quick Reference by Task
 
 **Building Retrieval Pipelines**
-- Start: [Retrieval Guide](#rag--retrieval), [Semantic Search Tutorial](#rag--retrieval)
-- With tools: [Build a RAG Agent](#rag--retrieval)
+- Start: [Retrieval Guide](#rag--retrieval)
+- Advanced: [Build a Custom RAG Agent](#rag--retrieval)
 
 **Implementing Quality Checks & Evaluation**
 - Retrieval quality: [RAG Evaluation Guide](#rag--retrieval), [Document Grading Pattern](#reranking--relevance-scoring)
@@ -14,7 +18,6 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 
 **Query Optimization & Rewriting**
 - Query rewriting: [RePhraseQuery](#query-optimization--enhancement), [Custom RAG Agent](#rag--retrieval)
-- Discovery: [Retrievers Overview](#tools--integrations)
 
 **Adding Reranking**
 - Implementations: [Cohere Reranker](#reranking--relevance-scoring), [Pinecone Rerank](#reranking--relevance-scoring)
@@ -23,15 +26,17 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 **Hybrid Search (Semantic + Keyword)**
 - Keyword component: [BM25 Retriever](#hybrid--multi-strategy-retrieval)
 - Semantic component: [Vector Stores](#tools--integrations)
-- Discovery: [Retrievers Overview](#tools--integrations)
+
+**Discovering Retrieval Tools**
+- Catalog: [Retrievers Overview](#tools--integrations), [Vector Stores](#tools--integrations)
 
 **Building Self-Correction Loops**
 - Patterns: [Custom RAG Agent](#rag--retrieval) (quality gates, strategy switching)
 - Graph mechanics: [Graph API Usage](#langgraph-core), [Persistence](#langgraph-core)
 
 **Agent Construction**
-- LangGraph: [LangGraph Overview](#langgraph-core), [Graph API](#langgraph-core)
-- Agents: [Agents Guide](#agents), [Context Engineering](#agents)
+- LangGraph: [Graph API](#langgraph-core), [Graph API Usage](#langgraph-core)
+- Optimization: [Context Engineering](#agents)
 
 **Deployment & Monitoring**
 - Testing: [LangSmith Studio](#langsmith--deployment)
@@ -46,26 +51,12 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 **RAG Evaluation Guide** [Tutorial] - LangSmith-based evaluation with metrics and test sets
 https://docs.langchain.com/langsmith/evaluate-rag-tutorial
 Covers: Retrieval relevance scoring, answer correctness, groundedness evaluation
-Use for: Production evaluation pipelines
+Use for: Offline/batch evaluation pipelines with comprehensive metrics and test datasets
 
 **Retrieval Guide** [Reference] - RAG architecture patterns and component overview
 https://docs.langchain.com/oss/python/langchain/retrieval
 Covers: 2-step RAG, agentic RAG, hybrid RAG architectures, document loaders, text splitting
-Use for: Understanding RAG system design patterns
-
-**Build a RAG Agent with LangChain** [Tutorial] - Create RAG system with tool-based retrieval
-https://docs.langchain.com/oss/python/langchain/rag
-Covers: Retrieval as agent tool, document context management, basic RAG flow
-Use for: Implementing basic RAG with LangChain agents
-Code Pattern:
-```python
-# Define retrieval as an agent tool
-@tool(response_format="content_and_artifact")
-def retrieve_context(query: str):
-    """Retrieve information to help answer a query."""
-    retrieved_docs = vector_store.similarity_search(query, k=2)
-    return serialized_docs, retrieved_docs
-```
+Use for: Understanding different RAG architectures and choosing the right design pattern
 
 **Build a Custom RAG Agent** [Tutorial, Advanced] - Multi-step RAG with LangGraph
 https://docs.langchain.com/oss/python/langgraph/agentic-rag
@@ -74,24 +65,24 @@ Includes: Document relevance scoring, answer quality gates, strategy switching
 Use for: Building advanced RAG with self-correction and quality checks
 Code Pattern:
 ```python
-# Grade documents and route: "generate" if relevant, "rewrite" if not
-score = model.with_structured_output({"binaryScore": "yes|no"}).invoke({
-    "question": q,
-    "context": docs
-})
-# Route based on relevance score
-return "generate" if score["binaryScore"] == "yes" else "rewrite"
-```
+# Grade documents for relevance (see detailed pattern in Reranking section)
+class RelevanceGrade(TypedDict):
+    explanation: str
+    relevant: bool
 
-**Semantic Search Engine Tutorial** [Tutorial] - Build vector search with embeddings
-https://docs.langchain.com/oss/python/langchain/knowledge-base
-Covers: FAISS/Chroma setup, similarity search, metadata filtering, basic retrieval
-Use for: Setting up foundational semantic search
+grader = model.with_structured_output(RelevanceGrade)
+grade = grader.invoke([
+    {"role": "system", "content": "Grade if docs contain keywords/meaning related to question"},
+    {"role": "user", "content": f"FACTS: {docs}\nQUESTION: {question}"}
+])
+# Route based on relevance
+return "generate" if grade["relevant"] else "rewrite"
+```
 
 **Application-Specific Evaluation Approaches** [Guide] - Custom evaluation with LLM-as-judge
 https://docs.langchain.com/langsmith/evaluation-approaches
 Covers: Quality scoring, confidence metrics, answer assessment, custom evaluators
-Use for: Real-time quality gates in agent loops
+Use for: Runtime quality gates and evaluation within agent self-correction loops
 
 ---
 
@@ -115,7 +106,7 @@ response = rewritePrompt.pipe(model).invoke({"question": original_query})
 **Cohere Reranker** [Integration] - Production-ready reranking with contextual compression
 https://docs.langchain.com/oss/python/integrations/retrievers/cohere-reranker
 Covers: ContextualCompressionRetriever setup, Cohere Rerank API, complete RAG pipeline
-Use for: Improving relevance of initial retrieval results with external reranking service
+Use for: Improving relevance of initial retrieval results with external reranking service (best for production scale)
 Implementation: Use ContextualCompressionRetriever with CohereRerank compressor
 
 **Pinecone Rerank** [Integration] - Relevance scoring with custom field targeting
@@ -125,7 +116,7 @@ Use for: Reranking with Pinecone infrastructure or custom relevance criteria
 
 **Document Relevance Grading** [Pattern] - LLM-as-judge for retrieval quality assessment
 Source: [Custom RAG Agent](https://docs.langchain.com/oss/python/langgraph/agentic-rag)
-Use for: Custom relevance scoring without external services
+Use for: Custom relevance scoring without external services (best for prototyping or cost optimization)
 Code Pattern:
 ```python
 # Grade retrieved documents for relevance (binary yes/no)
@@ -156,21 +147,16 @@ Use for: The keyword/sparse component of hybrid retrieval systems (exact term ma
 
 ### LangGraph Core
 
-**LangGraph Overview** [Concept] - Stateful agent orchestration framework introduction
-https://docs.langchain.com/oss/python/langgraph/overview
-Covers: Graph-based agent architecture, state management, cycles, streaming
-Use for: Understanding LangGraph fundamentals and use cases
-
 **Graph API Guide** [Reference] - StateGraph and MessageGraph API documentation
 https://docs.langchain.com/oss/python/langgraph/graph-api
 Covers: Node/edge definitions, state schemas, graph compilation
-Use for: API reference when building graphs
+Use for: API reference and core concepts when building graphs
 
-**Graph API Usage Guide** [Tutorial] - Practical patterns for graph construction
+**Graph API Usage Guide** [Tutorial - Patterns] - Practical patterns for graph construction
 https://docs.langchain.com/oss/python/langgraph/use-graph-api
 Covers: Conditional routing, branching, Send API for dynamic fan-out
 Includes: Multi-path graphs, decision nodes, routing functions
-Use for: Implementing conditional logic in agent workflows
+Use for: Implementing conditional logic and complex routing in agent workflows
 Code Pattern:
 ```python
 # Conditional routing based on function output
@@ -202,10 +188,17 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]  # Accumulates messages across turns
 ```
 
+**State Management Best Practices** [Best Practice]
+Performance hierarchy for state definitions:
+- **TypedDict** (best performance) - Use for most cases
+- **dataclass** (for defaults) - Use when you need default values
+- **Pydantic BaseModel** (validation only) - Use only when recursive validation needed
+See [Graph API Guide](#langgraph-core) for state schema patterns
+
 **Durable Execution** [Concept] - Fault tolerance and execution guarantees
 https://docs.langchain.com/oss/python/langgraph/durable-execution
 Covers: Execution modes, task persistence, replay mechanisms, failure recovery
-Use for: Production systems requiring reliability and resumability
+Use for: Understanding execution guarantees and building fault-tolerant production systems (complements Persistence for state storage)
 
 **Interrupts & Human-in-the-Loop** [Tutorial] - Pause execution for human input
 https://docs.langchain.com/oss/python/langgraph/interrupts
@@ -215,11 +208,6 @@ Use for: Human approval workflows, interactive debugging
 ---
 
 ### Agents
-
-**Agents Guide** [Tutorial] - Agent architectures and tool binding
-https://docs.langchain.com/oss/python/langchain/agents
-Covers: ReAct prompting, agent executors, tool selection, reasoning loops
-Use for: Building tool-using agents with LangChain
 
 **Context Engineering in Agents** [Guide] - Optimize agent context and prompts
 https://docs.langchain.com/oss/python/langchain/context-engineering
@@ -239,6 +227,7 @@ Use for: Creating custom tools for agents
 https://docs.langchain.com/oss/python/integrations/retrievers/index
 Includes: Query optimizers (RePhraseQuery, LLMLingua), rerankers (Cohere, Pinecone), hybrid search, BM25, specialized retrievers
 Use for: Discovering available retrieval tools and patterns
+**NOTE**: Some retriever utilities moved to `langchain-classic` package (install separately if needed)
 
 **Vector Stores Overview** [Index] - Comprehensive listing of vector store integrations
 https://docs.langchain.com/oss/python/integrations/vectorstores/index
@@ -259,15 +248,6 @@ https://docs.langchain.com/langsmith/use-studio
 Covers: Creating projects, running agents, viewing traces, evaluation
 Use for: Getting started with LangSmith Studio
 
-**Agent Chat UI** [Tutorial] - Build chat interfaces for agents
-https://docs.langchain.com/oss/python/langchain/ui
-Covers: UI components, streaming responses, chat history
-Use for: Creating user-facing agent interfaces
-
-**Agent Server Changelog** [Reference] - Latest updates to LangSmith agent server
-https://docs.langchain.com/langsmith/agent-server-changelog
-Use for: Staying updated on new features and changes
-
 **Streaming API** [Reference] - Real-time streaming for production deployments
 https://docs.langchain.com/langsmith/streaming
 Covers: Server-sent events, streaming modes, production patterns
@@ -285,7 +265,7 @@ Use for: Deploying agents with real-time response streaming
 **Agent loops infinitely**
 - Implement max iteration limits in graph
 - Add quality gates to exit when answer is sufficient
-- Check [Conditional Routing](#langgraph-core) logic
+- Check [Graph API Usage](#langgraph-core) for conditional routing patterns
 
 **Slow retrieval performance**
 - Use [Hybrid Search](#hybrid--multi-strategy-retrieval) for better precision

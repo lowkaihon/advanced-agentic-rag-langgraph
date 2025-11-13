@@ -6,7 +6,11 @@
       "WebFetch(domain:docs.langchain.com)",
       "WebFetch(domain:docs.langchain.comlangsmith)",
       "Bash(find:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(python main_new.py:*)",
+      "Bash(del srcstate.py)",
+      "Bash(del srcconfig.py)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
