@@ -1,20 +1,24 @@
 from typing_extensions import TypedDict, Annotated
+from typing import List, Dict
 from langchain_core.messages import BaseMessage
 import operator
 
 class AdvancedRAGState(TypedDict):
-    """Enhanced state with query optimization"""
+    """Enhanced state with query optimization and conversational support"""
 
     # Input
-    original_query: str
+    question: str  # Current user question (raw input)
+    original_query: str  # Original query before any processing
+    conversation_history: List[Dict[str, str]]  # Past conversation turns
 
     # Query optimization
     query_expansions: Annotated[list[str], operator.add]  # Multiple query variants
-    rewritten_query: str  # Rewritten for clarity
+    rewritten_query: str  # Rewritten for clarity or with context
     current_query: str  # Query being used for retrieval
 
     # Retrieval strategy
     retrieval_strategy: str  # "semantic", "keyword", or "hybrid"
+    corpus_stats: Dict  # Corpus-level statistics for strategy selection
 
     # Processing
     messages: Annotated[list[BaseMessage], operator.add]

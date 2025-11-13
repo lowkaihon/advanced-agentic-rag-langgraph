@@ -7,14 +7,51 @@ from src.retrieval import (
     ReRanker,
     SemanticRetriever,
 )
-from src.core import setup_retriever
+from src.retrieval.strategy_selection import StrategySelector
+from src.core import setup_retriever, get_corpus_stats
+from src.preprocessing.query_processing import ConversationalRewriter
 import re
 import json
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
 hybrid_retriever = None  # Will be initialized via setup_retriever()
+conversational_rewriter = ConversationalRewriter()  # For query rewriting
+strategy_selector = StrategySelector()  # For intelligent strategy selection
 
-# ============ NEW: QUERY OPTIMIZATION STAGE ============
+# ============ CONVERSATIONAL QUERY REWRITING ============
+
+def conversational_rewrite_node(state: dict) -> dict:
+    """
+    Rewrite query using conversation history to make it self-contained.
+
+    This node runs before query expansion to ensure queries have proper context.
+    """
+    question = state.get("question", state.get("original_query", ""))
+    conversation_history = state.get("conversation_history", [])
+
+    # Rewrite query if conversation history exists
+    rewritten_query, reasoning = conversational_rewriter.rewrite(
+        question,
+        conversation_history
+    )
+
+    # Log rewrite if it happened
+    if rewritten_query != question:
+        print(f"\n{'='*60}")
+        print(f"CONVERSATIONAL REWRITE")
+        print(f"Original: {question}")
+        print(f"Rewritten: {rewritten_query}")
+        print(f"Reasoning: {reasoning}")
+        print(f"{'='*60}\n")
+
+    return {
+        "original_query": rewritten_query,  # Use rewritten as the "original" for rest of pipeline
+        "question": question,  # Preserve raw user input
+        "corpus_stats": get_corpus_stats(),  # Add corpus stats for strategy selection
+        "messages": [HumanMessage(content=question)],
+    }
+
+# ============ QUERY OPTIMIZATION STAGE ============
 
 def query_expansion_node(state: dict) -> dict:
     """Generate query variations for comprehensive retrieval"""
@@ -31,32 +68,32 @@ def query_expansion_node(state: dict) -> dict:
     }
 
 def decide_retrieval_strategy_node(state: dict) -> dict:
-    """Decide which retrieval strategy to use based on query"""
+    """
+    Decide which retrieval strategy to use based on query and corpus characteristics.
 
+    Uses hybrid heuristics + LLM fallback for intelligent strategy selection.
+    """
     query = state["current_query"]
+    corpus_stats = state.get("corpus_stats", {})
 
-    strategy_prompt = f"""For this query: "{query}"
+    # Use intelligent strategy selector
+    strategy, confidence, reasoning = strategy_selector.select_strategy(
+        query,
+        corpus_stats
+    )
 
-Which retrieval strategy would work best?
-- "semantic": Complex questions needing understanding
-- "keyword": Specific factual lookups
-- "hybrid": Mixed or uncertain
-
-Return JSON:
-{{"strategy": "semantic" | "keyword" | "hybrid"}}"""
-
-    response = llm.invoke(strategy_prompt)
-
-    try:
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
-        data = json.loads(json_match.group()) if json_match else {"strategy": "hybrid"}
-        strategy = data.get("strategy", "hybrid")
-    except:
-        strategy = "hybrid"
+    # Log decision
+    print(f"\n{'='*60}")
+    print(f"STRATEGY SELECTION")
+    print(f"Query: {query}")
+    print(f"Selected: {strategy.upper()}")
+    print(f"Confidence: {confidence:.0%}")
+    print(f"Reasoning: {reasoning}")
+    print(f"{'='*60}\n")
 
     return {
         "retrieval_strategy": strategy,
-        "messages": [AIMessage(content=f"Strategy chosen: {strategy}")],
+        "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
 
 # ============ HYBRID RETRIEVAL STAGE ============

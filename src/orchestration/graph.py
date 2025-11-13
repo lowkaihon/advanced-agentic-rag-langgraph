@@ -2,6 +2,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from src.core import AdvancedRAGState
 from src.orchestration.nodes import (
+    conversational_rewrite_node,
     query_expansion_node,
     decide_retrieval_strategy_node,
     retrieve_with_expansion_node,
@@ -43,6 +44,9 @@ def build_advanced_rag_graph():
     """Build complete advanced RAG graph with all techniques"""
     builder = StateGraph(AdvancedRAGState)
 
+    # ========== CONVERSATIONAL PREPROCESSING ==========
+    builder.add_node("conversational_rewrite", conversational_rewrite_node)
+
     # ========== QUERY OPTIMIZATION STAGE ==========
     builder.add_node("query_expansion", query_expansion_node)
     builder.add_node("decide_strategy", decide_retrieval_strategy_node)
@@ -56,8 +60,9 @@ def build_advanced_rag_graph():
     builder.add_node("evaluate_answer", evaluate_answer_with_retrieval_node)
 
     # ========== EDGES ==========
-    # Start with query optimization
-    builder.add_edge(START, "query_expansion")
+    # Start with conversational rewrite, then query optimization
+    builder.add_edge(START, "conversational_rewrite")
+    builder.add_edge("conversational_rewrite", "query_expansion")
     builder.add_edge("query_expansion", "decide_strategy")
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 

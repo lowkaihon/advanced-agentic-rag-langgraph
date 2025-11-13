@@ -1,6 +1,8 @@
 import os
+from typing import Dict
 from dotenv import load_dotenv
 from src.retrieval import HybridRetriever
+from src.preprocessing.document_loader import DocumentLoader
 from langchain_core.documents import Document
 
 load_dotenv()
@@ -13,8 +15,10 @@ if LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "true"
     os.environ["LANGSMITH_PROJECT"] = "advanced-agentic-rag"
 
-# Global retriever instance
+# Global retriever instance and corpus statistics
 _retriever_instance = None
+_corpus_stats = None
+_document_profiles = None
 
 def get_sample_documents() -> list[Document]:
     """Return sample documents for demo (replace with your own)"""
@@ -53,10 +57,49 @@ def get_sample_documents() -> list[Document]:
         ),
     ]
 
-def setup_retriever() -> HybridRetriever:
-    """Initialize and return the hybrid retriever with all advanced features"""
-    global _retriever_instance
+def setup_retriever(verbose: bool = True) -> HybridRetriever:
+    """
+    Initialize and return the hybrid retriever with all advanced features.
+
+    This function:
+    1. Loads sample documents
+    2. Profiles each document with DocumentProfiler
+    3. Enriches documents with metadata
+    4. Creates HybridRetriever with profiled documents
+    5. Stores corpus statistics globally
+
+    Args:
+        verbose: Whether to print profiling progress
+
+    Returns:
+        HybridRetriever instance with profiled documents
+    """
+    global _retriever_instance, _corpus_stats, _document_profiles
+
     if _retriever_instance is None:
-        documents = get_sample_documents()
-        _retriever_instance = HybridRetriever(documents)
+        # Load and profile documents
+        loader = DocumentLoader()
+        raw_documents = get_sample_documents()
+
+        # Profile documents and enrich with metadata
+        profiled_documents, corpus_stats, doc_profiles = loader.load_documents(
+            raw_documents,
+            verbose=verbose
+        )
+
+        # Store corpus statistics globally for strategy selection
+        _corpus_stats = corpus_stats
+        _document_profiles = doc_profiles
+
+        # Create retriever with profiled documents
+        _retriever_instance = HybridRetriever(profiled_documents)
+
     return _retriever_instance
+
+def get_corpus_stats() -> Dict:
+    """Get corpus-level statistics from profiled documents."""
+    return _corpus_stats or {}
+
+def get_document_profiles() -> Dict:
+    """Get all document profiles."""
+    return _document_profiles or {}

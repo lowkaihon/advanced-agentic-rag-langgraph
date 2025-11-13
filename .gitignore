@@ -93,6 +93,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.local
 .venv
 env/
 venv/
@@ -133,4 +134,6 @@ ehthumbs.db
 Desktop.ini
 
 # Misc
+.claude/settings.local.json
 notes.ipynb
+docs
