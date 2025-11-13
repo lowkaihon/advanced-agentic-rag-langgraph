@@ -14,7 +14,7 @@ import os
 # Add src to path
 sys.path.insert(0, os.path.dirname(__file__))
 
-from src.core import setup_retriever, get_corpus_stats, ATTENTION_PAPER_PATH
+from src.core import setup_retriever, get_corpus_stats, reset_retriever, DOCS_DIR
 from src.orchestration import advanced_rag_graph
 from src.retrieval.strategy_selection import StrategySelector
 
@@ -25,17 +25,17 @@ def test_pdf_loading():
     print("TEST 1: PDF LOADING & DOCUMENT PROFILING")
     print("="*80)
 
-    # Check if PDF exists
-    if not os.path.exists(ATTENTION_PAPER_PATH):
-        print(f"\nPDF not found at {ATTENTION_PAPER_PATH}")
-        print("Please ensure 'attention is all you need.pdf' is in the docs/ directory")
+    # Check if docs folder exists
+    if not os.path.exists(DOCS_DIR):
+        print(f"\ndocs/ directory not found at {DOCS_DIR}")
+        print("Please ensure the docs/ directory exists and contains PDF files")
         return False
 
-    print(f"\nPDF found: {ATTENTION_PAPER_PATH}")
+    print(f"\ndocs/ directory found: {DOCS_DIR}")
 
-    # Initialize retriever with PDF (this triggers loading and profiling)
-    print("\nInitializing retriever with PDF documents...")
-    retriever = setup_retriever(use_pdf=True, verbose=True)
+    # Initialize retriever with specific PDF (this triggers loading and profiling)
+    print("\nInitializing retriever with Attention Is All You Need PDF...")
+    retriever = setup_retriever(pdfs="Attention Is All You Need.pdf", verbose=True)
 
     # Get corpus statistics
     corpus_stats = get_corpus_stats()
@@ -78,9 +78,9 @@ def test_strategy_selection():
 
         print(f"Query: \"{query}\"")
         print(f"  Type: {description}")
-        print(f"  ➜ Strategy: {strategy.upper()}")
-        print(f"  ➜ Confidence: {confidence:.0%}")
-        print(f"  ➜ Reasoning: {reasoning}")
+        print(f"  -> Strategy: {strategy.upper()}")
+        print(f"  -> Confidence: {confidence:.0%}")
+        print(f"  -> Reasoning: {reasoning}")
         print()
 
 
@@ -108,7 +108,7 @@ def test_conversational_rewriting():
     print("\nSimulating multi-turn conversation:\n")
     print(f"Turn 1:")
     print(f"  User: {conversation[0]['user']}")
-    print(f"  ➜ No rewrite (first query)")
+    print(f"  -> No rewrite (first query)")
     print()
 
     for i, query in enumerate(follow_up_queries, 2):
@@ -117,10 +117,10 @@ def test_conversational_rewriting():
         print(f"Turn {i}:")
         print(f"  User: \"{query}\"")
         if rewritten != query:
-            print(f"  ➜ Rewritten: \"{rewritten}\"")
+            print(f"  -> Rewritten: \"{rewritten}\"")
         else:
-            print(f"  ➜ No rewrite needed")
-        print(f"  ➜ Reasoning: {reasoning}")
+            print(f"  -> No rewrite needed")
+        print(f"  -> Reasoning: {reasoning}")
         print()
 
         # Add to conversation history
@@ -137,7 +137,7 @@ def test_full_pipeline():
     print("="*80)
 
     # Initialize retriever if not already done
-    setup_retriever(use_pdf=True, verbose=False)
+    setup_retriever(pdfs="Attention Is All You Need.pdf", verbose=False)
 
     # Test query
     test_query = "What is the multi-head attention mechanism?"

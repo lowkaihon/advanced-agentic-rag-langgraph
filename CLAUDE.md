@@ -38,13 +38,19 @@ uv sync                              # Sync after updating pyproject.toml
 
 ### Common Tasks
 ```bash
-# Test PDF loading
-uv run python -c "from src.core import setup_retriever; setup_retriever(use_pdf=True)"
+# Load all PDFs from docs/ folder (default)
+uv run python -c "from src.core import setup_retriever; setup_retriever()"
+
+# Load specific PDF
+uv run python -c "from src.core import setup_retriever; setup_retriever(pdfs='Attention Is All You Need.pdf')"
+
+# Load multiple specific PDFs
+uv run python -c "from src.core import setup_retriever; setup_retriever(pdfs=['Attention Is All You Need.pdf', 'BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf'])"
 
 # Test strategy selection with explanation
 uv run python -c "from src.retrieval.strategy_selection import StrategySelector; s=StrategySelector(); print(s.explain_decision('What is attention?'))"
 
-# Profile sample documents
+# Profile a document
 uv run python -c "from src.preprocessing.document_profiling import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
 ```
 

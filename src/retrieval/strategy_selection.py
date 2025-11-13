@@ -244,54 +244,54 @@ class StrategySelector:
         # ===== RULE 1: Quoted terms favor keyword =====
         if query_features["has_quoted_terms"]:
             scores["keyword"] += 0.35
-            rule_activations.append("quoted terms→keyword")
+            rule_activations.append("quoted terms->keyword")
 
         # ===== RULE 2: Exact match intent favors keyword =====
         if query_features["has_exact_match_intent"]:
             scores["keyword"] += 0.25
-            rule_activations.append("exact match→keyword")
+            rule_activations.append("exact match->keyword")
 
         # ===== RULE 3: Technical queries in technical corpus favor keyword =====
         if (query_features["has_technical_terms"] and
             corpus_stats.get("avg_technical_density", 0) > 0.5):
             scores["keyword"] += 0.3
             scores["hybrid"] += 0.15
-            rule_activations.append("technical query+corpus→keyword/hybrid")
+            rule_activations.append("technical query+corpus->keyword/hybrid")
 
         # ===== RULE 4: Conceptual questions favor semantic =====
         if query_features["intent"] == "conceptual":
             scores["semantic"] += 0.35
-            rule_activations.append("conceptual→semantic")
+            rule_activations.append("conceptual->semantic")
 
         # ===== RULE 5: How/Why questions favor semantic =====
         if query_features["question_type"] in ["how", "why"]:
             scores["semantic"] += 0.3
-            rule_activations.append("how/why→semantic")
+            rule_activations.append("how/why->semantic")
 
         # ===== RULE 6: Procedural questions favor hybrid =====
         if query_features["intent"] == "procedural":
             scores["hybrid"] += 0.4
-            rule_activations.append("procedural→hybrid")
+            rule_activations.append("procedural->hybrid")
 
         # ===== RULE 7: Comparative questions favor hybrid =====
         if query_features["intent"] == "comparative":
             scores["hybrid"] += 0.35
-            rule_activations.append("comparative→hybrid")
+            rule_activations.append("comparative->hybrid")
 
         # ===== RULE 8: Short queries (<5 words) favor semantic =====
         if query_features["word_count"] < 5:
             scores["semantic"] += 0.2
-            rule_activations.append("short query→semantic")
+            rule_activations.append("short query->semantic")
 
         # ===== RULE 9: Complex queries favor hybrid =====
         if query_features["complexity"] == "complex":
             scores["hybrid"] += 0.25
-            rule_activations.append("complex→hybrid")
+            rule_activations.append("complex->hybrid")
 
         # ===== RULE 10: Factual lookups favor keyword =====
         if query_features["intent"] == "factual" and query_features["word_count"] < 8:
             scores["keyword"] += 0.25
-            rule_activations.append("factual lookup→keyword")
+            rule_activations.append("factual lookup->keyword")
 
         # Normalize scores to confidences (0-1 range)
         max_score = max(scores.values())

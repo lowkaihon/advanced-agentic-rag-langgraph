@@ -7,7 +7,7 @@ appropriately, and preparing them for the document profiling pipeline.
 
 import os
 from typing import List, Optional
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 
@@ -89,7 +89,7 @@ class PDFDocumentLoader:
             print(f"Path: {pdf_path}")
 
         # Load PDF pages
-        loader = PyPDFLoader(pdf_path)
+        loader = PyMuPDFLoader(pdf_path)
         pages = loader.load()
 
         if verbose:

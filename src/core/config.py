@@ -2,8 +2,8 @@ import os
 from typing import Dict, List
 from dotenv import load_dotenv
 from src.retrieval import HybridRetriever
-from src.preprocessing.document_loader import DocumentLoader
-from src.preprocessing.pdf_loader import load_pdf_for_rag
+from src.preprocessing.document_profiler_pipeline import DocumentProfilerPipeline
+from src.preprocessing.pdf_loader import PDFDocumentLoader
 from langchain_core.documents import Document
 
 load_dotenv()
@@ -21,148 +21,213 @@ _retriever_instance = None
 _corpus_stats = None
 _document_profiles = None
 
-# PDF paths
-ATTENTION_PAPER_PATH = os.path.join(
+# PDF directory
+DOCS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "docs",
-    "attention is all you need.pdf"
+    "docs"
 )
 
-def get_sample_documents() -> List[Document]:
-    """Return sample documents for demo (replace with your own)"""
-    return [
-        Document(
-            page_content="Machine learning is a subset of AI that enables systems to learn from data without being explicitly programmed",
-            metadata={"source": "wiki", "topic": "ML", "id": "doc_1"}
-        ),
-        Document(
-            page_content="Deep learning uses artificial neural networks with multiple layers to process and learn from data",
-            metadata={"source": "textbook", "topic": "DL", "id": "doc_2"}
-        ),
-        Document(
-            page_content="Natural language processing allows computers to understand, interpret, and generate human language",
-            metadata={"source": "research", "topic": "NLP", "id": "doc_3"}
-        ),
-        Document(
-            page_content="Retrieval-augmented generation (RAG) combines large language models with external knowledge bases to provide more accurate and contextual responses",
-            metadata={"source": "paper", "topic": "RAG", "id": "doc_4"}
-        ),
-        Document(
-            page_content="LangGraph is a framework for building stateful, multi-actor applications with LLMs using a graph-based architecture",
-            metadata={"source": "docs", "topic": "LangGraph", "id": "doc_5"}
-        ),
-        Document(
-            page_content="Query expansion generates multiple variations of a user query to improve retrieval coverage and recall",
-            metadata={"source": "paper", "topic": "RAG", "id": "doc_6"}
-        ),
-        Document(
-            page_content="Hybrid search combines dense vector retrieval with sparse keyword matching for better overall relevance",
-            metadata={"source": "research", "topic": "RAG", "id": "doc_7"}
-        ),
-        Document(
-            page_content="Reranking uses language models to score and re-order retrieved documents based on relevance to the query",
-            metadata={"source": "paper", "topic": "RAG", "id": "doc_8"}
-        ),
-    ]
 
-def get_attention_paper_documents(
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
-    verbose: bool = True
-) -> List[Document]:
+def get_all_pdf_paths_from_docs() -> List[str]:
     """
-    Load the 'Attention Is All You Need' paper from PDF.
-
-    Args:
-        chunk_size: Maximum characters per chunk
-        chunk_overlap: Characters overlap between chunks
-        verbose: Print loading progress
+    Get paths to all PDF files in docs/ directory.
 
     Returns:
-        List of chunked Document objects from the PDF
+        List of absolute paths to PDF files, sorted alphabetically
+
+    Raises:
+        FileNotFoundError: If docs/ folder doesn't exist or contains no PDFs
     """
-    if not os.path.exists(ATTENTION_PAPER_PATH):
+    if not os.path.exists(DOCS_DIR):
         raise FileNotFoundError(
-            f"Attention paper not found at: {ATTENTION_PAPER_PATH}\n"
-            f"Please ensure the PDF exists in the docs/ directory"
+            f"docs/ directory not found at: {DOCS_DIR}\n"
+            f"Please create the directory and add PDF files for RAG."
         )
 
-    chunks = load_pdf_for_rag(
-        ATTENTION_PAPER_PATH,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
-        verbose=verbose
-    )
+    pdf_files = [
+        os.path.join(DOCS_DIR, f)
+        for f in os.listdir(DOCS_DIR)
+        if f.lower().endswith('.pdf') and os.path.isfile(os.path.join(DOCS_DIR, f))
+    ]
 
-    return chunks
+    if not pdf_files:
+        contents = os.listdir(DOCS_DIR) if os.path.exists(DOCS_DIR) else []
+        raise FileNotFoundError(
+            f"No PDF files found in docs/ directory: {DOCS_DIR}\n\n"
+            f"To use this RAG system:\n"
+            f"1. Add PDF files to the docs/ folder, or\n"
+            f"2. Specify PDFs explicitly: setup_retriever(pdfs=['file.pdf'])\n\n"
+            f"Current docs/ contents: {contents}"
+        )
+
+    return sorted(pdf_files)
+
+
+def get_specific_pdf_paths(filenames: str | List[str]) -> List[str]:
+    """
+    Get absolute paths for specific PDF filenames from docs/ directory.
+
+    Args:
+        filenames: Single filename or list of filenames (not full paths)
+
+    Returns:
+        List of absolute paths to specified PDFs
+
+    Raises:
+        FileNotFoundError: If any specified PDF is not found
+    """
+    # Normalize to list
+    if isinstance(filenames, str):
+        filenames = [filenames]
+
+    paths = []
+    missing = []
+
+    for filename in filenames:
+        pdf_path = os.path.join(DOCS_DIR, filename)
+        if os.path.exists(pdf_path):
+            paths.append(pdf_path)
+        else:
+            missing.append(filename)
+
+    if missing:
+        available = [
+            f for f in os.listdir(DOCS_DIR)
+            if f.lower().endswith('.pdf')
+        ] if os.path.exists(DOCS_DIR) else []
+
+        raise FileNotFoundError(
+            f"PDF file(s) not found in {DOCS_DIR}:\n"
+            f"  Missing: {missing}\n\n"
+            f"  Available PDFs:\n" +
+            '\n'.join(f"    - {f}" for f in available)
+        )
+
+    return paths
+
 
 def setup_retriever(
-    use_pdf: bool = False,
+    pdfs: None | str | List[str] = None,
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
     verbose: bool = True
 ) -> HybridRetriever:
     """
-    Initialize and return the hybrid retriever with all advanced features.
+    Initialize hybrid retriever with PDF documents from docs/ folder.
 
     This function:
-    1. Loads documents (sample docs or PDF)
+    1. Loads PDF documents (all or specific ones)
     2. Profiles each document with DocumentProfiler
     3. Enriches documents with metadata
     4. Creates HybridRetriever with profiled documents
     5. Stores corpus statistics globally
 
     Args:
-        use_pdf: If True, use Attention paper PDF; if False, use sample documents
-        chunk_size: Chunk size for PDF loading (only used if use_pdf=True)
-        chunk_overlap: Chunk overlap for PDF loading (only used if use_pdf=True)
-        verbose: Whether to print profiling progress
+        pdfs: Which PDFs to load:
+            - None (default): Load ALL PDFs from docs/ folder
+            - str: Load single PDF by filename (e.g., "Attention Is All You Need.pdf")
+            - List[str]: Load specific PDFs by filenames
+        chunk_size: Maximum characters per chunk
+        chunk_overlap: Characters overlap between chunks
+        verbose: Print loading progress
 
     Returns:
         HybridRetriever instance with profiled documents
+
+    Examples:
+        >>> # Load all PDFs (default)
+        >>> retriever = setup_retriever()
+
+        >>> # Load single PDF
+        >>> retriever = setup_retriever(pdfs="Attention Is All You Need.pdf")
+
+        >>> # Load multiple specific PDFs
+        >>> retriever = setup_retriever(pdfs=[
+        ...     "Attention Is All You Need.pdf",
+        ...     "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf"
+        ... ])
+
+    Raises:
+        FileNotFoundError: If docs/ folder is empty or specified PDF not found
+        ValueError: If pdfs parameter has invalid type
     """
     global _retriever_instance, _corpus_stats, _document_profiles
 
-    if _retriever_instance is None:
-        # Load documents based on configuration
-        if use_pdf:
-            if verbose:
-                print("\n" + "="*60)
-                print("USING PDF: Attention Is All You Need")
-                print("="*60 + "\n")
-            raw_documents = get_attention_paper_documents(
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-                verbose=verbose
-            )
-        else:
-            if verbose:
-                print("\n" + "="*60)
-                print("USING SAMPLE DOCUMENTS")
-                print("="*60 + "\n")
-            raw_documents = get_sample_documents()
+    # Singleton pattern check
+    if _retriever_instance is not None:
+        return _retriever_instance
 
-        # Load and profile documents
-        loader = DocumentLoader()
-
-        # Profile documents and enrich with metadata
-        profiled_documents, corpus_stats, doc_profiles = loader.load_documents(
-            raw_documents,
-            verbose=verbose
+    # Validate pdfs parameter type
+    if pdfs is not None and not isinstance(pdfs, (str, list)):
+        raise ValueError(
+            f"pdfs parameter must be None, str, or List[str], got {type(pdfs).__name__}"
         )
 
-        # Store corpus statistics globally for strategy selection
-        _corpus_stats = corpus_stats
-        _document_profiles = doc_profiles
+    # Determine which PDFs to load
+    if pdfs is None:
+        # Default: load all PDFs
+        if verbose:
+            print("\n" + "="*60)
+            print("LOADING ALL PDFS FROM docs/")
+            print("="*60 + "\n")
+        pdf_paths = get_all_pdf_paths_from_docs()
+    else:
+        # Specific PDF(s)
+        if verbose:
+            print("\n" + "="*60)
+            print("LOADING SPECIFIC PDF(S)")
+            print("="*60 + "\n")
+        pdf_paths = get_specific_pdf_paths(pdfs)
 
-        # Create retriever with profiled documents
-        _retriever_instance = HybridRetriever(profiled_documents)
+    if verbose:
+        print(f"Found {len(pdf_paths)} PDF file(s):")
+        for i, path in enumerate(pdf_paths, 1):
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            print(f"  {i}. {os.path.basename(path)} ({size_mb:.1f} MB)")
+        print()
+
+    # Load PDFs using PDFDocumentLoader
+    pdf_loader = PDFDocumentLoader(
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap
+    )
+
+    raw_documents = pdf_loader.load_multiple_pdfs(
+        pdf_paths,
+        verbose=verbose
+    )
+
+    # Profile and enrich documents
+    profiler_pipeline = DocumentProfilerPipeline()
+
+    # Profile documents and enrich with metadata
+    profiled_documents, corpus_stats, doc_profiles = profiler_pipeline.process_documents(
+        raw_documents,
+        verbose=verbose
+    )
+
+    # Store corpus statistics globally for strategy selection
+    _corpus_stats = corpus_stats
+    _document_profiles = doc_profiles
+
+    # Create retriever with profiled documents
+    _retriever_instance = HybridRetriever(profiled_documents)
 
     return _retriever_instance
+
+
+def reset_retriever():
+    """Reset singleton retriever instance (useful for testing)."""
+    global _retriever_instance, _corpus_stats, _document_profiles
+    _retriever_instance = None
+    _corpus_stats = None
+    _document_profiles = None
+
 
 def get_corpus_stats() -> Dict:
     """Get corpus-level statistics from profiled documents."""
     return _corpus_stats or {}
+
 
 def get_document_profiles() -> Dict:
     """Get all document profiles."""
