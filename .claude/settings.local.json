@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(nul)",
+      "WebFetch(domain:docs.langchain.com)",
+      "WebFetch(domain:docs.langchain.comlangsmith)",
+      "Bash(find:*)",
+      "Bash(dir:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
