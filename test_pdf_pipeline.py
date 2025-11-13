@@ -11,6 +11,9 @@ This script demonstrates:
 import sys
 import os
 
+# Disable LangSmith tracing to avoid 403 warnings in tests
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
 # Add src to path
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -157,9 +160,10 @@ def test_full_pipeline():
     }
 
     try:
-        # Run the graph
+        # Run the graph with thread_id for checkpointer
         print("Executing LangGraph workflow...")
-        result = advanced_rag_graph.invoke(initial_state)
+        config = {"configurable": {"thread_id": "test-run"}}
+        result = advanced_rag_graph.invoke(initial_state, config=config)
 
         print("\n" + "-"*80)
         print("PIPELINE RESULTS")

@@ -88,7 +88,7 @@ def build_advanced_rag_graph():
         route_after_evaluation,
         {
             "retrieve_with_expansion": "retrieve_with_expansion",
-            "END": END,
+            END: END,
         }
     )
 

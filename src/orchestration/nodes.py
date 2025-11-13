@@ -151,7 +151,7 @@ Rate the quality of these results (0-100):
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
-        "messages": [ToolMessage(content=f"Retrieved {len(unique_docs)} documents")],
+        "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
     }
 
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============

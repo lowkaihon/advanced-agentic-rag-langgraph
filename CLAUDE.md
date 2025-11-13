@@ -1,10 +1,45 @@
 # Advanced Agentic RAG using LangGraph
 
-This Advanced Agentic RAG uses LangGraph to implement features including multi-strategy retrieval (semantic + keyword), LLM-based reranking, intelligent query expansion and rewriting, automatic strategy switching, and self-correcting agent loops with quality evaluation.
+A portfolio project showcasing advanced RAG and LangGraph capabilities through an intelligent, adaptive retrieval pipeline. The system analyzes both corpus characteristics (document types, technical density, content patterns) and query context (intent, conversational history, complexity) to dynamically select optimal retrieval strategies. Built-in quality gates, self-correction loops, and automatic strategy switching ensure retrieved documents meet relevance thresholds. While demonstrated using research papers, the architecture generalizes to diverse document types and use cases, making it a foundation for production-grade RAG systems.
 
 **Framework Status**: LangChain 1.0 & LangGraph 1.0 (production-ready, stability commitment)
 **Requirements**: Python 3.10+
 **Migration Guide**: https://docs.langchain.com/oss/python/migrate/langchain-v1
+
+## Key Design Patterns
+
+This system demonstrates advanced RAG patterns that remain stable across implementation changes:
+
+**Quality-Driven Architecture**
+- Retrieval quality scoring → conditional routing → retry or proceed
+- Answer evaluation → strategy switching → improved results
+- Adaptive thresholds based on retrieval performance
+
+**LangGraph Workflow Pattern**
+- 7 nodes with conditional edges (not linear pipeline)
+- State accumulation using TypedDict with `Annotated[list, operator.add]`
+- Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
+
+**Self-Correction Loops**
+- Query rewriting loop: poor retrieval quality → rewrite query → retry (max 2 rewrites)
+- Strategy switching loop: insufficient answer → switch strategy → retry (max 3 attempts)
+- Progressive strategy order: hybrid → semantic → keyword
+
+**Multi-Strategy Retrieval**
+- Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
+- Strategy selection based on corpus characteristics + query analysis
+- LLM-as-Judge reranking for relevance scoring
+
+**Intelligent Adaptation**
+- Document profiling: analyzes technical density, type, domain
+- Query analysis: classifies intent, complexity, technical content
+- Strategy selector: heuristic rules + LLM fallback for ambiguous cases
+- Conversational rewriting: injects context from conversation history
+
+**State Management**
+- Uses TypedDict (best performance) not Pydantic
+- MemorySaver checkpointer for multi-turn conversations
+- Tracks: queries, documents, quality scores, attempts, conversation history
 
 ## Development Commands
 
