@@ -1,7 +1,7 @@
 [project]
 name = "advanced-agentic-rag-langgraph"
 version = "0.1.0"
-description = "Add your description here"
+description = "Advanced Agentic RAG with LangGraph - Intelligent document profiling and conversational retrieval"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -14,6 +14,8 @@ dependencies = [
     "langchain-openai>=1.0.2",
     "langgraph>=1.0.3",
     "langsmith>=0.4.42",
+    "pypdf>=4.0.0",
     "pydantic>=2.12.4",
     "python-dotenv>=1.2.1",
+    "rank-bm25>=0.2.2",
 ]

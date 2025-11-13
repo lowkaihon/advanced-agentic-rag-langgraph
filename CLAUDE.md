@@ -6,6 +6,48 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 **Requirements**: Python 3.10+
 **Migration Guide**: https://docs.langchain.com/oss/python/migrate/langchain-v1
 
+## Development Commands
+
+### Package Manager
+This project uses **uv** for dependency management. Do not use pip or conda.
+
+### Setup
+```bash
+uv sync                              # Install/sync all dependencies
+cp .env.example .env                 # Create environment file (add your OPENAI_API_KEY)
+```
+
+### Testing
+```bash
+uv run python test_pdf_pipeline.py  # Test PDF pipeline with Attention paper
+uv run python main.py                # Run main RAG demo
+```
+
+### Development
+```bash
+uv run jupyter notebook              # Start Jupyter for notebook examples
+uv run python -m pytest              # Run test suite (when tests are added)
+```
+
+### Dependencies
+```bash
+uv add <package>                     # Add a new dependency
+uv remove <package>                  # Remove a dependency
+uv sync                              # Sync after updating pyproject.toml
+```
+
+### Common Tasks
+```bash
+# Test PDF loading
+uv run python -c "from src.core import setup_retriever; setup_retriever(use_pdf=True)"
+
+# Test strategy selection with explanation
+uv run python -c "from src.retrieval.strategy_selection import StrategySelector; s=StrategySelector(); print(s.explain_decision('What is attention?'))"
+
+# Profile sample documents
+uv run python -c "from src.preprocessing.document_profiling import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
+```
+
 ## Quick Reference by Task
 
 **Building Retrieval Pipelines**
