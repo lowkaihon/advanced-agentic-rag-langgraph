@@ -103,7 +103,6 @@ def retrieve_with_expansion_node(state: dict) -> dict:
 
     global hybrid_retriever
     if hybrid_retriever is None:
-        from src.core import setup_retriever
         hybrid_retriever = setup_retriever()
 
     strategy = state.get("retrieval_strategy", "hybrid")
@@ -253,6 +252,15 @@ def analyze_retrieved_metadata_node(state: dict) -> dict:
             "severity": "low",
             "description": f"Documents span all complexity levels: {technical_levels}",
             "suggested_action": "Adjust k-values to favor {dominant_level} documents"
+        })
+
+    # Issue 4: Low domain alignment (domain misalignment)
+    if domain_alignment < 0.6:
+        quality_issues.append({
+            "issue": "domain_misalignment",
+            "severity": "medium",
+            "description": f"Documents span multiple domains (alignment: {domain_alignment:.0%}). Dominant: {dominant_domain}",
+            "suggested_strategy": "semantic"  # Semantic search may better capture domain-specific concepts
         })
 
     # Build analysis summary

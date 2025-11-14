@@ -6,7 +6,7 @@ This module handles document loading, profiling, and preparation for retrieval.
 
 from typing import List, Dict, Tuple
 from langchain_core.documents import Document
-from src.preprocessing.document_profiling import DocumentProfiler
+from src.preprocessing.document_profiler import DocumentProfiler
 
 
 class DocumentLoader:
@@ -57,7 +57,7 @@ class DocumentLoader:
             doc_id = doc.metadata.get("id", f"doc_{i}")
 
             # Profile the document
-            profile, metadata = self.profiler.profile_document(
+            profile = self.profiler.profile_document(
                 doc.page_content,
                 doc_id=doc_id
             )
@@ -65,6 +65,17 @@ class DocumentLoader:
             # Store profile
             self.document_profiles[doc_id] = profile
             all_profiles.append(profile)
+
+            # Extract metadata from profile for chunk attachment
+            metadata = {
+                "content_type": profile['doc_type'],
+                "technical_level": profile['reading_level'],
+                "domain": profile['domain_tags'][0] if profile['domain_tags'] else 'general',
+                "best_retrieval_strategy": profile['best_retrieval_strategy'],
+                "strategy_confidence": profile['strategy_confidence'],
+                "has_math": profile['has_math'],
+                "has_code": profile['has_code'],
+            }
 
             # Merge existing metadata with new profiling metadata
             enriched_metadata = {**doc.metadata, **metadata, "profile": profile}
@@ -80,9 +91,8 @@ class DocumentLoader:
             if verbose:
                 self._print_document_summary(i + 1, doc_id, profile, metadata)
 
-        # Calculate corpus statistics
-        doc_texts = [doc.page_content for doc in documents]
-        self.corpus_stats = self.profiler.profile_corpus(doc_texts)
+        # Calculate corpus statistics from collected profiles
+        self.corpus_stats = self._calculate_corpus_stats(all_profiles)
 
         if verbose:
             self._print_corpus_summary(self.corpus_stats)
@@ -131,14 +141,46 @@ class DocumentLoader:
         """Get all document profiles."""
         return self.document_profiles
 
+    def _calculate_corpus_stats(self, profiles: List[Dict]) -> Dict:
+        """Calculate aggregate statistics from document profiles."""
+        if not profiles:
+            return {}
+
+        total_docs = len(profiles)
+        avg_technical_density = sum(p['technical_density'] for p in profiles) / total_docs
+
+        # Count document types
+        doc_types = {}
+        for p in profiles:
+            doc_type = p['doc_type']
+            doc_types[doc_type] = doc_types.get(doc_type, 0) + 1
+
+        # Count domain distribution
+        domain_distribution = {}
+        for p in profiles:
+            for domain in p['domain_tags']:
+                domain_distribution[domain] = domain_distribution.get(domain, 0) + 1
+
+        # Calculate percentages
+        pct_with_code = sum(1 for p in profiles if p['has_code']) / total_docs * 100
+        pct_with_math = sum(1 for p in profiles if p['has_math']) / total_docs * 100
+
+        return {
+            'total_documents': total_docs,
+            'avg_technical_density': avg_technical_density,
+            'document_types': doc_types,
+            'domain_distribution': domain_distribution,
+            'pct_with_code': pct_with_code,
+            'pct_with_math': pct_with_math,
+        }
+
     def _print_document_summary(self, doc_num: int, doc_id: str, profile: Dict, metadata: Dict):
         """Print summary of a single document's profile."""
         print(f"Document {doc_num} ({doc_id}):")
-        print(f"  Type: {profile['type']}")
-        print(f"  Length: {profile['length']} words")
+        print(f"  Type: {profile['doc_type']}")
         print(f"  Technical Density: {profile['technical_density']:.2f}")
         print(f"  Reading Level: {profile['reading_level']}")
-        print(f"  Domain: {', '.join(profile['domain_tags'])}")
+        print(f"  Domain: {', '.join(profile['domain_tags'][:3])}")
         print(f"  Best Strategy: {metadata['best_retrieval_strategy']}")
         print()
 
@@ -148,7 +190,6 @@ class DocumentLoader:
         print(f"CORPUS STATISTICS")
         print(f"{'='*60}")
         print(f"Total Documents: {stats['total_documents']}")
-        print(f"Average Length: {stats['avg_length']} words")
         print(f"Average Technical Density: {stats['avg_technical_density']:.2f}")
         print(f"\nDocument Types:")
         for doc_type, count in stats['document_types'].items():
@@ -231,7 +272,6 @@ class DocumentLoader:
 Document Corpus Summary
 =======================
 Total Documents: {stats['total_documents']}
-Average Length: {stats['avg_length']} words
 Technical Density: {stats['avg_technical_density']:.2f}/1.0
 
 Document Types: {', '.join(f"{k}({v})" for k, v in stats['document_types'].items())}
