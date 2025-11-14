@@ -9,7 +9,7 @@ Combines:
 """
 
 import re
-from typing import Dict, Literal, Tuple
+from typing import Dict, Literal, Tuple, TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 
@@ -166,6 +166,14 @@ class QueryAnalyzer:
         return "moderate"
 
 
+class StrategyDecision(TypedDict):
+    """Structured output schema for strategy selection"""
+    strategy: Literal["semantic", "keyword", "hybrid"]
+    confidence: float  # 0.0-1.0
+    reasoning: str
+    corpus_match_score: float  # How well does strategy fit corpus characteristics?
+
+
 class StrategySelector:
     """
     Selects retrieval strategy using hybrid approach:
@@ -188,6 +196,7 @@ class StrategySelector:
         """
         self.analyzer = QueryAnalyzer()
         self.llm = ChatOpenAI(model=model, temperature=temperature)
+        self.structured_llm = self.llm.with_structured_output(StrategyDecision)
 
     def select_strategy(
         self,
@@ -303,6 +312,30 @@ class StrategySelector:
 
         return scores, rule_activations
 
+    def _build_corpus_context(self, corpus_stats: Dict) -> str:
+        """Build corpus-aware context for system prompt"""
+        if not corpus_stats:
+            return "No corpus statistics available."
+
+        doc_types = corpus_stats.get('document_types', {})
+        domains = corpus_stats.get('domain_distribution', {})
+        avg_tech_density = corpus_stats.get('avg_technical_density', 0)
+
+        corpus_type = "technical" if avg_tech_density > 0.6 else "general audience"
+        primary_domain = list(domains.keys())[0] if domains else "general"
+
+        context = f"""CORPUS PROFILE:
+- Total documents: {corpus_stats.get('total_documents', 'unknown')}
+- Type: {corpus_type} (technical density: {avg_tech_density:.0%})
+- Document types: {', '.join(f"{k}={v}" for k, v in doc_types.items())}
+- Primary domains: {', '.join(list(domains.keys())[:3])}
+- Contains code: {corpus_stats.get('pct_with_code', 0):.0f}%
+- Contains math: {corpus_stats.get('pct_with_math', 0):.0f}%
+
+This corpus is {corpus_type} focused on {primary_domain} topics."""
+
+        return context
+
     def _llm_tiebreaker(
         self,
         query: str,
@@ -311,7 +344,7 @@ class StrategySelector:
         scores: Dict[str, float]
     ) -> Tuple[Literal["semantic", "keyword", "hybrid"], str]:
         """
-        Use LLM to break ties or handle ambiguous cases.
+        Use LLM with structured output to break ties or handle ambiguous cases.
 
         Args:
             query: Original query
@@ -322,59 +355,71 @@ class StrategySelector:
         Returns:
             Tuple of (strategy, reasoning)
         """
-        # Format corpus info
-        corpus_info = ""
-        if corpus_stats:
-            corpus_info = f"""
-Corpus characteristics:
-- Total documents: {corpus_stats.get('total_documents', 'unknown')}
-- Avg technical density: {corpus_stats.get('avg_technical_density', 'unknown')}
-- Document types: {corpus_stats.get('document_types', {})}
+        # Build corpus-aware system prompt
+        corpus_context = self._build_corpus_context(corpus_stats or {})
+
+        system_prompt = f"""You are a retrieval strategy selector optimized for this specific corpus.
+
+{corpus_context}
+
+STRATEGY SELECTION GUIDELINES:
+1. **Semantic Search**: Best for understanding concepts, finding similar ideas, conceptual queries
+   - Good when: corpus has research papers/conceptual content, query asks "why/how/what is"
+   - Example: "What is attention mechanism?" → semantic (find explanations)
+
+2. **Keyword Search**: Best for exact lookups, technical terms, API names, specific citations
+   - Good when: corpus has API references/code, query has quoted terms or specific names
+   - Example: "transformer architecture attention function" → keyword (exact terms)
+
+3. **Hybrid Search**: Best for mixed content, comparisons, uncertain cases
+   - Good when: corpus is diverse, query needs both concepts and exact matches
+   - Example: "How does attention compare to RNN?" → hybrid (concepts + exact names)
+
+Consider corpus composition when selecting strategy:
+- High math/research corpus → semantic works well for conceptual queries
+- High code/API corpus → keyword works well for technical lookups
+- Mixed corpus → hybrid provides best coverage
+
+Provide:
+- strategy: Your choice (semantic, keyword, or hybrid)
+- confidence: 0.0-1.0 (how certain are you?)
+- reasoning: Why this strategy for this corpus + query combination?
+- corpus_match_score: 0.0-1.0 (how well does strategy fit corpus characteristics?)
 """
 
-        # Format query features
-        features_info = f"""
-Query features:
+        # Build query context
+        query_context = f"""Query: "{query}"
+
+Query characteristics:
 - Intent: {query_features['intent']}
 - Question type: {query_features['question_type']}
-- Technical: {'Yes' if query_features['has_technical_terms'] else 'No'}
 - Complexity: {query_features['complexity']}
+- Has technical terms: {query_features['has_technical_terms']}
+- Has quoted terms: {query_features['has_quoted_terms']}
+- Has exact match intent: {query_features['has_exact_match_intent']}
+
+Current heuristic scores (for reference):
+- Semantic: {scores.get('semantic', 0):.2f}
+- Keyword: {scores.get('keyword', 0):.2f}
+- Hybrid: {scores.get('hybrid', 0):.2f}
+
+Select the optimal strategy considering both query characteristics and corpus composition.
 """
 
-        # Format current scores
-        scores_info = "\n".join([f"- {k}: {v:.2f}" for k, v in scores.items()])
+        try:
+            # Use structured output for reliable parsing
+            decision = self.structured_llm.invoke([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query_context}
+            ])
 
-        # Create prompt
-        prompt = f"""Given this query: "{query}"
+            return decision['strategy'], f"LLM decision (confidence: {decision['confidence']:.0%}, corpus match: {decision['corpus_match_score']:.0%}): {decision['reasoning']}"
 
-{features_info}
-{corpus_info}
-
-Current heuristic scores:
-{scores_info}
-
-Choose the best retrieval strategy:
-- **semantic**: Best for conceptual questions, understanding meaning, finding similar concepts
-- **keyword**: Best for exact lookups, technical terms, specific factual queries
-- **hybrid**: Best for mixed queries, comparisons, or uncertain cases
-
-Return ONLY the strategy name (semantic, keyword, or hybrid) followed by a brief reason.
-Format: <strategy>: <reason>
-
-Strategy:"""
-
-        response = self.llm.invoke([HumanMessage(content=prompt)])
-        result = response.content.strip().lower()
-
-        # Parse response
-        for strategy in ["semantic", "keyword", "hybrid"]:
-            if strategy in result:
-                reason = result.replace(strategy, "").strip(":").strip()
-                return strategy, f"LLM decision: {reason}"
-
-        # Fallback to highest heuristic score
-        strategy = max(scores, key=scores.get)
-        return strategy, "LLM decision inconclusive, used heuristic"
+        except Exception as e:
+            # Fallback to highest heuristic score if LLM fails
+            print(f"Warning: LLM tiebreaker failed: {e}")
+            strategy = max(scores, key=scores.get)
+            return strategy, f"Heuristic fallback (LLM failed): {strategy} scored highest ({scores[strategy]:.2f})"
 
     def explain_decision(
         self,

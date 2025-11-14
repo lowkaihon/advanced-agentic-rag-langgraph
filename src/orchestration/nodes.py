@@ -151,7 +151,140 @@ Rate the quality of these results (0-100):
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+        "unique_docs_list": unique_docs,  # Store Document objects for metadata analysis
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
+    }
+
+# ============ METADATA-DRIVEN ADAPTIVE RETRIEVAL ============
+
+def analyze_retrieved_metadata_node(state: dict) -> dict:
+    """
+    Analyze metadata of retrieved documents to detect quality issues.
+
+    Examines:
+    - Strategy mismatch: Do retrieved docs prefer different strategy?
+    - Technical level distribution: Complexity alignment
+    - Domain alignment: Topic relevance
+    - Confidence metrics: Strategy certainty
+    """
+    docs = state.get("unique_docs_list", [])
+    current_strategy = state.get("retrieval_strategy", "hybrid")
+
+    if not docs:
+        return {
+            "doc_metadata_analysis": {},
+            "strategy_mismatch_rate": 0.0,
+            "avg_doc_confidence": 0.5,
+            "domain_alignment_score": 0.5,
+        }
+
+    # Analyze strategy preferences from retrieved documents
+    strategy_preferences = {}
+    confidence_scores = []
+    technical_levels = {}
+    domains = {}
+
+    for doc in docs:
+        meta = doc.metadata
+
+        # Count strategy preferences
+        preferred_strategy = meta.get("best_retrieval_strategy", "hybrid")
+        strategy_preferences[preferred_strategy] = strategy_preferences.get(preferred_strategy, 0) + 1
+
+        # Collect confidence scores
+        confidence = meta.get("strategy_confidence", 0.5)
+        confidence_scores.append(confidence)
+
+        # Count technical levels
+        level = meta.get("technical_level", "intermediate")
+        technical_levels[level] = technical_levels.get(level, 0) + 1
+
+        # Count domains
+        domain = meta.get("domain", "general")
+        domains[domain] = domains.get(domain, 0) + 1
+
+    total_docs = len(docs)
+
+    # Calculate strategy mismatch rate
+    docs_preferring_current = strategy_preferences.get(current_strategy, 0)
+    strategy_mismatch_rate = 1.0 - (docs_preferring_current / total_docs)
+
+    # Calculate average confidence
+    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.5
+
+    # Determine dominant strategy from docs
+    dominant_strategy = max(strategy_preferences, key=strategy_preferences.get) if strategy_preferences else current_strategy
+
+    # Determine dominant domain
+    dominant_domain = max(domains, key=domains.get) if domains else "general"
+
+    # Determine dominant technical level
+    dominant_level = max(technical_levels, key=technical_levels.get) if technical_levels else "intermediate"
+
+    # Calculate domain alignment (simplified - could be enhanced with query analysis)
+    # For now, high alignment if one domain dominates
+    domain_alignment = max(domains.values()) / total_docs if domains else 0.5
+
+    # Detect quality issues
+    quality_issues = []
+
+    # Issue 1: Strategy mismatch
+    if strategy_mismatch_rate > 0.6:
+        quality_issues.append({
+            "issue": "strategy_mismatch",
+            "severity": "high",
+            "description": f"{strategy_mismatch_rate:.0%} of docs prefer {dominant_strategy}, not {current_strategy}",
+            "suggested_strategy": dominant_strategy
+        })
+
+    # Issue 2: Low confidence
+    if avg_confidence < 0.5:
+        quality_issues.append({
+            "issue": "low_confidence",
+            "severity": "medium",
+            "description": f"Average doc confidence is {avg_confidence:.0%}",
+            "suggested_strategy": "hybrid"  # Fallback to hybrid when uncertain
+        })
+
+    # Issue 3: Mixed technical levels (potential complexity mismatch)
+    if len(technical_levels) >= 3:  # All three levels present
+        quality_issues.append({
+            "issue": "mixed_complexity",
+            "severity": "low",
+            "description": f"Documents span all complexity levels: {technical_levels}",
+            "suggested_action": "Adjust k-values to favor {dominant_level} documents"
+        })
+
+    # Build analysis summary
+    analysis = {
+        "total_docs": total_docs,
+        "strategy_preferences": strategy_preferences,
+        "dominant_strategy": dominant_strategy,
+        "dominant_domain": dominant_domain,
+        "dominant_technical_level": dominant_level,
+        "technical_level_distribution": technical_levels,
+        "domain_distribution": domains,
+        "quality_issues": quality_issues,
+    }
+
+    # Log metadata analysis
+    print(f"\n{'='*60}")
+    print(f"METADATA ANALYSIS")
+    print(f"Current strategy: {current_strategy}")
+    print(f"Docs preferring current: {docs_preferring_current}/{total_docs}")
+    print(f"Strategy mismatch rate: {strategy_mismatch_rate:.0%}")
+    print(f"Dominant strategy: {dominant_strategy}")
+    print(f"Avg confidence: {avg_confidence:.0%}")
+    print(f"Quality issues: {len(quality_issues)}")
+    for issue in quality_issues:
+        print(f"  - {issue['issue']}: {issue['description']}")
+    print(f"{'='*60}\n")
+
+    return {
+        "doc_metadata_analysis": analysis,
+        "strategy_mismatch_rate": strategy_mismatch_rate,
+        "avg_doc_confidence": avg_confidence,
+        "domain_alignment_score": domain_alignment,
     }
 
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============

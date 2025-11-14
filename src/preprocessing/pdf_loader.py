@@ -127,6 +127,59 @@ class PDFDocumentLoader:
 
         return enriched_chunks
 
+    def load_pdf_full_document(
+        self,
+        pdf_path: str,
+        source_name: Optional[str] = None,
+        verbose: bool = True
+    ) -> Document:
+        """
+        Load a PDF as a single full document (WITHOUT chunking).
+
+        Use this for document profiling before chunking.
+
+        Args:
+            pdf_path: Path to the PDF file
+            source_name: Optional name for the source (defaults to filename)
+            verbose: Whether to print loading progress
+
+        Returns:
+            Single Document object with full PDF content
+        """
+        # Validate file exists
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+        # Extract source name from path if not provided
+        if source_name is None:
+            source_name = os.path.basename(pdf_path)
+
+        if verbose:
+            print(f"Loading full document: {source_name}")
+
+        # Load PDF pages
+        loader = PyMuPDFLoader(pdf_path)
+        pages = loader.load()
+
+        # Combine all pages into single document
+        full_text = "\n\n".join([page.page_content for page in pages])
+
+        # Create single document with metadata
+        full_document = Document(
+            page_content=full_text,
+            metadata={
+                "source": source_name,
+                "source_type": "pdf",
+                "page_count": len(pages),
+                "char_count": len(full_text),
+            }
+        )
+
+        if verbose:
+            print(f"  Pages: {len(pages)}, Characters: {len(full_text):,}")
+
+        return full_document
+
     def load_multiple_pdfs(
         self,
         pdf_paths: List[str],
@@ -152,6 +205,38 @@ class PDFDocumentLoader:
             print(f"\nTotal documents from {len(pdf_paths)} PDFs: {len(all_chunks)}")
 
         return all_chunks
+
+    def load_multiple_pdfs_full_documents(
+        self,
+        pdf_paths: List[str],
+        verbose: bool = True
+    ) -> List[Document]:
+        """
+        Load multiple PDFs as full documents (WITHOUT chunking).
+
+        Use this for document profiling before chunking.
+
+        Args:
+            pdf_paths: List of paths to PDF files
+            verbose: Whether to print loading progress
+
+        Returns:
+            List of full Document objects (one per PDF)
+        """
+        full_documents = []
+
+        if verbose:
+            print(f"\nLoading {len(pdf_paths)} PDFs as full documents (no chunking)...")
+
+        for pdf_path in pdf_paths:
+            doc = self.load_pdf_full_document(pdf_path, verbose=verbose)
+            full_documents.append(doc)
+
+        if verbose:
+            total_chars = sum(len(doc.page_content) for doc in full_documents)
+            print(f"\nLoaded {len(full_documents)} full documents, {total_chars:,} total characters\n")
+
+        return full_documents
 
     def get_chunk_statistics(self, chunks: List[Document]) -> dict:
         """

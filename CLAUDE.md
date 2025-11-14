@@ -16,14 +16,15 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Adaptive thresholds based on retrieval performance
 
 **LangGraph Workflow Pattern**
-- 7 nodes with conditional edges (not linear pipeline)
+- 8 nodes with conditional edges (not linear pipeline)
+- Metadata analysis node examines retrieved documents for strategy alignment
 - State accumulation using TypedDict with `Annotated[list, operator.add]`
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
 
 **Self-Correction Loops**
 - Query rewriting loop: poor retrieval quality → rewrite query → retry (max 2 rewrites)
 - Strategy switching loop: insufficient answer → switch strategy → retry (max 3 attempts)
-- Progressive strategy order: hybrid → semantic → keyword
+- Metadata-driven switching: uses document preferences when detected, fallback: hybrid → semantic → keyword
 
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
@@ -36,12 +37,25 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Strategy selector: heuristic rules + LLM fallback for ambiguous cases
 - Conversational rewriting: injects context from conversation history
 
+**Metadata-Driven Adaptation**
+- Post-retrieval metadata analysis: examines retrieved document characteristics
+- Strategy mismatch detection: identifies when docs prefer different strategy (>60% threshold)
+- Intelligent refinement: switches to document-preferred strategy with logged reasoning
+- Quality issue tracking: detects low confidence, complexity mismatches, domain misalignment
+
 **State Management**
 - Uses TypedDict (best performance) not Pydantic
 - MemorySaver checkpointer for multi-turn conversations
 - Tracks: queries, documents, quality scores, attempts, conversation history
 
 ## Development Commands
+
+### Important: Bash Command Syntax
+This project runs in a Unix bash environment (even on Windows). **Always use Unix commands:**
+- ✅ Use: `mv` (NOT `move`)
+- ✅ Use: `rm -rf` (NOT `del`)
+- ✅ Use: `cp` (NOT `copy`)
+- ✅ Use: `ls` (NOT `dir`)
 
 ### Package Manager
 This project uses **uv** for dependency management. Do not use pip or conda.
@@ -54,8 +68,10 @@ cp .env.example .env                 # Create environment file (add your OPENAI_
 
 ### Testing
 ```bash
-uv run python test_pdf_pipeline.py  # Test PDF pipeline with Attention paper
-uv run python main.py                # Run main RAG demo
+uv run python test_pdf_pipeline.py       # Test complete PDF pipeline with Attention paper
+uv run python test_document_profiling.py # Test document profiling system
+uv run python test_adaptive_retrieval.py # Test metadata-driven adaptive retrieval
+uv run python main.py                     # Run main RAG demo
 ```
 
 ### Development
@@ -86,7 +102,7 @@ uv run python -c "from src.core import setup_retriever; setup_retriever(pdfs=['A
 uv run python -c "from src.retrieval.strategy_selection import StrategySelector; s=StrategySelector(); print(s.explain_decision('What is attention?'))"
 
 # Profile a document
-uv run python -c "from src.preprocessing.document_profiling import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
+uv run python -c "from src.preprocessing.document_profiler import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
 ```
 
 ## Quick Reference by Task

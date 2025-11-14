@@ -13,21 +13,35 @@ class HybridRetriever:
         self.keyword_retriever = BM25Retriever.from_documents(documents)
         self.reranker = ReRanker(top_k=4)
 
-    def retrieve(self, query: str, strategy: str = "hybrid") -> list[Document]:
+    def retrieve(
+        self,
+        query: str,
+        strategy: str = "hybrid",
+        k_semantic: int = 5,
+        k_keyword: int = 5,
+        k_total: int = 8
+    ) -> list[Document]:
         """
-        Retrieve using specified strategy:
-        - semantic: Dense vector search
-        - keyword: BM25 lexical search
-        - hybrid: Both combined
+        Retrieve using specified strategy with configurable k-values.
+
+        Args:
+            query: Search query
+            strategy: "semantic", "keyword", or "hybrid"
+            k_semantic: Number of docs for semantic search (default: 5)
+            k_keyword: Number of docs for keyword search (default: 5)
+            k_total: Total docs for single-strategy retrieval (default: 8)
+
+        Returns:
+            List of reranked documents
         """
 
         if strategy == "semantic":
-            docs = self.semantic_retriever.retrieve(query, k=8)
+            docs = self.semantic_retriever.retrieve(query, k=k_total)
         elif strategy == "keyword":
-            docs = self.keyword_retriever.invoke(query)[:8]
+            docs = self.keyword_retriever.invoke(query)[:k_total]
         else:  # hybrid
-            semantic_docs = self.semantic_retriever.retrieve(query, k=5)
-            keyword_docs = self.keyword_retriever.invoke(query)[:5]
+            semantic_docs = self.semantic_retriever.retrieve(query, k=k_semantic)
+            keyword_docs = self.keyword_retriever.invoke(query)[:k_keyword]
 
             # Deduplicate
             seen = set()

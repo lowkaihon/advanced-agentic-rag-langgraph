@@ -55,13 +55,21 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - Shows node transitions and quality scores
 - Verbose mode for detailed debugging
 
+### 11. Metadata-Driven Adaptive Retrieval
+- Analyzes metadata of retrieved documents post-retrieval
+- Detects strategy mismatches (when docs prefer different strategy than selected)
+- Intelligent strategy switching based on document preferences (>60% mismatch threshold)
+- Tracks refinement history with reasoning and detected issues
+- Quality issue detection: low confidence, complexity mismatches, domain misalignment
+
 ## Architecture Overview
 
 ### System Components
 
-**1. Document Profiling** (`src/preprocessing/document_profiling.py`)
+**1. Document Profiling** (`src/preprocessing/document_profiler.py`)
+- LLM-based profiling with 29 document types across academic, educational, technical, business, legal, and general domains
 - Analyzes corpus characteristics: technical density (0.0-1.0), document type, domain tags
-- Profiles entire corpus to compute aggregate statistics
+- Profiles full documents BEFORE chunking, then attaches metadata to all chunks
 - Informs retrieval strategy selection based on content patterns
 
 **2. Query Analysis & Optimization** (`src/preprocessing/query_processing.py`, `src/retrieval/query_optimization.py`)
@@ -82,9 +90,10 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - **Reranking**: LLM-as-Judge scores each document 0-100 for relevance
 
 **5. LangGraph Orchestration** (`src/orchestration/graph.py`, `src/orchestration/nodes.py`)
-- 7 nodes with conditional routing based on quality scores
+- 8 nodes with conditional routing based on quality scores
+- Metadata analysis node examines retrieved documents for strategy alignment
 - Quality gates at retrieval and answer generation stages
-- Self-correction loops for query rewriting and strategy switching
+- Self-correction loops for query rewriting and metadata-driven strategy switching
 - Streams execution progress in real-time
 
 **6. State Management** (`src/core/state.py`)
@@ -103,7 +112,9 @@ cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
 # 3. Run comprehensive tests
-uv run python test_pdf_pipeline.py
+uv run python test_pdf_pipeline.py       # Complete pipeline test
+uv run python test_document_profiling.py # Document profiling test
+uv run python test_adaptive_retrieval.py # Metadata-driven adaptive retrieval test
 
 # 4. Run interactive demo
 uv run python main.py
@@ -284,11 +295,13 @@ compression_retriever = ContextualCompressionRetriever(
 
 **Production-Ready Features**:
 - ✅ LangChain 1.0 & LangGraph 1.0 (stable APIs with stability commitment)
+- ✅ LLM-based document profiling with 29 comprehensive document types
 - ✅ 10 research papers in demo corpus (transformers, diffusion, RAG, vision)
-- ✅ Comprehensive test suite (4 tests covering all components)
+- ✅ Comprehensive test suite (test_pdf_pipeline, test_document_profiling, test_adaptive_retrieval)
 - ✅ Multi-turn conversation support with state persistence
 - ✅ Real-time streaming execution with progress tracking
 - ✅ Quality-driven self-correction loops
+- ✅ Metadata-driven adaptive retrieval with strategy refinement
 
 **Potential Enhancements**:
 - [ ] **Historical Performance Tracking**: Learn which strategies work best for query types over time
@@ -313,7 +326,7 @@ compression_retriever = ContextualCompressionRetriever(
 
 ## Complete Flow
 
-The system uses a 7-node LangGraph workflow with conditional routing and self-correction loops:
+The system uses an 8-node LangGraph workflow with conditional routing and self-correction loops:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -349,6 +362,14 @@ The system uses a 7-node LangGraph workflow with conditional routing and self-co
 │ • LLM evaluates retrieval quality (0-100 score)                │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Node 5: Metadata Analysis (NEW)                                │
+│ • Analyzes retrieved document metadata                         │
+│ • Calculates strategy mismatch rate (% docs prefer different)  │
+│ • Detects quality issues: strategy_mismatch, low_confidence    │
+│ • Determines if refinement needed based on metadata signals    │
+└────────────────────────────┬────────────────────────────────────┘
+                             ↓
                     ┌────────┴────────┐
                     │ Quality Gate #1  │
                     │ Quality ≥ 60%?   │
@@ -359,7 +380,7 @@ The system uses a 7-node LangGraph workflow with conditional routing and self-co
               ┌──────────┘        └──────────────┐
               │                                   │
               │            ┌──────────────────────┴──────────────────┐
-              │            │ Node 5: Rewrite and Refine              │
+              │            │ Node 6: Rewrite and Refine              │
               │            │ • Rewrites query for clarity            │
               │            │ • Increments attempt counter            │
               │            └──────────┬──────────────────────────────┘
@@ -370,14 +391,14 @@ The system uses a 7-node LangGraph workflow with conditional routing and self-co
               │
               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 6: Answer Generation with Quality Context                 │
+│ Node 7: Answer Generation with Quality Context                 │
 │ • Adjusts system prompt based on retrieval quality             │
 │ • High quality: confident answer                               │
 │ • Low quality: notes gaps and uncertainty                      │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 7: Evaluate Answer                                         │
+│ Node 8: Evaluate Answer                                         │
 │ • Checks: relevance, completeness, accuracy                    │
 │ • Adaptive threshold (lower if retrieval was poor)             │
 │ • Computes confidence score                                    │
@@ -392,12 +413,12 @@ The system uses a 7-node LangGraph workflow with conditional routing and self-co
                          │        │
                          │        └────────────────────────────┐
                          │                                     │
-                         ↓                          ┌──────────┴──────────────┐
-              ┌──────────────────────┐              │ Switch Strategy:        │
-              │ END: Return Answer   │              │ hybrid → semantic       │
-              │ • Final answer       │              │ semantic → keyword      │
-              │ • Confidence score   │              │ keyword → give up       │
-              │ • Strategy used      │              └──────────┬──────────────┘
+                         ↓                          ┌──────────┴──────────────────┐
+              ┌──────────────────────┐              │ Metadata-Driven Switching:  │
+              │ END: Return Answer   │              │ Uses doc preferences if     │
+              │ • Final answer       │              │ detected, else:             │
+              │ • Confidence score   │              │ hybrid → semantic →keyword  │
+              │ • Strategy used      │              └──────────┬──────────────────┘
               │ • Attempts made      │                         │
               └──────────────────────┘                         └─────────┐
                                                                          ↓
@@ -405,12 +426,17 @@ The system uses a 7-node LangGraph workflow with conditional routing and self-co
 
 Self-Correction Loops:
 • Loop 1 (Query Rewriting): Quality < 60% AND attempts < 2 → rewrite query → retry
-• Loop 2 (Strategy Switching): Answer insufficient AND attempts < 3 → switch strategy → retry
+• Loop 2 (Metadata-Driven Strategy Switching):
+  - Answer insufficient AND attempts < 3
+  - Uses metadata analysis to suggest next strategy (if mismatch detected)
+  - Fallback progression: hybrid → semantic → keyword
 ```
 
 **Key Points**:
 - Not a linear pipeline - uses conditional routing based on quality scores
+- Metadata analysis enables intelligent adaptation based on document characteristics
 - Two self-correction loops ensure high-quality results
 - Maximum 2 query rewrites, maximum 3 total retrieval attempts
 - Quality thresholds: 60% for retrieval, adaptive for answers
-- Strategy switching follows progression: hybrid → semantic → keyword
+- Strategy switching is metadata-driven when mismatches detected (>60% threshold)
+- Fallback progression: hybrid → semantic → keyword

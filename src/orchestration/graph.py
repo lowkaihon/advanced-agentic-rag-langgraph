@@ -6,6 +6,7 @@ from src.orchestration.nodes import (
     query_expansion_node,
     decide_retrieval_strategy_node,
     retrieve_with_expansion_node,
+    analyze_retrieved_metadata_node,
     rewrite_and_refine_node,
     answer_generation_with_quality_node,
     evaluate_answer_with_retrieval_node,
@@ -24,18 +25,62 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         return "rewrite_and_refine"
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "END"]:
-    """Route based on answer evaluation - try different strategy if needed"""
+    """
+    Route based on answer evaluation with metadata-driven strategy switching.
+
+    Uses document metadata analysis to intelligently select next strategy.
+    """
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
-        # Try different retrieval strategy
+        # Metadata-driven strategy switching
         current = state.get("retrieval_strategy", "hybrid")
-        if current == "hybrid":
-            state["retrieval_strategy"] = "semantic"
-        elif current == "semantic":
-            state["retrieval_strategy"] = "keyword"
+        metadata_analysis = state.get("doc_metadata_analysis", {})
+        quality_issues = metadata_analysis.get("quality_issues", [])
+
+        # Check if metadata analysis suggests a specific strategy
+        suggested_strategy = None
+        for issue in quality_issues:
+            if "suggested_strategy" in issue:
+                suggested_strategy = issue["suggested_strategy"]
+                break
+
+        # Use metadata suggestion if available, otherwise use fallback order
+        if suggested_strategy and suggested_strategy != current:
+            next_strategy = suggested_strategy
+            reasoning = f"Metadata-driven: switching to {suggested_strategy} (current: {current})"
         else:
-            return END  # Give up
+            # Fallback to traditional order: hybrid → semantic → keyword
+            if current == "hybrid":
+                next_strategy = "semantic"
+                reasoning = "Fallback: hybrid → semantic"
+            elif current == "semantic":
+                next_strategy = "keyword"
+                reasoning = "Fallback: semantic → keyword"
+            else:
+                return END  # Give up
+
+        # Log refinement
+        refinement = {
+            "iteration": state.get("retrieval_attempts", 0),
+            "from_strategy": current,
+            "to_strategy": next_strategy,
+            "reasoning": reasoning,
+            "metadata_issues": [issue.get("issue") for issue in quality_issues]
+        }
+
+        print(f"\n{'='*60}")
+        print(f"STRATEGY REFINEMENT")
+        print(f"Iteration: {refinement['iteration']}")
+        print(f"Switch: {current} → {next_strategy}")
+        print(f"Reasoning: {reasoning}")
+        print(f"Metadata issues: {refinement['metadata_issues']}")
+        print(f"{'='*60}\n")
+
+        # Update state with new strategy and log refinement
+        state["retrieval_strategy"] = next_strategy
+        state.setdefault("refinement_history", []).append(refinement)
+
         return "retrieve_with_expansion"
     else:
         return END
@@ -53,6 +98,7 @@ def build_advanced_rag_graph():
 
     # ========== RETRIEVAL STAGE ==========
     builder.add_node("retrieve_with_expansion", retrieve_with_expansion_node)
+    builder.add_node("analyze_metadata", analyze_retrieved_metadata_node)
     builder.add_node("rewrite_and_refine", rewrite_and_refine_node)
 
     # ========== ANSWER STAGE ==========
@@ -66,9 +112,12 @@ def build_advanced_rag_graph():
     builder.add_edge("query_expansion", "decide_strategy")
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 
-    # Route based on retrieval quality
+    # After retrieval, analyze metadata before routing
+    builder.add_edge("retrieve_with_expansion", "analyze_metadata")
+
+    # Route based on retrieval quality (now from metadata analysis)
     builder.add_conditional_edges(
-        "retrieve_with_expansion",
+        "analyze_metadata",
         route_after_retrieval,
         {
             "answer_generation": "answer_generation",

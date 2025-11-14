@@ -23,12 +23,20 @@ class AdvancedRAGState(TypedDict):
     # Processing
     messages: Annotated[list[BaseMessage], operator.add]
     retrieved_docs: Annotated[list[str], operator.add]
+    unique_docs_list: list  # Document objects for metadata analysis
     retrieval_quality_score: float  # How good are the retrieved docs?
 
     # Decision making
     needs_retrieval: bool
     is_answer_sufficient: bool
     retrieval_attempts: int
+
+    # Metadata-driven adaptive retrieval
+    doc_metadata_analysis: Dict  # Analysis of retrieved document characteristics
+    strategy_mismatch_rate: float  # Percentage of docs preferring different strategy
+    avg_doc_confidence: float  # Average strategy confidence from retrieved docs
+    domain_alignment_score: float  # How well docs match query domain
+    refinement_history: Annotated[list[Dict], operator.add]  # Log of all refinements
 
     # Output
     final_answer: str

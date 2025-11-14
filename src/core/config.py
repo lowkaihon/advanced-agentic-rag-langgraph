@@ -2,7 +2,6 @@ import os
 from typing import Dict, List
 from dotenv import load_dotenv
 from src.retrieval import HybridRetriever
-from src.preprocessing.document_profiler_pipeline import DocumentProfilerPipeline
 from src.preprocessing.pdf_loader import PDFDocumentLoader
 from langchain_core.documents import Document
 
@@ -116,11 +115,12 @@ def setup_retriever(
     Initialize hybrid retriever with PDF documents from docs/ folder.
 
     This function:
-    1. Loads PDF documents (all or specific ones)
-    2. Profiles each document with DocumentProfiler
-    3. Enriches documents with metadata
-    4. Creates HybridRetriever with profiled documents
-    5. Stores corpus statistics globally
+    1. Loads full PDF documents (before chunking)
+    2. Profiles each FULL document with LLM
+    3. Chunks documents
+    4. Attaches profile metadata to each chunk
+    5. Creates HybridRetriever with profiled documents
+    6. Stores corpus statistics globally
 
     Args:
         pdfs: Which PDFs to load:
@@ -141,11 +141,8 @@ def setup_retriever(
         >>> # Load single PDF
         >>> retriever = setup_retriever(pdfs="Attention Is All You Need.pdf")
 
-        >>> # Load multiple specific PDFs
-        >>> retriever = setup_retriever(pdfs=[
-        ...     "Attention Is All You Need.pdf",
-        ...     "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf"
-        ... ])
+        >>> # Load multiple PDFs
+        >>> retriever = setup_retriever(pdfs=["paper1.pdf", "paper2.pdf"])
 
     Raises:
         FileNotFoundError: If docs/ folder is empty or specified PDF not found
@@ -186,34 +183,170 @@ def setup_retriever(
             print(f"  {i}. {os.path.basename(path)} ({size_mb:.1f} MB)")
         print()
 
-    # Load PDFs using PDFDocumentLoader
+    # Initialize PDF loader
     pdf_loader = PDFDocumentLoader(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap
     )
 
-    raw_documents = pdf_loader.load_multiple_pdfs(
+    # Profile full documents BEFORE chunking
+    if verbose:
+        print("="*60)
+        print("STEP 1: Loading full documents (no chunking)")
+        print("="*60 + "\n")
+
+    # Load full documents
+    full_documents = pdf_loader.load_multiple_pdfs_full_documents(
         pdf_paths,
         verbose=verbose
     )
 
-    # Profile and enrich documents
-    profiler_pipeline = DocumentProfilerPipeline()
+    # Profile each full document with LLM
+    if verbose:
+        print("="*60)
+        print("STEP 2: Profiling documents with LLM")
+        print("="*60 + "\n")
 
-    # Profile documents and enrich with metadata
-    profiled_documents, corpus_stats, doc_profiles = profiler_pipeline.process_documents(
-        raw_documents,
-        verbose=verbose
-    )
+    from src.preprocessing.document_profiler import DocumentProfiler
 
-    # Store corpus statistics globally for strategy selection
+    llm_profiler = DocumentProfiler()
+    document_profiles = {}
+
+    for doc in full_documents:
+        source = doc.metadata.get('source', 'unknown')
+        if verbose:
+            print(f"Profiling: {source}...")
+
+        profile = llm_profiler.profile_document(
+            doc.page_content,
+            doc_id=source
+        )
+        document_profiles[source] = profile
+
+        if verbose:
+            print(f"  Type: {profile['doc_type']}")
+            print(f"  Technical density: {profile['technical_density']:.2f}")
+            print(f"  Best strategy: {profile['best_retrieval_strategy']} (confidence: {profile['strategy_confidence']:.2f})")
+            print(f"  Domains: {', '.join(profile['domain_tags'][:3])}")
+            print()
+
+    # Now chunk the documents
+    if verbose:
+        print("="*60)
+        print("STEP 3: Chunking documents")
+        print("="*60 + "\n")
+
+    all_chunks = []
+    for full_doc in full_documents:
+        # Chunk the document
+        chunks = pdf_loader.text_splitter.split_text(full_doc.page_content)
+
+        source = full_doc.metadata.get('source', 'unknown')
+        profile = document_profiles.get(source)
+
+        # Create Document objects with profile metadata
+        for i, chunk_text in enumerate(chunks):
+            chunk_metadata = {
+                "id": f"{source}_chunk_{i}",
+                "chunk_index": i,
+                "total_chunks": len(chunks),
+                "source": source,
+                "source_type": "pdf",
+            }
+
+            # Attach LLM profile metadata to each chunk
+            if profile:
+                chunk_metadata.update({
+                    "content_type": profile['doc_type'],
+                    "technical_level": profile['reading_level'],
+                    "domain": profile['domain_tags'][0] if profile['domain_tags'] else 'general',
+                    "best_retrieval_strategy": profile['best_retrieval_strategy'],
+                    "strategy_confidence": profile['strategy_confidence'],
+                    "has_math": profile['has_math'],
+                    "has_code": profile['has_code'],
+                    "document_summary": profile['summary'],
+                    "key_concepts": ', '.join(profile['key_concepts'][:5]),
+                })
+
+            chunk_doc = Document(
+                page_content=chunk_text,
+                metadata=chunk_metadata
+            )
+            all_chunks.append(chunk_doc)
+
+    if verbose:
+        print(f"Created {len(all_chunks)} chunks from {len(full_documents)} documents\n")
+
+    # Calculate corpus statistics from LLM profiles
+    corpus_stats = _calculate_corpus_stats_from_llm_profiles(list(document_profiles.values()))
+
+    # Store corpus statistics and profiles globally
     _corpus_stats = corpus_stats
-    _document_profiles = doc_profiles
+    _document_profiles = document_profiles
+
+    if verbose:
+        print("="*60)
+        print("CORPUS STATISTICS")
+        print("="*60)
+        print(f"Total documents: {corpus_stats.get('total_documents', 'unknown')}")
+        print(f"Total chunks: {len(all_chunks)}")
+        print(f"Avg technical density: {corpus_stats.get('avg_technical_density', 0):.2f}")
+        print(f"Document types: {corpus_stats.get('document_types', {})}")
+        print(f"Has code: {corpus_stats.get('pct_with_code', 0):.0f}%")
+        print(f"Has math: {corpus_stats.get('pct_with_math', 0):.0f}%")
+        print("="*60 + "\n")
 
     # Create retriever with profiled documents
-    _retriever_instance = HybridRetriever(profiled_documents)
+    _retriever_instance = HybridRetriever(all_chunks)
 
     return _retriever_instance
+
+
+def _calculate_corpus_stats_from_llm_profiles(profiles: List[Dict]) -> Dict:
+    """
+    Calculate corpus-level statistics from LLM document profiles.
+
+    Args:
+        profiles: List of DocumentProfile dictionaries
+
+    Returns:
+        Corpus statistics dictionary
+    """
+    if not profiles:
+        return {}
+
+    from collections import Counter
+
+    total_docs = len(profiles)
+
+    # Aggregate statistics
+    avg_technical_density = sum(p['technical_density'] for p in profiles) / total_docs
+
+    # Count document types
+    doc_types = Counter(p['doc_type'] for p in profiles)
+
+    # Collect all domain tags
+    all_domains = []
+    for p in profiles:
+        all_domains.extend(p['domain_tags'])
+    domain_distribution = Counter(all_domains)
+
+    # Percentage with code/math
+    pct_with_code = sum(1 for p in profiles if p['has_code']) / total_docs * 100
+    pct_with_math = sum(1 for p in profiles if p['has_math']) / total_docs * 100
+
+    # Strategy distribution
+    strategy_counts = Counter(p['best_retrieval_strategy'] for p in profiles)
+
+    return {
+        "total_documents": total_docs,
+        "avg_technical_density": avg_technical_density,
+        "document_types": dict(doc_types),
+        "domain_distribution": dict(domain_distribution.most_common(5)),
+        "pct_with_code": pct_with_code,
+        "pct_with_math": pct_with_math,
+        "strategy_distribution": dict(strategy_counts),
+    }
 
 
 def reset_retriever():
