@@ -75,6 +75,7 @@ class RAGASEvaluator:
         """
         metrics = [
             Faithfulness(),
+            ContextRecall(),
             ContextPrecision(),
             ResponseRelevancy()
         ]

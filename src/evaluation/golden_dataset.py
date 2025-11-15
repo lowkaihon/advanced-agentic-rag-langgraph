@@ -11,6 +11,7 @@ from typing import List, Dict, Tuple, Set, Optional
 from collections import defaultdict
 from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI
+from .retrieval_metrics import calculate_answer_relevance
 
 
 class GoldenDatasetManager:
@@ -443,6 +444,18 @@ def evaluate_on_golden_dataset(
             has_hallucination = result.get('has_hallucination', False)
             final_answer = result.get('final_answer', '')
 
+            # Compare generated answer to ground truth
+            answer_comparison = compare_answers(
+                generated=final_answer,
+                ground_truth=example['ground_truth_answer']
+            )
+
+            # Calculate answer relevance (question-answer alignment)
+            answer_relevance = calculate_answer_relevance(
+                question=question,
+                answer=final_answer
+            )
+
             # Aggregate retrieval metrics
             for metric_name, value in retrieval_metrics.items():
                 retrieval_metrics_agg[metric_name].append(value)
@@ -451,6 +464,10 @@ def evaluate_on_golden_dataset(
             generation_metrics_agg['groundedness'].append(groundedness_score)
             generation_metrics_agg['confidence'].append(confidence_score)
             generation_metrics_agg['has_hallucination'].append(int(has_hallucination))
+            generation_metrics_agg['semantic_similarity'].append(answer_comparison.get('semantic_similarity', 0.0))
+            generation_metrics_agg['factual_accuracy'].append(answer_comparison.get('factual_accuracy', 0.0))
+            generation_metrics_agg['completeness'].append(answer_comparison.get('completeness', 0.0))
+            generation_metrics_agg['answer_relevance'].append(answer_relevance.get('relevance_score', 0.0))
 
             # Store per-example result
             per_example_results.append({
@@ -464,6 +481,12 @@ def evaluate_on_golden_dataset(
                 'has_hallucination': has_hallucination,
                 'final_answer': final_answer,
                 'ground_truth_answer': example['ground_truth_answer'],
+                'semantic_similarity': answer_comparison.get('semantic_similarity', 0.0),
+                'factual_accuracy': answer_comparison.get('factual_accuracy', 0.0),
+                'completeness': answer_comparison.get('completeness', 0.0),
+                'answer_relevance_score': answer_relevance.get('relevance_score', 0.0),
+                'is_answer_relevant': answer_relevance.get('is_relevant', False),
+                'relevance_category': answer_relevance.get('relevance_category', 'low'),
             })
 
             if verbose:
@@ -487,6 +510,10 @@ def evaluate_on_golden_dataset(
         'avg_groundedness': sum(generation_metrics_agg['groundedness']) / len(generation_metrics_agg['groundedness']) if generation_metrics_agg['groundedness'] else 0.0,
         'avg_confidence': sum(generation_metrics_agg['confidence']) / len(generation_metrics_agg['confidence']) if generation_metrics_agg['confidence'] else 0.0,
         'hallucination_rate': sum(generation_metrics_agg['has_hallucination']) / len(generation_metrics_agg['has_hallucination']) if generation_metrics_agg['has_hallucination'] else 0.0,
+        'avg_semantic_similarity': sum(generation_metrics_agg['semantic_similarity']) / len(generation_metrics_agg['semantic_similarity']) if generation_metrics_agg['semantic_similarity'] else 0.0,
+        'avg_factual_accuracy': sum(generation_metrics_agg['factual_accuracy']) / len(generation_metrics_agg['factual_accuracy']) if generation_metrics_agg['factual_accuracy'] else 0.0,
+        'avg_completeness': sum(generation_metrics_agg['completeness']) / len(generation_metrics_agg['completeness']) if generation_metrics_agg['completeness'] else 0.0,
+        'avg_answer_relevance': sum(generation_metrics_agg['answer_relevance']) / len(generation_metrics_agg['answer_relevance']) if generation_metrics_agg['answer_relevance'] else 0.0,
     }
 
     # Breakdown by difficulty

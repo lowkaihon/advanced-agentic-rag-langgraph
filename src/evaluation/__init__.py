@@ -3,6 +3,7 @@ Evaluation module for RAG pipeline assessment.
 
 Provides:
 - Retrieval metrics (Recall@K, Precision@K, F1@K, nDCG)
+- Answer quality metrics (Answer Relevance)
 - Golden dataset management
 - RAGAS integration
 - Offline evaluation suite
@@ -11,6 +12,7 @@ Provides:
 from .retrieval_metrics import (
     calculate_retrieval_metrics,
     calculate_ndcg,
+    calculate_answer_relevance,
 )
 from .golden_dataset import (
     GoldenDatasetManager,
@@ -27,6 +29,7 @@ from .ragas_evaluator import (
 __all__ = [
     "calculate_retrieval_metrics",
     "calculate_ndcg",
+    "calculate_answer_relevance",
     "GoldenDatasetManager",
     "evaluate_on_golden_dataset",
     "compare_answers",

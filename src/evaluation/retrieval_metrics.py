@@ -4,6 +4,7 @@ Retrieval evaluation metrics for RAG systems.
 Implements standard information retrieval metrics:
 - Binary relevance: Recall@K, Precision@K, F1@K, Hit Rate, MRR
 - Graded relevance: nDCG@K (Normalized Discounted Cumulative Gain)
+- Answer quality: Answer Relevance (embedding-based similarity)
 
 These metrics enable:
 - Quantitative benchmarking
@@ -12,9 +13,11 @@ These metrics enable:
 - Systematic optimization
 """
 
-from typing import List, Set, Dict
+from typing import List, Set, Dict, Optional
 from langchain_core.documents import Document
+from langchain_openai import OpenAIEmbeddings
 import math
+import numpy as np
 
 
 def calculate_retrieval_metrics(
@@ -218,3 +221,87 @@ MRR:            {metrics['mrr']:.4f}
 {'='*50}"""
 
     return report
+
+
+def calculate_answer_relevance(
+    question: str,
+    answer: str,
+    embeddings: Optional[OpenAIEmbeddings] = None,
+    threshold: float = 0.7
+) -> Dict[str, float]:
+    """
+    Calculate answer relevance using embedding similarity.
+
+    Measures whether the answer actually addresses the question,
+    detecting off-topic responses even if factually correct.
+
+    This metric complements RAGAS ResponseRelevancy with a custom
+    embedding-based implementation that:
+    - Uses cosine similarity between question and answer embeddings
+    - Detects factually correct but off-topic answers
+    - Provides interpretable relevance categories
+
+    Args:
+        question: User's original question
+        answer: Generated answer
+        embeddings: Optional embeddings model (creates default if None)
+        threshold: Minimum similarity for relevance (default: 0.7)
+
+    Returns:
+        Dictionary with:
+        - relevance_score: Cosine similarity (0.0-1.0)
+        - is_relevant: Boolean (True if score >= threshold)
+        - relevance_category: "high" (>0.85), "medium" (0.70-0.85), "low" (<0.70)
+
+    Example:
+        >>> # Relevant answer
+        >>> result = calculate_answer_relevance(
+        ...     question="How many attention heads does the base Transformer use?",
+        ...     answer="The base Transformer model uses 8 attention heads."
+        ... )
+        >>> print(f"Score: {result['relevance_score']:.2f}, Relevant: {result['is_relevant']}")
+        Score: 0.92, Relevant: True
+
+        >>> # Off-topic answer (factually correct but irrelevant)
+        >>> result = calculate_answer_relevance(
+        ...     question="How many attention heads does the base Transformer use?",
+        ...     answer="GPT-3 is a large language model with 175 billion parameters."
+        ... )
+        >>> print(f"Score: {result['relevance_score']:.2f}, Relevant: {result['is_relevant']}")
+        Score: 0.45, Relevant: False
+
+    Best Practices:
+        - Use alongside RAGAS ResponseRelevancy for comprehensive evaluation
+        - Threshold 0.7 works well for most cases (adjust based on use case)
+        - Low scores (<0.6) indicate answer is off-topic or doesn't address question
+        - Particularly useful for detecting query-answer misalignment in multi-turn conversations
+    """
+    # Create embeddings model if not provided
+    if embeddings is None:
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+
+    # Embed question and answer
+    question_embedding = embeddings.embed_query(question)
+    answer_embedding = embeddings.embed_query(answer)
+
+    # Calculate cosine similarity
+    # cosine_similarity = dot(A, B) / (||A|| * ||B||)
+    dot_product = np.dot(question_embedding, answer_embedding)
+    question_norm = np.linalg.norm(question_embedding)
+    answer_norm = np.linalg.norm(answer_embedding)
+
+    relevance_score = dot_product / (question_norm * answer_norm)
+
+    # Determine relevance category
+    if relevance_score >= 0.85:
+        category = "high"
+    elif relevance_score >= 0.70:
+        category = "medium"
+    else:
+        category = "low"
+
+    return {
+        "relevance_score": float(relevance_score),
+        "is_relevant": relevance_score >= threshold,
+        "relevance_category": category
+    }

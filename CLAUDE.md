@@ -31,6 +31,15 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Strategy selection based on corpus characteristics + query analysis
 - LLM-as-Judge reranking for relevance scoring
 
+**Evaluation & Quality Assurance**
+- Two-stage reranking: CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
+- NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification
+- Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
+- RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
+- Golden dataset: 20 validated examples with graded relevance (0-3 scale)
+- Context sufficiency: Pre-generation completeness validation
+- Answer quality: Semantic similarity, factual accuracy, completeness scoring
+
 **Intelligent Adaptation**
 - Document profiling: analyzes technical density, type, domain
 - Query analysis: classifies intent, complexity, technical content
@@ -71,13 +80,29 @@ cp .env.example .env                 # Create environment file (add your OPENAI_
 
 ### Testing
 ```bash
-uv run python tests/integration/test_pdf_pipeline.py       # Test complete PDF pipeline with Attention paper
-uv run python tests/integration/test_document_profiling.py # Test document profiling system
-uv run python tests/integration/test_adaptive_retrieval.py # Test metadata-driven adaptive retrieval
-uv run python main.py                                       # Run main RAG demo
+# Core pipeline tests (fast, ~1-2 min)
+uv run python tests/integration/test_pdf_pipeline.py       # Complete PDF pipeline with Attention paper
+uv run python tests/integration/test_document_profiling.py # Document profiling system
+uv run python tests/integration/test_adaptive_retrieval.py # Metadata-driven adaptive retrieval
+
+# Evaluation smoke tests (fast, ~30s each)
+uv run python tests/integration/test_cross_encoder.py      # CrossEncoder reranking
+uv run python tests/integration/test_groundedness.py       # Groundedness detection
+uv run python tests/integration/test_ragas_simple.py       # RAGAS metrics
+
+# Specialized tests (~2-3 min each)
+uv run python tests/integration/test_nli_hallucination_detector.py  # NLI-based hallucination detection
+uv run python tests/integration/test_context_sufficiency.py         # Context completeness validation
+
+# Comprehensive evaluation (slow, 10-15 min each)
+uv run python tests/integration/test_golden_dataset_evaluation.py   # Golden dataset (20 examples)
+uv run python tests/integration/test_ragas_evaluation.py            # RAGAS comprehensive suite
+
+# Run main demo
+uv run python main.py
 ```
 
-See `tests/CLAUDE.md` for comprehensive testing guide with all 6 integration tests.
+See `tests/CLAUDE.md` for comprehensive testing guide with all 10 integration tests.
 
 ### Development
 ```bash
@@ -109,6 +134,18 @@ uv run python -c "from src.retrieval.strategy_selection import StrategySelector;
 # Profile a document
 uv run python -c "from src.preprocessing.document_profiler import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
 ```
+
+### Test File Organization
+
+**Permanent tests:** `tests/integration/test_<name>.py`
+- Multiple test cases, meant to run repeatedly
+- Examples: test_nli_hallucination_detector.py, test_ragas_evaluation.py, test_context_sufficiency.py
+
+**Temporary debugging:** Root directory with `debug_*.py` prefix (delete after use)
+- One-off exploration, no formal assertions
+- Example: debug_nli.py (deleted after understanding model output)
+
+**Rule:** Permanent → tests/integration/, Temporary → root with debug_ prefix
 
 ## Quick Reference by Task
 

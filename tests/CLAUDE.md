@@ -37,6 +37,7 @@ set PYTHONPATH=. && uv run python tests/integration/test_<name>.py
 | Before deployment/releases | test_golden_dataset_evaluation.py | 10-15min | Comprehensive metrics, regression detection, baseline validation |
 | Quick smoke test (reranking) | test_cross_encoder.py | 5-10s | CrossEncoder reranking verification |
 | Quick smoke test (groundedness) | test_groundedness.py | 10-15s | Hallucination detection verification |
+| After NLI detector changes | test_nli_hallucination_detector.py | 20-30s | NLI-based hallucination detection validation |
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
 | Context completeness checks | test_context_sufficiency.py | 2-3min | Context sufficiency validation |
@@ -286,7 +287,65 @@ PYTHONPATH=. uv run python tests/integration/test_groundedness.py
 
 ---
 
-### 7. test_ragas_evaluation.py - RAGAS Evaluation Suite
+### 7. test_nli_hallucination_detector.py - NLI-Based Hallucination Detection
+
+**Purpose:** Validates NLI-based hallucination detector with research-backed implementation
+
+**What it tests:**
+- NLIHallucinationDetector initialization and claim decomposition
+- Research-backed label mapping (entailment > 0.7 → SUPPORTED, neutral → UNSUPPORTED)
+- Zero-shot NLI baseline behavior and strictness
+- Hallucination detection across multiple scenarios:
+  - Semantically similar but not lexically identical claims
+  - Factually incorrect claims (wrong facts)
+  - Completely hallucinated content (off-topic)
+- Detailed NLI scores and label verification
+
+**When to run:**
+- After changes to NLI hallucination detector
+- To verify research-backed label mapping works correctly
+- After NLI model updates
+- Validating baseline performance expectations (0.65-0.70 F1)
+
+**Command:**
+```bash
+PYTHONPATH=. uv run python tests/integration/test_nli_hallucination_detector.py
+```
+
+**Test cases:**
+1. **Test 1:** Semantically similar claims (zero-shot NLI strict behavior)
+   - Context: "BERT uses 12 transformer layers..."
+   - Answer: "BERT has 12 layers and uses transformers"
+   - Expected: UNSUPPORTED (neutral label, not entailment)
+2. **Test 2:** Factually incorrect claim (hallucination)
+   - Wrong publication year (2020 instead of 2018)
+   - Expected: UNSUPPORTED (contradiction or neutral)
+3. **Test 3:** Completely hallucinated content (off-topic)
+   - Context about BERT, answer about GPT-3
+   - Expected: All claims UNSUPPORTED
+4. **Test 4:** Detailed NLI scores showing label mapping
+   - Displays entailment, neutral, contradiction scores
+   - Verifies research-backed threshold and mapping
+
+**Expected output:**
+- All 4 tests complete successfully
+- Groundedness scores match expected baseline behavior
+- Label mapping verified: neutral → UNSUPPORTED, entailment > 0.7 → SUPPORTED
+- Key takeaways displayed (baseline F1: 0.65-0.70, production: 0.79-0.83)
+
+**Runtime:** ~20-30 seconds
+
+**Dependencies:**
+- NLIHallucinationDetector (src/validation/)
+- sentence-transformers library
+- cross-encoder/nli-deberta-v3-base model
+- OpenAI API key for claim decomposition
+
+**Note:** This test validates the research-backed zero-shot NLI baseline. Production systems (0.83 F1) require fine-tuning on RAGTruth dataset.
+
+---
+
+### 8. test_ragas_evaluation.py - RAGAS Evaluation Suite
 
 **Purpose:** Comprehensive RAGAS metrics evaluation and comparison with custom metrics
 
@@ -359,7 +418,7 @@ PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation impo
 
 ---
 
-### 8. test_ragas_simple.py - RAGAS Quick Smoke Test
+### 9. test_ragas_simple.py - RAGAS Quick Smoke Test
 
 **Purpose:** Quick verification that RAGAS evaluation executes correctly
 
@@ -398,7 +457,7 @@ PYTHONPATH=. uv run python tests/integration/test_ragas_simple.py
 
 ---
 
-### 9. test_context_sufficiency.py - Context Sufficiency Enhancement
+### 10. test_context_sufficiency.py - Context Sufficiency Enhancement
 
 **Purpose:** Validates context completeness checks before answer generation
 
@@ -472,7 +531,7 @@ for test in tests/integration/test_*.py; do
 done
 ```
 
-**Note:** The RAGAS comprehensive test (test_ragas_evaluation.py) runs 4 tests by default (excludes full dataset). Total runtime for all 8 integration tests: ~30-40 minutes.
+**Note:** The RAGAS comprehensive test (test_ragas_evaluation.py) runs 4 tests by default (excludes full dataset). Total runtime for all 10 integration tests: ~30-40 minutes.
 
 ### Run Recommended Test Suite (Fast)
 
@@ -726,6 +785,9 @@ PYTHONPATH=. uv run python tests/integration/test_golden_dataset_evaluation.py
 # Quick smoke tests
 PYTHONPATH=. uv run python tests/integration/test_cross_encoder.py
 PYTHONPATH=. uv run python tests/integration/test_groundedness.py
+
+# NLI hallucination detection test
+PYTHONPATH=. uv run python tests/integration/test_nli_hallucination_detector.py          # NLI-based hallucination validation (~30s)
 
 # RAGAS evaluation tests
 PYTHONPATH=. uv run python tests/integration/test_ragas_simple.py                    # Quick RAGAS smoke test (~20s)
