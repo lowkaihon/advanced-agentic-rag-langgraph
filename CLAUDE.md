@@ -3,7 +3,7 @@
 A portfolio project showcasing advanced RAG and LangGraph capabilities through an intelligent, adaptive retrieval pipeline. The system analyzes both corpus characteristics (document types, technical density, content patterns) and query context (intent, conversational history, complexity) to dynamically select optimal retrieval strategies. Built-in quality gates, self-correction loops, and automatic strategy switching ensure retrieved documents meet relevance thresholds. While demonstrated using research papers, the architecture generalizes to diverse document types and use cases, making it a foundation for production-grade RAG systems.
 
 **Framework Status**: LangChain 1.0 & LangGraph 1.0 (production-ready, stability commitment)
-**Requirements**: Python 3.10+
+**Requirements**: Python 3.11+
 **Migration Guide**: https://docs.langchain.com/oss/python/migrate/langchain-v1
 
 ## Key Design Patterns
@@ -16,7 +16,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Adaptive thresholds based on retrieval performance
 
 **LangGraph Workflow Pattern**
-- 8 nodes with conditional edges (not linear pipeline)
+- 9 nodes with conditional edges (not linear pipeline)
 - Metadata analysis node examines retrieved documents for strategy alignment
 - State accumulation using TypedDict with `Annotated[list, operator.add]`
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
@@ -81,28 +81,21 @@ cp .env.example .env                 # Create environment file (add your OPENAI_
 ### Testing
 ```bash
 # Core pipeline tests (fast, ~1-2 min)
-uv run python tests/integration/test_pdf_pipeline.py       # Complete PDF pipeline with Attention paper
-uv run python tests/integration/test_document_profiling.py # Document profiling system
-uv run python tests/integration/test_adaptive_retrieval.py # Metadata-driven adaptive retrieval
+uv run python tests/integration/test_pdf_pipeline.py       # Complete PDF pipeline
+uv run python tests/integration/test_adaptive_retrieval.py # Metadata-driven retrieval
 
-# Evaluation smoke tests (fast, ~30s each)
+# Evaluation tests (30s - 3 min each)
 uv run python tests/integration/test_cross_encoder.py      # CrossEncoder reranking
-uv run python tests/integration/test_groundedness.py       # Groundedness detection
-uv run python tests/integration/test_ragas_simple.py       # RAGAS metrics
+uv run python tests/integration/test_nli_hallucination_detector.py  # NLI hallucination detection
 
-# Specialized tests (~2-3 min each)
-uv run python tests/integration/test_nli_hallucination_detector.py  # NLI-based hallucination detection
-uv run python tests/integration/test_context_sufficiency.py         # Context completeness validation
-
-# Comprehensive evaluation (slow, 10-15 min each)
+# Comprehensive evaluation (slow, 10-15 min)
 uv run python tests/integration/test_golden_dataset_evaluation.py   # Golden dataset (20 examples)
-uv run python tests/integration/test_ragas_evaluation.py            # RAGAS comprehensive suite
 
 # Run main demo
 uv run python main.py
 ```
 
-See `tests/CLAUDE.md` for comprehensive testing guide with all 10 integration tests.
+See `tests/CLAUDE.md` for all 10 integration tests with detailed documentation.
 
 ### Development
 ```bash
@@ -119,20 +112,9 @@ uv sync                              # Sync after updating pyproject.toml
 
 ### Common Tasks
 ```bash
-# Load all PDFs from docs/ folder (default)
-uv run python -c "from src.core import setup_retriever; setup_retriever()"
-
-# Load specific PDF
-uv run python -c "from src.core import setup_retriever; setup_retriever(pdfs='Attention Is All You Need.pdf')"
-
-# Load multiple specific PDFs
-uv run python -c "from src.core import setup_retriever; setup_retriever(pdfs=['Attention Is All You Need.pdf', 'BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf'])"
-
-# Test strategy selection with explanation
-uv run python -c "from src.retrieval.strategy_selection import StrategySelector; s=StrategySelector(); print(s.explain_decision('What is attention?'))"
-
-# Profile a document
-uv run python -c "from src.preprocessing.document_profiler import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('Machine learning is AI subset'))"
+# Load PDFs for retrieval
+uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retriever; setup_retriever()"  # All PDFs
+uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retriever; setup_retriever(pdfs='filename.pdf')"  # Specific PDF
 ```
 
 ### Test File Organization

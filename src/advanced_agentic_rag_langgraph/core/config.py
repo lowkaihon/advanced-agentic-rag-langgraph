@@ -1,9 +1,9 @@
 import os
 from typing import Dict, List
 from dotenv import load_dotenv
-from src.retrieval import HybridRetriever
-from src.preprocessing.pdf_loader import PDFDocumentLoader
-from src.preprocessing.profiling_pipeline import DocumentLoader
+from advanced_agentic_rag_langgraph.retrieval import HybridRetriever
+from advanced_agentic_rag_langgraph.preprocessing.pdf_loader import PDFDocumentLoader
+from advanced_agentic_rag_langgraph.preprocessing.profiling_pipeline import DocumentLoader
 from langchain_core.documents import Document
 
 load_dotenv()

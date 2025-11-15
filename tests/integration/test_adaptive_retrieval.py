@@ -8,17 +8,13 @@ This demonstrates:
 4. Self-correcting retrieval loops
 """
 
-import sys
 import os
 
 # Disable LangSmith tracing to avoid 403 warnings in tests
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-# Add src to path
-sys.path.insert(0, os.path.dirname(__file__))
-
-from src.core import setup_retriever, get_corpus_stats, reset_retriever
-from src.orchestration import advanced_rag_graph
+from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats, reset_retriever
+from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
 
 
 def test_adaptive_retrieval_workflow():

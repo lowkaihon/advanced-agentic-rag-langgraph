@@ -1,6 +1,6 @@
-from src.orchestration import advanced_rag_graph
-from src.core import setup_retriever
-import src.orchestration.nodes as nodes
+from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
+from advanced_agentic_rag_langgraph.core import setup_retriever
+import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
 import uuid
 
 def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True):

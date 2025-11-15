@@ -124,7 +124,7 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
   - 3-5x faster, 5-10x cheaper than pure LLM reranking
 
 **5. LangGraph Orchestration** (`src/orchestration/graph.py`, `src/orchestration/nodes.py`)
-- 8 nodes with conditional routing based on quality scores
+- 9 nodes with conditional routing based on quality scores
 - Metadata analysis node examines retrieved documents for strategy alignment
 - Quality gates at retrieval and answer generation stages
 - Self-correction loops for query rewriting and metadata-driven strategy switching
@@ -145,14 +145,14 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 ### Quick Start
 
 ```bash
-# 1. Install dependencies (uses uv, not pip)
-uv sync
+# 1. Install package + dependencies (uses uv, not pip)
+uv sync  # Installs project in editable mode + all dependencies
 
 # 2. Configure environment
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
-# 3. Run tests (10 integration tests available)
+# 3. Run tests (10 integration tests available - no PYTHONPATH needed)
 # Quick smoke tests (~30s each)
 uv run python tests/integration/test_cross_encoder.py      # Reranking validation
 uv run python tests/integration/test_groundedness.py       # Groundedness validation
@@ -384,7 +384,7 @@ compression_retriever = ContextualCompressionRetriever(
 - **Reranking**: sentence-transformers (CrossEncoder models)
 - **Evaluation**: RAGAS (industry-standard RAG metrics), datasets (RAGAS dependency)
 - **Hallucination Detection**: cross-encoder/nli-deberta-v3-base (NLI model)
-- **Python**: 3.10+
+- **Python**: 3.11+
 
 ## Complete Flow
 

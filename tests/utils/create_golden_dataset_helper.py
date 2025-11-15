@@ -8,7 +8,7 @@ This script helps create the golden dataset by:
 4. Building the golden dataset JSON
 """
 
-from src.preprocessing.pdf_loader import PDFDocumentLoader
+from advanced_agentic_rag_langgraph.preprocessing.pdf_loader import PDFDocumentLoader
 from typing import List, Dict
 import json
 import os

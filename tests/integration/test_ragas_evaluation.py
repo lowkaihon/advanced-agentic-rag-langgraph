@@ -17,22 +17,18 @@ Comparison Analysis:
 
 import json
 import os
-import sys
 
 # Disable LangSmith tracing to avoid 403 warnings in tests
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-from src.evaluation import (
+from advanced_agentic_rag_langgraph.evaluation import (
     GoldenDatasetManager,
     evaluate_on_golden_dataset,
     RAGASEvaluator,
     run_ragas_evaluation_on_golden,
     compare_ragas_with_custom_metrics
 )
-from src.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
 
 
 def test_ragas_evaluator_initialization():

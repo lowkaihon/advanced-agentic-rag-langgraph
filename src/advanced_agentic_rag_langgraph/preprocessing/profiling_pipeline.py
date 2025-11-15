@@ -6,7 +6,7 @@ This module handles document loading, profiling, and preparation for retrieval.
 
 from typing import List, Dict, Tuple
 from langchain_core.documents import Document
-from src.preprocessing.document_profiler import DocumentProfiler
+from advanced_agentic_rag_langgraph.preprocessing.document_profiler import DocumentProfiler
 
 
 class DocumentLoader:

@@ -6,15 +6,11 @@ enabling early detection of incomplete retrieval and smarter strategy switching.
 """
 
 import os
-import sys
 
 # Disable LangSmith tracing to avoid 403 warnings in tests
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-from src.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
 
 
 def test_context_sufficiency_detection():

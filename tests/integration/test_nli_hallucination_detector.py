@@ -11,7 +11,7 @@ are marked UNSUPPORTED. This is correct baseline behavior.
 Production systems (0.83 F1) require fine-tuning on RAGTruth dataset.
 """
 
-from src.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
 
 def test_nli_detector():
     """Test NLI detector with sample examples"""

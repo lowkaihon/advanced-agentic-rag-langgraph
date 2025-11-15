@@ -1,7 +1,7 @@
 import os
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-from src.retrieval.cross_encoder_reranker import CrossEncoderReRanker
+from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import CrossEncoderReRanker
 from langchain_core.documents import Document
 
 # Create test documents

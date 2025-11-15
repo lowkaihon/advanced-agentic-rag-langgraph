@@ -10,8 +10,8 @@ import json
 import os
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-from src.evaluation.golden_dataset import GoldenDatasetManager, evaluate_on_golden_dataset
-from src.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, evaluate_on_golden_dataset
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
 
 
 def test_dataset_loading():

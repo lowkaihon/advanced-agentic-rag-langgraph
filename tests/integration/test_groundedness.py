@@ -2,7 +2,7 @@
 import os
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-from src.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
 
 # Simple query
 result = advanced_rag_graph.invoke({

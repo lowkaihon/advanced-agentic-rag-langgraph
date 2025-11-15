@@ -8,18 +8,14 @@ This script demonstrates:
 4. Complete end-to-end RAG pipeline
 """
 
-import sys
 import os
 
 # Disable LangSmith tracing to avoid 403 warnings in tests
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-# Add src to path
-sys.path.insert(0, os.path.dirname(__file__))
-
-from src.core import setup_retriever, get_corpus_stats, reset_retriever, DOCS_DIR
-from src.orchestration import advanced_rag_graph
-from src.retrieval.strategy_selection import StrategySelector
+from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats, reset_retriever, DOCS_DIR
+from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
+from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
 
 
 def test_pdf_loading():
@@ -93,7 +89,7 @@ def test_conversational_rewriting():
     print("TEST 3: CONVERSATIONAL QUERY REWRITING")
     print("="*80)
 
-    from src.preprocessing.query_processing import ConversationalRewriter
+    from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 
     rewriter = ConversationalRewriter()
 

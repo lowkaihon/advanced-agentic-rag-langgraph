@@ -1,17 +1,17 @@
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
-from src.retrieval import (
+from advanced_agentic_rag_langgraph.retrieval import (
     expand_query,
     rewrite_query,
     HybridRetriever,
     LLMMetadataReRanker,
     SemanticRetriever,
 )
-from src.retrieval.strategy_selection import StrategySelector
-from src.core import setup_retriever, get_corpus_stats
-from src.preprocessing.query_processing import ConversationalRewriter
-from src.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
-from src.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
+from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats
+from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
+from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
+from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
 import re
 import json
 

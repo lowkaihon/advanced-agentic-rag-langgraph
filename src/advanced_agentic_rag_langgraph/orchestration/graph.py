@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
-from src.core import AdvancedRAGState
-from src.orchestration.nodes import (
+from advanced_agentic_rag_langgraph.core import AdvancedRAGState
+from advanced_agentic_rag_langgraph.orchestration.nodes import (
     conversational_rewrite_node,
     query_expansion_node,
     decide_retrieval_strategy_node,

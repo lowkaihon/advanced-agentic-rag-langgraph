@@ -11,7 +11,7 @@ resolution-markers = [
 [[package]]
 name = "advanced-agentic-rag-langgraph"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "datasets" },
     { name = "faiss-cpu" },

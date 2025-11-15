@@ -3,15 +3,11 @@ Simple RAGAS evaluation test to verify basic functionality.
 """
 
 import os
-import sys
 
 # Disable LangSmith tracing
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
-# Add project root to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-
-from src.evaluation import RAGASEvaluator
+from advanced_agentic_rag_langgraph.evaluation import RAGASEvaluator
 
 
 def test_ragas_simple():

@@ -101,7 +101,7 @@ This runs the full evaluation suite including:
 
 **Test dataset loading:**
 ```python
-from src.evaluation import GoldenDatasetManager
+from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager
 
 manager = GoldenDatasetManager("test_datasets/golden_set.json")
 manager.print_statistics()
@@ -109,8 +109,8 @@ manager.print_statistics()
 
 **Run evaluation programmatically:**
 ```python
-from src.evaluation import GoldenDatasetManager, evaluate_on_golden_dataset
-from src.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager, evaluate_on_golden_dataset
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
 
 manager = GoldenDatasetManager("test_datasets/golden_set.json")
 results = evaluate_on_golden_dataset(
@@ -252,7 +252,7 @@ Avoid:
 After adding examples, validate with:
 
 ```python
-from src.evaluation import GoldenDatasetManager
+from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager
 
 manager = GoldenDatasetManager("test_datasets/golden_set.json")
 
@@ -263,7 +263,7 @@ for example in manager.dataset:
         print(f"Example {example['id']}: {errors}")
 
 # Verify chunk IDs exist in corpus
-from src.core.config import setup_retriever
+from advanced_agentic_rag_langgraph.core.config import setup_retriever
 retriever = setup_retriever()
 validation_results = manager.validate_against_corpus(retriever)
 print(validation_results)
