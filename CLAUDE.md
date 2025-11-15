@@ -50,12 +50,15 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 ## Development Commands
 
+### Important: No Emojis or Unicode Characters
+Never use emojis or Unicode special characters (like ✓, ✅, ✗, ❌, →, etc.) in code, print statements, or comments. Windows console doesn't support these characters and will cause Unicode encoding errors. Use ASCII-only characters.
+
 ### Important: Bash Command Syntax
 This project runs in a Unix bash environment (even on Windows). **Always use Unix commands:**
-- ✅ Use: `mv` (NOT `move`)
-- ✅ Use: `rm -rf` (NOT `del`)
-- ✅ Use: `cp` (NOT `copy`)
-- ✅ Use: `ls` (NOT `dir`)
+- Use: `mv` (NOT `move`)
+- Use: `rm -rf` (NOT `del`)
+- Use: `cp` (NOT `copy`)
+- Use: `ls` (NOT `dir`)
 
 ### Package Manager
 This project uses **uv** for dependency management. Do not use pip or conda.
@@ -68,11 +71,13 @@ cp .env.example .env                 # Create environment file (add your OPENAI_
 
 ### Testing
 ```bash
-uv run python test_pdf_pipeline.py       # Test complete PDF pipeline with Attention paper
-uv run python test_document_profiling.py # Test document profiling system
-uv run python test_adaptive_retrieval.py # Test metadata-driven adaptive retrieval
-uv run python main.py                     # Run main RAG demo
+uv run python tests/integration/test_pdf_pipeline.py       # Test complete PDF pipeline with Attention paper
+uv run python tests/integration/test_document_profiling.py # Test document profiling system
+uv run python tests/integration/test_adaptive_retrieval.py # Test metadata-driven adaptive retrieval
+uv run python main.py                                       # Run main RAG demo
 ```
+
+See `tests/CLAUDE.md` for comprehensive testing guide with all 6 integration tests.
 
 ### Development
 ```bash

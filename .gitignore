@@ -137,8 +137,5 @@ Desktop.ini
 .claude/settings.local.json
 notes.ipynb
 docs
-Best Practices for Evaluating Retrieved RAG Documents.md
-CrossEncoder Implementation.md
-RAG Golden Dataset Creation for Technical Document.md
-RAG_OCR_Research_papers.md
-RAGAS Integration with LangGraph for python RAG pipeline.md
+references
+HANDOVER.md

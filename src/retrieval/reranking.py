@@ -109,8 +109,8 @@ Rate each document's relevance (0-100) considering:
    - Good for queries: General questions, practical guides, quick lookups
 
 3. **Technical level match**: Does the document's complexity match the query's sophistication?
-   - Simple queries (e.g., "What is X?") → beginner/intermediate docs preferred
-   - Advanced queries (e.g., "Optimize X algorithm") → advanced docs preferred
+   - Simple queries (e.g., "What is X?"): beginner/intermediate docs preferred
+   - Advanced queries (e.g., "Optimize X algorithm"): advanced docs preferred
    - Mismatch penalty: Don't give advanced papers for basic questions, or vice versa
 
 4. **Domain alignment**: Does the document's domain match the query's topic?

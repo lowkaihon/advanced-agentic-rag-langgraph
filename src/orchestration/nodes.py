@@ -10,6 +10,7 @@ from src.retrieval import (
 from src.retrieval.strategy_selection import StrategySelector
 from src.core import setup_retriever, get_corpus_stats
 from src.preprocessing.query_processing import ConversationalRewriter
+from src.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
 import re
 import json
 
@@ -146,11 +147,46 @@ Rate the quality of these results (0-100):
     score_match = re.search(r'\d+', response.content)
     quality_score = float(score_match.group()) / 100 if score_match else 0.5
 
+    # Calculate retrieval metrics if ground truth available (from golden dataset evaluation)
+    retrieval_metrics = {}
+    ground_truth_doc_ids = state.get("ground_truth_doc_ids")
+    relevance_grades = state.get("relevance_grades")
+
+    if ground_truth_doc_ids:
+        # Binary relevance metrics (Recall, Precision, F1, Hit Rate, MRR)
+        retrieval_metrics = calculate_retrieval_metrics(
+            unique_docs,
+            ground_truth_doc_ids,
+            k=5
+        )
+
+        # Graded relevance metric (nDCG) if relevance grades available
+        if relevance_grades:
+            retrieval_metrics["ndcg_at_5"] = calculate_ndcg(
+                unique_docs,
+                relevance_grades,
+                k=5
+            )
+
+        # Log metrics for debugging
+        print(f"\n{'='*60}")
+        print(f"RETRIEVAL METRICS (Golden Dataset Evaluation)")
+        print(f"{'='*60}")
+        print(f"Recall@5:    {retrieval_metrics.get('recall_at_k', 0):.2%}")
+        print(f"Precision@5: {retrieval_metrics.get('precision_at_k', 0):.2%}")
+        print(f"F1@5:        {retrieval_metrics.get('f1_at_k', 0):.2%}")
+        print(f"Hit Rate:    {retrieval_metrics.get('hit_rate', 0):.2%}")
+        print(f"MRR:         {retrieval_metrics.get('mrr', 0):.4f}")
+        if "ndcg_at_5" in retrieval_metrics:
+            print(f"nDCG@5:      {retrieval_metrics['ndcg_at_5']:.4f}")
+        print(f"{'='*60}\n")
+
     return {
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
         "unique_docs_list": unique_docs,  # Store Document objects for metadata analysis
+        "retrieval_metrics": retrieval_metrics,  # Store metrics for golden dataset evaluation
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
     }
 
@@ -306,7 +342,7 @@ def rewrite_and_refine_node(state: dict) -> dict:
     # Only rewrite if quality is poor AND we haven't done it too many times
     if quality < 0.6 and state.get("retrieval_attempts", 0) < 2:
         rewritten = rewrite_query(query, retrieval_context="Insufficient results")
-        print(f"Rewritten: {query} → {rewritten}")
+        print(f"Rewritten: {query} to {rewritten}")
 
         return {
             "current_query": rewritten,
@@ -359,6 +395,100 @@ Answer:"""
         "final_answer": response.content,
         "messages": [response],
     }
+
+def groundedness_check_node(state: dict) -> dict:
+    """
+    Verify that generated answer is factually grounded in retrieved context.
+
+    Implements RAG Triad framework - Groundedness dimension.
+    Detects hallucinations by checking if each claim is supported by context.
+
+    Conditional blocking strategy (best practice):
+    - Score < 0.6: Severe hallucination, flag for retry
+    - Score 0.6-0.8: Moderate hallucination, flag with warning
+    - Score >= 0.8: Good groundedness, proceed normally
+    """
+    answer = state.get("final_answer", "")
+    context = state.get("retrieved_docs", [""])[-1]  # Most recent retrieved context
+
+    groundedness_prompt = f"""Context (Retrieved Documents):
+{context}
+
+Generated Answer:
+{answer}
+
+Task: Verify each claim in the answer is supported by the context.
+
+Steps:
+1. Extract key factual claims from the answer
+2. For each claim, check if it's supported by the context
+3. Calculate groundedness score = (supported claims / total claims)
+4. Identify any unsupported claims
+
+Response as JSON:
+{{
+    "claims": ["claim 1", "claim 2", "claim 3"],
+    "supported": [true, false, true],
+    "unsupported_claims": ["unsupported claim text"],
+    "groundedness_score": 0.0-1.0,
+    "reasoning": "brief explanation of your assessment"
+}}"""
+
+    response = llm.invoke(groundedness_prompt)
+
+    try:
+        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
+        evaluation = json.loads(json_match.group()) if json_match else {}
+    except:
+        evaluation = {"groundedness_score": 1.0}  # Assume grounded if parsing fails
+
+    groundedness_score = evaluation.get("groundedness_score", 1.0)
+    unsupported_claims = evaluation.get("unsupported_claims", [])
+    claims = evaluation.get("claims", [])
+
+    # Conditional hallucination detection
+    if groundedness_score < 0.6:
+        # SEVERE: High hallucination risk
+        has_hallucination = True
+        retry_needed = True
+        severity = "SEVERE"
+    elif groundedness_score < 0.8:
+        # MODERATE: Some unsupported claims
+        has_hallucination = True
+        retry_needed = False
+        severity = "MODERATE"
+    else:
+        # GOOD: Most claims supported
+        has_hallucination = False
+        retry_needed = False
+        severity = "NONE"
+
+    # Log hallucination detection
+    if has_hallucination:
+        print(f"\n{'='*60}")
+        print(f"HALLUCINATION DETECTED - Severity: {severity}")
+        print(f"Groundedness Score: {groundedness_score:.0%}")
+        print(f"Total Claims: {len(claims)}")
+        print(f"Unsupported Claims ({len(unsupported_claims)}):")
+        for claim in unsupported_claims:
+            print(f"  - {claim}")
+        print(f"Action: {'RETRY GENERATION' if retry_needed else 'FLAG WARNING'}")
+        print(f"{'='*60}\n")
+
+    # Increment retry counter if we're retrying
+    current_retry_count = state.get("groundedness_retry_count", 0)
+    new_retry_count = current_retry_count + 1 if retry_needed else current_retry_count
+
+    return {
+        "groundedness_score": groundedness_score,
+        "has_hallucination": has_hallucination,
+        "unsupported_claims": unsupported_claims,
+        "retry_needed": retry_needed,
+        "groundedness_severity": severity,
+        "groundedness_retry_count": new_retry_count,
+        "messages": [AIMessage(content=f"Groundedness: {groundedness_score:.0%} ({severity})")],
+    }
+
 
 def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     """Evaluate answer, considering retrieval quality"""

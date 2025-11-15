@@ -46,37 +46,37 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
         for node_name, node_state in step.items():
             if node_name != "__root__":
                 step_count += 1
-                print(f"\n[Step {step_count}] → {node_name.upper()}")
+                print(f"\n[Step {step_count}] {node_name.upper()}")
                 print("-" * 50)
                 
                 # Print node-specific info
                 if "query_expansions" in node_state and node_state["query_expansions"]:
-                    print(f"✓ Query variations: {len(node_state['query_expansions'])}")
+                    print(f"Query variations: {len(node_state['query_expansions'])}")
                     for i, q in enumerate(node_state["query_expansions"][1:], 1):
                         print(f"  {i}. {q[:60]}...")
                 
                 if "retrieval_strategy" in node_state:
-                    print(f"✓ Strategy: {node_state['retrieval_strategy'].upper()}")
+                    print(f"Strategy: {node_state['retrieval_strategy'].upper()}")
                 
                 if "retrieval_quality_score" in node_state and node_state["retrieval_quality_score"] > 0:
                     quality = node_state["retrieval_quality_score"]
-                    bar = "█" * int(quality * 10) + "░" * (10 - int(quality * 10))
-                    print(f"✓ Retrieval Quality: [{bar}] {quality:.0%}")
+                    bar = "#" * int(quality * 10) + "-" * (10 - int(quality * 10))
+                    print(f"Retrieval Quality: [{bar}] {quality:.0%}")
                 
                 if "rewritten_query" in node_state and node_state["rewritten_query"]:
-                    print(f"✓ Rewritten Query: {node_state['rewritten_query']}")
+                    print(f"Rewritten Query: {node_state['rewritten_query']}")
                 
                 if "final_answer" in node_state and node_state["final_answer"]:
                     answer = node_state["final_answer"]
                     preview = answer[:100] + "..." if len(answer) > 100 else answer
-                    print(f"✓ Answer: {preview}")
+                    print(f"Answer: {preview}")
                 
                 if "confidence_score" in node_state and node_state["confidence_score"] > 0:
                     conf = node_state["confidence_score"]
-                    print(f"✓ Confidence: {conf:.0%}")
+                    print(f"Confidence: {conf:.0%}")
                 
                 if "retrieval_attempts" in node_state:
-                    print(f"✓ Attempts: {node_state['retrieval_attempts']}")
+                    print(f"Attempts: {node_state['retrieval_attempts']}")
     
     # Get final state
     final_state = advanced_rag_graph.get_state(config)

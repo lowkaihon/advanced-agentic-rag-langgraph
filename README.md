@@ -112,9 +112,10 @@ cp .env.example .env
 # Add your OPENAI_API_KEY to .env
 
 # 3. Run comprehensive tests
-uv run python test_pdf_pipeline.py       # Complete pipeline test
-uv run python test_document_profiling.py # Document profiling test
-uv run python test_adaptive_retrieval.py # Metadata-driven adaptive retrieval test
+uv run python tests/integration/test_pdf_pipeline.py       # Complete pipeline test
+uv run python tests/integration/test_document_profiling.py # Document profiling test
+uv run python tests/integration/test_adaptive_retrieval.py # Metadata-driven adaptive retrieval test
+# See tests/CLAUDE.md for complete testing guide (6 integration tests)
 
 # 4. Run interactive demo
 uv run python main.py

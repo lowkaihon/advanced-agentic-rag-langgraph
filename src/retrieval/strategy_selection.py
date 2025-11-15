@@ -365,20 +365,20 @@ This corpus is {corpus_type} focused on {primary_domain} topics."""
 STRATEGY SELECTION GUIDELINES:
 1. **Semantic Search**: Best for understanding concepts, finding similar ideas, conceptual queries
    - Good when: corpus has research papers/conceptual content, query asks "why/how/what is"
-   - Example: "What is attention mechanism?" → semantic (find explanations)
+   - Example: "What is attention mechanism?" uses semantic (find explanations)
 
 2. **Keyword Search**: Best for exact lookups, technical terms, API names, specific citations
    - Good when: corpus has API references/code, query has quoted terms or specific names
-   - Example: "transformer architecture attention function" → keyword (exact terms)
+   - Example: "transformer architecture attention function" uses keyword (exact terms)
 
 3. **Hybrid Search**: Best for mixed content, comparisons, uncertain cases
    - Good when: corpus is diverse, query needs both concepts and exact matches
-   - Example: "How does attention compare to RNN?" → hybrid (concepts + exact names)
+   - Example: "How does attention compare to RNN?" uses hybrid (concepts + exact names)
 
 Consider corpus composition when selecting strategy:
-- High math/research corpus → semantic works well for conceptual queries
-- High code/API corpus → keyword works well for technical lookups
-- Mixed corpus → hybrid provides best coverage
+- High math/research corpus: semantic works well for conceptual queries
+- High code/API corpus: keyword works well for technical lookups
+- Mixed corpus: hybrid provides best coverage
 
 Provide:
 - strategy: Your choice (semantic, keyword, or hybrid)

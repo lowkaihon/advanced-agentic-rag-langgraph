@@ -9,6 +9,7 @@ from src.orchestration.nodes import (
     analyze_retrieved_metadata_node,
     rewrite_and_refine_node,
     answer_generation_with_quality_node,
+    groundedness_check_node,
     evaluate_answer_with_retrieval_node,
 )
 from typing import Literal
@@ -23,6 +24,32 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         return "answer_generation"
     else:
         return "rewrite_and_refine"
+
+def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generation", "evaluate_answer"]:
+    """
+    Route based on groundedness check results.
+
+    Conditional blocking strategy (best practice):
+    - retry_needed (score < 0.6) AND retry_count < 1: Regenerate with stricter prompt
+    - Else: Proceed to evaluation (with warnings if hallucination detected)
+    """
+    retry_needed = state.get("retry_needed", False)
+    retry_count = state.get("groundedness_retry_count", 0)
+
+    if retry_needed and retry_count < 1:
+        # Severe hallucination: retry generation once
+        print(f"\n{'='*60}")
+        print(f"GROUNDEDNESS RETRY")
+        print(f"Retry count: {retry_count}/1")
+        print(f"Action: Regenerating answer with stricter grounding instructions")
+        print(f"{'='*60}\n")
+        return "answer_generation"
+    else:
+        # Proceed to evaluation
+        # If hallucination was detected but not severe enough to retry,
+        # or if we already retried once, continue with warning
+        return "evaluate_answer"
+
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "END"]:
     """
@@ -50,13 +77,13 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             next_strategy = suggested_strategy
             reasoning = f"Metadata-driven: switching to {suggested_strategy} (current: {current})"
         else:
-            # Fallback to traditional order: hybrid → semantic → keyword
+            # Fallback to traditional order: hybrid to semantic to keyword
             if current == "hybrid":
                 next_strategy = "semantic"
-                reasoning = "Fallback: hybrid → semantic"
+                reasoning = "Fallback: hybrid to semantic"
             elif current == "semantic":
                 next_strategy = "keyword"
-                reasoning = "Fallback: semantic → keyword"
+                reasoning = "Fallback: semantic to keyword"
             else:
                 return END  # Give up
 
@@ -72,7 +99,7 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"\n{'='*60}")
         print(f"STRATEGY REFINEMENT")
         print(f"Iteration: {refinement['iteration']}")
-        print(f"Switch: {current} → {next_strategy}")
+        print(f"Switch: {current} to {next_strategy}")
         print(f"Reasoning: {reasoning}")
         print(f"Metadata issues: {refinement['metadata_issues']}")
         print(f"{'='*60}\n")
@@ -103,6 +130,7 @@ def build_advanced_rag_graph():
 
     # ========== ANSWER STAGE ==========
     builder.add_node("answer_generation", answer_generation_with_quality_node)
+    builder.add_node("groundedness_check", groundedness_check_node)
     builder.add_node("evaluate_answer", evaluate_answer_with_retrieval_node)
 
     # ========== EDGES ==========
@@ -128,8 +156,18 @@ def build_advanced_rag_graph():
     # Rewrite loops back to retrieval with new query
     builder.add_edge("rewrite_and_refine", "retrieve_with_expansion")
 
-    # Answer generation leads to evaluation
-    builder.add_edge("answer_generation", "evaluate_answer")
+    # Answer generation leads to groundedness check
+    builder.add_edge("answer_generation", "groundedness_check")
+
+    # Route after groundedness check
+    builder.add_conditional_edges(
+        "groundedness_check",
+        route_after_groundedness,
+        {
+            "answer_generation": "answer_generation",  # Retry if severe hallucination
+            "evaluate_answer": "evaluate_answer",      # Proceed to evaluation
+        }
+    )
 
     # Self-correction: try different strategy if answer insufficient
     builder.add_conditional_edges(

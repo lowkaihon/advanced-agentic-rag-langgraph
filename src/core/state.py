@@ -26,10 +26,23 @@ class AdvancedRAGState(TypedDict):
     unique_docs_list: list  # Document objects for metadata analysis
     retrieval_quality_score: float  # How good are the retrieved docs?
 
+    # Retrieval Evaluation (Golden Dataset Support)
+    ground_truth_doc_ids: set  # Relevant document IDs from golden dataset
+    relevance_grades: Dict  # Optional graded relevance (doc_id -> 0-3 scale)
+    retrieval_metrics: Dict  # Recall@K, Precision@K, F1@K, nDCG@K
+
     # Decision making
     needs_retrieval: bool
     is_answer_sufficient: bool
     retrieval_attempts: int
+
+    # Groundedness & Hallucination Detection (RAG Triad framework)
+    groundedness_score: float  # Percentage of claims supported by context (0.0-1.0)
+    has_hallucination: bool  # Whether unsupported claims detected
+    unsupported_claims: list[str]  # List of claims not supported by context
+    retry_needed: bool  # Whether severe hallucination requires regeneration
+    groundedness_severity: str  # "NONE", "MODERATE", "SEVERE"
+    groundedness_retry_count: int  # Number of regeneration attempts due to hallucination
 
     # Metadata-driven adaptive retrieval
     doc_metadata_analysis: Dict  # Analysis of retrieved document characteristics

@@ -98,7 +98,7 @@ def test_adaptive_retrieval_workflow():
             if refinement_history:
                 print(f"\nRefinement History ({len(refinement_history)} refinements):")
                 for j, refinement in enumerate(refinement_history, 1):
-                    print(f"  {j}. Iteration {refinement.get('iteration')}: {refinement.get('from_strategy')} → {refinement.get('to_strategy')}")
+                    print(f"  {j}. Iteration {refinement.get('iteration')}: {refinement.get('from_strategy')} to {refinement.get('to_strategy')}")
                     print(f"     Reasoning: {refinement.get('reasoning')}")
                     print(f"     Issues: {', '.join(refinement.get('metadata_issues', []))}")
             else:
