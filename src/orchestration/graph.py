@@ -55,11 +55,16 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
     """
     Route based on answer evaluation with metadata-driven strategy switching.
 
+    Phase 6 Enhancement: Consider context sufficiency when deciding retry strategy.
     Uses document metadata analysis to intelligently select next strategy.
     """
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
+        # Phase 6: Check context sufficiency to inform routing
+        context_is_sufficient = state.get("context_is_sufficient", True)
+        sufficiency_score = state.get("context_sufficiency_score", 0.7)
+
         # Metadata-driven strategy switching
         current = state.get("retrieval_strategy", "hybrid")
         metadata_analysis = state.get("doc_metadata_analysis", {})
@@ -72,8 +77,18 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
                 suggested_strategy = issue["suggested_strategy"]
                 break
 
-        # Use metadata suggestion if available, otherwise use fallback order
-        if suggested_strategy and suggested_strategy != current:
+        # Phase 6: If context is insufficient, prioritize semantic search
+        # (semantic may capture conceptual completeness better than keyword)
+        if not context_is_sufficient and sufficiency_score < 0.6:
+            if current != "semantic":
+                next_strategy = "semantic"
+                reasoning = f"Context-driven: Insufficient context ({sufficiency_score:.0%}), switching to semantic search for better conceptual coverage"
+            else:
+                # Already semantic, try hybrid as fallback
+                next_strategy = "hybrid"
+                reasoning = f"Context-driven: Semantic failed to provide complete context, trying hybrid"
+        # Use metadata suggestion if available and no context issues
+        elif suggested_strategy and suggested_strategy != current:
             next_strategy = suggested_strategy
             reasoning = f"Metadata-driven: switching to {suggested_strategy} (current: {current})"
         else:
@@ -93,7 +108,8 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             "from_strategy": current,
             "to_strategy": next_strategy,
             "reasoning": reasoning,
-            "metadata_issues": [issue.get("issue") for issue in quality_issues]
+            "metadata_issues": [issue.get("issue") for issue in quality_issues],
+            "context_sufficiency": sufficiency_score,  # Phase 6: Track context sufficiency
         }
 
         print(f"\n{'='*60}")
@@ -102,6 +118,7 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"Switch: {current} to {next_strategy}")
         print(f"Reasoning: {reasoning}")
         print(f"Metadata issues: {refinement['metadata_issues']}")
+        print(f"Context sufficiency: {sufficiency_score:.0%}")  # Phase 6: Log context sufficiency
         print(f"{'='*60}\n")
 
         # Update state with new strategy and log refinement

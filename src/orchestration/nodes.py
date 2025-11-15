@@ -491,24 +491,86 @@ Response as JSON:
 
 
 def evaluate_answer_with_retrieval_node(state: dict) -> dict:
-    """Evaluate answer, considering retrieval quality"""
+    """
+    Evaluate answer considering retrieval quality AND context sufficiency.
 
+    Phase 6 Enhancement: Added pre-generation context completeness checks
+    to detect insufficient retrieval early.
+    """
     question = state["original_query"]
     answer = state.get("final_answer", "")
     retrieval_quality = state.get("retrieval_quality_score", 0)
+    context = "\n\n".join(state.get("retrieved_docs", [""]))
 
-    # Lower the sufficiency threshold if retrieval was poor
-    quality_threshold = 0.5 if retrieval_quality < 0.6 else 0.65
+    # ============ PHASE 6: CONTEXT SUFFICIENCY CHECK ============
+    # Check if retrieved context is sufficient BEFORE evaluating answer
+    context_sufficiency_prompt = f"""Retrieved Context:
+{context[:2000]}
+
+Question:
+{question}
+
+Evaluate the completeness of the retrieved context:
+1. Does context contain ALL information needed to answer the question?
+2. Are there missing key details, facts, or aspects?
+3. What is your confidence that the context is complete (0.0-1.0)?
+
+Response as JSON:
+{{
+    "is_sufficient": true/false,
+    "missing_aspects": ["aspect 1", "aspect 2"],
+    "sufficiency_score": 0.0-1.0,
+    "reasoning": "brief explanation of what is present or missing"
+}}"""
+
+    sufficiency_response = llm.invoke(context_sufficiency_prompt)
+
+    # Parse context sufficiency evaluation
+    try:
+        json_match = re.search(r'\{.*\}', sufficiency_response.content, re.DOTALL)
+        sufficiency_eval = json.loads(json_match.group()) if json_match else {}
+    except:
+        # Assume sufficient if parsing fails (fail open)
+        sufficiency_eval = {
+            "is_sufficient": True,
+            "sufficiency_score": 0.7,
+            "missing_aspects": []
+        }
+
+    context_is_sufficient = sufficiency_eval.get("is_sufficient", True)
+    sufficiency_score = sufficiency_eval.get("sufficiency_score", 0.7)
+    missing_aspects = sufficiency_eval.get("missing_aspects", [])
+    sufficiency_reasoning = sufficiency_eval.get("reasoning", "")
+
+    # Log context sufficiency analysis
+    if not context_is_sufficient or sufficiency_score < 0.6:
+        print(f"\n{'='*60}")
+        print(f"CONTEXT INSUFFICIENCY DETECTED")
+        print(f"Sufficiency Score: {sufficiency_score:.0%}")
+        print(f"Is Sufficient: {context_is_sufficient}")
+        print(f"Missing Aspects ({len(missing_aspects)}):")
+        for aspect in missing_aspects:
+            print(f"  - {aspect}")
+        print(f"Reasoning: {sufficiency_reasoning}")
+        print(f"Action: Will inform answer evaluation")
+        print(f"{'='*60}\n")
+
+    # ============ ORIGINAL ANSWER EVALUATION ============
+    # Lower the sufficiency threshold if retrieval OR context was poor
+    quality_threshold = 0.5 if (retrieval_quality < 0.6 or sufficiency_score < 0.6) else 0.65
 
     evaluation_prompt = f"""Question: {question}
 Answer: {answer}
 Retrieval quality: {retrieval_quality:.0%}
+Context sufficiency: {sufficiency_score:.0%}
 
 Evaluate this answer:
 1. Relevant? (yes/no)
 2. Complete? (yes/no)
 3. Accurate? (yes/no)
 4. Confidence (0-100)
+
+Note: Context sufficiency of {sufficiency_score:.0%} should inform your confidence assessment.
 
 Response as JSON:
 {{
@@ -535,7 +597,13 @@ Response as JSON:
     )
 
     return {
+        # Phase 6: Context sufficiency fields
+        "context_sufficiency_score": sufficiency_score,
+        "context_is_sufficient": context_is_sufficient,
+        "missing_context_aspects": missing_aspects,
+
+        # Original answer evaluation fields
         "is_answer_sufficient": is_sufficient,
         "confidence_score": confidence,
-        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}")],
+        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}, Context={sufficiency_score:.0%}")],
     }

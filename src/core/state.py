@@ -51,6 +51,11 @@ class AdvancedRAGState(TypedDict):
     domain_alignment_score: float  # How well docs match query domain
     refinement_history: Annotated[list[Dict], operator.add]  # Log of all refinements
 
+    # Context Sufficiency (Phase 6: Pre-generation validation)
+    context_sufficiency_score: float  # Confidence that context is complete (0.0-1.0)
+    context_is_sufficient: bool  # Whether context contains all needed info
+    missing_context_aspects: list[str]  # List of missing key details
+
     # Output
     final_answer: str
     confidence_score: float

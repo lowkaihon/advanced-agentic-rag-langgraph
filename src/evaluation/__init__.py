@@ -17,6 +17,12 @@ from .golden_dataset import (
     evaluate_on_golden_dataset,
     compare_answers,
 )
+from .ragas_evaluator import (
+    RAGASEvaluator,
+    prepare_ragas_dataset_from_golden,
+    run_ragas_evaluation_on_golden,
+    compare_ragas_with_custom_metrics,
+)
 
 __all__ = [
     "calculate_retrieval_metrics",
@@ -24,4 +30,8 @@ __all__ = [
     "GoldenDatasetManager",
     "evaluate_on_golden_dataset",
     "compare_answers",
+    "RAGASEvaluator",
+    "prepare_ragas_dataset_from_golden",
+    "run_ragas_evaluation_on_golden",
+    "compare_ragas_with_custom_metrics",
 ]

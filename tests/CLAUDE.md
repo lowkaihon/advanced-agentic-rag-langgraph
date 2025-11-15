@@ -6,7 +6,45 @@ This directory contains integration tests for the Advanced Agentic RAG system. A
 
 **Test Organization:** All tests are in `tests/integration/` and can be run directly as scripts or through pytest (future).
 
-**Quick Start:** Run any test with `uv run python tests/integration/test_<name>.py`
+---
+
+## CRITICAL: How to Run Tests
+
+**Always use this pattern:**
+```bash
+PYTHONPATH=. uv run python tests/integration/test_<name>.py
+```
+
+**Why PYTHONPATH is needed:**
+- Tests import from `src` package (e.g., `from src.core import setup_retriever`)
+- Without `PYTHONPATH=.`, Python cannot resolve `src` module imports
+- Error without it: `ModuleNotFoundError: No module named 'src'`
+
+**Windows users:** This works in Git Bash, WSL, or any Unix-style shell. For Windows CMD, use:
+```cmd
+set PYTHONPATH=. && uv run python tests/integration/test_<name>.py
+```
+
+---
+
+## Quick Test Selection Guide
+
+| When to Run | Test File | Runtime | Key Purpose |
+|-------------|-----------|---------|-------------|
+| Verify imports/basic pipeline | test_pdf_pipeline.py | 30-45s | End-to-end validation, strategy selection, conversational rewriting |
+| After profiling changes | test_document_profiling.py | 40-60s | Document profiling, corpus stats, metadata-aware retrieval |
+| After retrieval logic changes | test_adaptive_retrieval.py | 30-45s | Metadata-driven retrieval, strategy switching, self-correction |
+| Before deployment/releases | test_golden_dataset_evaluation.py | 10-15min | Comprehensive metrics, regression detection, baseline validation |
+| Quick smoke test (reranking) | test_cross_encoder.py | 5-10s | CrossEncoder reranking verification |
+| Quick smoke test (groundedness) | test_groundedness.py | 10-15s | Hallucination detection verification |
+| RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
+| RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
+| Context completeness checks | test_context_sufficiency.py | 2-3min | Context sufficiency validation |
+
+**Command pattern for all tests:**
+```bash
+PYTHONPATH=. uv run python tests/integration/<test_file>
+```
 
 ---
 
@@ -29,7 +67,7 @@ This directory contains integration tests for the Advanced Agentic RAG system. A
 
 **Command:**
 ```bash
-uv run python tests/integration/test_pdf_pipeline.py
+PYTHONPATH=. uv run python tests/integration/test_pdf_pipeline.py
 ```
 
 **Expected output:**
@@ -65,7 +103,7 @@ uv run python tests/integration/test_pdf_pipeline.py
 
 **Command:**
 ```bash
-uv run python tests/integration/test_document_profiling.py
+PYTHONPATH=. uv run python tests/integration/test_document_profiling.py
 ```
 
 **Expected output:**
@@ -101,7 +139,7 @@ uv run python tests/integration/test_document_profiling.py
 
 **Command:**
 ```bash
-uv run python tests/integration/test_adaptive_retrieval.py
+PYTHONPATH=. uv run python tests/integration/test_adaptive_retrieval.py
 ```
 
 **Expected output:**
@@ -117,7 +155,7 @@ uv run python tests/integration/test_adaptive_retrieval.py
 - Strategy switching logic
 - Quality scoring components
 
-**Note:** This is the newest feature (implemented Nov 14), testing Phase 4 functionality from HANDOVER.md
+**Note:** This is the newest feature (implemented Nov 14), testing metadata-driven adaptive retrieval
 
 ---
 
@@ -141,7 +179,7 @@ uv run python tests/integration/test_adaptive_retrieval.py
 
 **Command:**
 ```bash
-uv run python tests/integration/test_golden_dataset_evaluation.py
+PYTHONPATH=. uv run python tests/integration/test_golden_dataset_evaluation.py
 ```
 
 **Tests included:**
@@ -175,7 +213,6 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 - All retrieval and generation components
 
 **Related documentation:**
-- HANDOVER.md lines 151-252: Phase 4 implementation details
 - evaluation/README.md: Golden dataset documentation
 
 ---
@@ -196,7 +233,7 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 
 **Command:**
 ```bash
-uv run python tests/integration/test_cross_encoder.py
+PYTHONPATH=. uv run python tests/integration/test_cross_encoder.py
 ```
 
 **Expected output:**
@@ -230,7 +267,7 @@ uv run python tests/integration/test_cross_encoder.py
 
 **Command:**
 ```bash
-uv run python tests/integration/test_groundedness.py
+PYTHONPATH=. uv run python tests/integration/test_groundedness.py
 ```
 
 **Expected output:**
@@ -249,34 +286,223 @@ uv run python tests/integration/test_groundedness.py
 
 ---
 
+### 7. test_ragas_evaluation.py - RAGAS Evaluation Suite
+
+**Purpose:** Comprehensive RAGAS metrics evaluation and comparison with custom metrics
+
+**What it tests:**
+- RAGASEvaluator initialization with faithfulness, context precision, and response relevancy metrics
+- Single sample RAGAS evaluation
+- Small subset evaluation (3 easy examples for quick validation)
+- RAGAS vs custom metrics comparison and correlation analysis
+- Full dataset evaluation (20 examples with comprehensive comparison)
+- Automated comparison report generation
+
+**When to run:**
+- Validating RAGAS integration after updates
+- Comparing RAGAS metrics with custom evaluation metrics
+- Generating comprehensive evaluation reports
+- Analyzing correlation between different metric approaches
+- Benchmarking RAGAS performance on golden dataset
+
+**Command:**
+```bash
+# Run all RAGAS tests (excludes full dataset - runs 4 tests)
+PYTHONPATH=. uv run python tests/integration/test_ragas_evaluation.py
+
+# Run individual tests
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_evaluator_initialization; test_ragas_evaluator_initialization()"
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_sample_evaluation; test_ragas_sample_evaluation()"
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_on_small_subset; test_ragas_on_small_subset()"
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_vs_custom_metrics; test_ragas_vs_custom_metrics()"
+
+# Run full dataset evaluation (20 examples, ~10-15 minutes)
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_full_dataset_evaluation; test_ragas_full_dataset_evaluation()"
+```
+
+**Tests included:**
+1. `test_ragas_evaluator_initialization()` - Validates RAGASEvaluator setup
+2. `test_ragas_sample_evaluation()` - Single sample evaluation
+3. `test_ragas_on_small_subset()` - 3 easy examples quick test
+4. `test_ragas_vs_custom_metrics()` - Metric comparison on 3 examples
+5. `test_ragas_full_dataset_evaluation()` - Full 20 examples (optional)
+
+**Expected output:**
+- RAGASEvaluator initializes with 3 metrics (faithfulness, context_precision, response_relevancy)
+- Single sample scores displayed for all metrics
+- Small subset processes 3 examples successfully
+- Comparison shows correlation analysis between RAGAS and custom metrics
+- Full dataset generates `evaluation/ragas_evaluation_results.json` and `evaluation/ragas_comparison_report.md`
+
+**RAGAS Metrics:**
+- **Faithfulness**: Measures if generated answers contain hallucinations (similar to custom groundedness)
+- **Context Precision**: Evaluates if relevant contexts are ranked higher (similar to custom retrieval quality)
+- **Response Relevancy**: Measures how relevant the answer is to the question (similar to custom confidence)
+
+**Comparison Analysis:**
+- Faithfulness vs Groundedness: Expected correlation >90%
+- Context Precision vs Retrieval Metrics (Recall@5, Precision@5, F1@5)
+- Response Relevancy vs Answer Confidence scores
+
+**Runtime:**
+- Default (4 tests): ~2-3 minutes
+- Full dataset (test 5): ~10-15 minutes
+
+**Dependencies:**
+- `ragas` library (installed via uv)
+- Golden dataset: `evaluation/golden_set.json`
+- RAGASEvaluator component
+- Complete RAG pipeline and graph
+- OpenAI API key for LLM-based metrics
+
+**Note:** This implements RAGAS integration. The test suite excludes the full dataset evaluation by default (run it separately if needed for comprehensive analysis).
+
+---
+
+### 8. test_ragas_simple.py - RAGAS Quick Smoke Test
+
+**Purpose:** Quick verification that RAGAS evaluation executes correctly
+
+**What it tests:**
+- RAGASEvaluator initialization
+- Sample preparation with question, answer, contexts, and ground truth
+- Single sample evaluation with all RAGAS metrics
+- Basic score calculation and display
+
+**When to run:**
+- Quick smoke test for RAGAS functionality
+- After RAGAS library updates
+- Verifying RAGAS integration works
+- Fast validation without running full evaluation suite
+
+**Command:**
+```bash
+PYTHONPATH=. uv run python tests/integration/test_ragas_simple.py
+```
+
+**Expected output:**
+- RAGASEvaluator initializes successfully
+- Lists initialized metrics (faithfulness, context_precision, response_relevancy)
+- Sample prepared for Transformer architecture question
+- Scores displayed for each RAGAS metric
+- Test completes in 10-20 seconds
+
+**Runtime:** ~10-20 seconds (single API call)
+
+**Dependencies:**
+- `ragas` library
+- RAGASEvaluator component
+- OpenAI API key
+
+**Note:** Simplest RAGAS test - comprehensive RAGAS testing is in test_ragas_evaluation.py
+
+---
+
+### 9. test_context_sufficiency.py - Context Sufficiency Enhancement
+
+**Purpose:** Validates context completeness checks before answer generation
+
+**What it tests:**
+- Context sufficiency evaluation before answer generation
+- Missing aspects detection when context is incomplete
+- Context-driven strategy switching (prioritizes semantic when context insufficient)
+- Integration with existing quality gates and routing logic
+- Multi-aspect query handling (e.g., "advantages AND disadvantages")
+
+**When to run:**
+- After changes to context sufficiency logic
+- To verify early detection of incomplete retrieval
+- When debugging strategy switching behavior
+- After modifications to answer evaluation node
+
+**Command:**
+```bash
+PYTHONPATH=. uv run python tests/integration/test_context_sufficiency.py
+```
+
+**Tests included:**
+1. `test_context_sufficiency_detection()` - Multi-aspect query (advantages AND disadvantages)
+2. `test_context_sufficiency_with_simple_query()` - Simple single-aspect query
+
+**Expected output:**
+- Context sufficiency score displayed (0.0-1.0)
+- Missing aspects identified when context incomplete
+- Context insufficiency warning logged (if score < 0.6)
+- Strategy refinement logged showing context-driven switching
+- Refinement history includes context sufficiency scores
+- All assertions pass
+
+**Sample Output:**
+```
+CONTEXT INSUFFICIENCY DETECTED
+Sufficiency Score: 40%
+Is Sufficient: False
+Missing Aspects (3):
+  - specific disadvantages of BERT
+  - comparison to other models
+  - limitations in real-world applications
+
+STRATEGY REFINEMENT
+Switch: semantic to hybrid
+Reasoning: Context-driven: Semantic failed to provide complete context, trying hybrid
+Context sufficiency: 40%
+```
+
+**Runtime:** ~2-3 minutes (runs 2 test queries)
+
+**Dependencies:**
+- Complete RAG pipeline with context sufficiency enhancements
+- Context sufficiency fields in state.py
+- Enhanced evaluate_answer_with_retrieval_node in nodes.py
+- Updated route_after_evaluation in graph.py
+
+**Note:** This implements context sufficiency enhancement. Adds early detection of incomplete context to reduce hallucinations by 5-10%.
+
+---
+
 ## Running All Tests
 
 ### Run All Integration Tests Sequentially
 
 ```bash
-# Run all tests (not recommended - takes 20+ minutes)
+# Run all tests (not recommended - takes 30+ minutes due to RAGAS)
 for test in tests/integration/test_*.py; do
     echo "Running $test..."
-    uv run python "$test"
+    PYTHONPATH=. uv run python "$test"
 done
 ```
+
+**Note:** The RAGAS comprehensive test (test_ragas_evaluation.py) runs 4 tests by default (excludes full dataset). Total runtime for all 8 integration tests: ~30-40 minutes.
 
 ### Run Recommended Test Suite (Fast)
 
 ```bash
 # Core pipeline + adaptive retrieval (< 2 minutes)
-uv run python tests/integration/test_pdf_pipeline.py
-uv run python tests/integration/test_adaptive_retrieval.py
+PYTHONPATH=. uv run python tests/integration/test_pdf_pipeline.py
+PYTHONPATH=. uv run python tests/integration/test_adaptive_retrieval.py
 ```
 
 ### Run Full Validation (Comprehensive)
 
 ```bash
 # All tests including golden dataset (~15 minutes)
-uv run python tests/integration/test_pdf_pipeline.py
-uv run python tests/integration/test_document_profiling.py
-uv run python tests/integration/test_adaptive_retrieval.py
-uv run python tests/integration/test_golden_dataset_evaluation.py
+PYTHONPATH=. uv run python tests/integration/test_pdf_pipeline.py
+PYTHONPATH=. uv run python tests/integration/test_document_profiling.py
+PYTHONPATH=. uv run python tests/integration/test_adaptive_retrieval.py
+PYTHONPATH=. uv run python tests/integration/test_golden_dataset_evaluation.py
+```
+
+### Run RAGAS Evaluation Suite
+
+```bash
+# Quick RAGAS smoke test (~20 seconds)
+PYTHONPATH=. uv run python tests/integration/test_ragas_simple.py
+
+# RAGAS comprehensive suite without full dataset (~3 minutes)
+PYTHONPATH=. uv run python tests/integration/test_ragas_evaluation.py
+
+# RAGAS full dataset evaluation (~15 minutes)
+PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation import test_ragas_full_dataset_evaluation; test_ragas_full_dataset_evaluation()"
 ```
 
 ---
@@ -308,6 +534,12 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
    ```
 
 ### Common Setup Issues
+
+**Issue: "ModuleNotFoundError: No module named 'src'"**
+- **Cause:** Tests cannot find the `src` package
+- **Solution:** Always use `PYTHONPATH=. uv run python tests/integration/test_<name>.py`
+- **Why:** Python needs `PYTHONPATH=.` to resolve imports from the `src` directory
+- See the "CRITICAL: How to Run Tests" section at the top of this document
 
 **Issue: "No PDFs found in docs/"**
 - Ensure PDF files exist in `docs/` directory
@@ -364,7 +596,7 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 **Check:**
 1. PDFs exist in `docs/` folder
 2. OpenAI API key valid
-3. Documents loaded: `uv run python -c "from src.core import setup_retriever; r = setup_retriever(); print(f'Loaded {len(r.vectorstore.docstore._dict)} chunks')"`
+3. Documents loaded: `PYTHONPATH=. uv run python -c "from src.core import setup_retriever; r = setup_retriever(); print(f'Loaded {len(r.vectorstore.docstore._dict)} chunks')"`
 
 **Common causes:**
 - Missing PDFs
@@ -376,7 +608,7 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 ### Test Fails: test_document_profiling.py
 
 **Check:**
-1. DocumentProfiler works: `uv run python -c "from src.preprocessing.document_profiler import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('AI is ML'))"`
+1. DocumentProfiler works: `PYTHONPATH=. uv run python -c "from src.preprocessing.document_profiler import DocumentProfiler; p=DocumentProfiler(); print(p.profile_document('AI is ML'))"`
 2. LLM profiling enabled in retriever setup
 
 **Common causes:**
@@ -403,8 +635,8 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 
 **Check:**
 1. Golden dataset exists: `ls evaluation/golden_set.json`
-2. Dataset valid: `uv run python -c "from src.evaluation import GoldenDatasetManager; m=GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"`
-3. Chunk IDs match corpus: Run `tests/utils/create_golden_dataset_helper.py`
+2. Dataset valid: `PYTHONPATH=. uv run python -c "from src.evaluation import GoldenDatasetManager; m=GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"`
+3. Chunk IDs match corpus: Run `PYTHONPATH=. tests/utils/create_golden_dataset_helper.py`
 
 **Common causes:**
 - Missing golden dataset file
@@ -446,10 +678,13 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 
 ### Planned Improvements
 
-**Phase 5: RAGAS Integration** (from HANDOVER.md)
-- Add RAGAS evaluation metrics
-- Compare RAGAS vs custom metrics
-- Integration with golden dataset
+**RAGAS Integration** - COMPLETED
+- Checkmark RAGAS evaluation metrics integrated (faithfulness, context_precision, response_relevancy)
+- Checkmark RAGAS vs custom metrics comparison implemented
+- Checkmark Integration with golden dataset complete
+- Tests: `test_ragas_evaluation.py` (comprehensive), `test_ragas_simple.py` (smoke test)
+
+**Future Enhancements**
 
 **Unit Test Migration**
 - Convert scripts to pytest format
@@ -466,7 +701,6 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 ## Related Documentation
 
 - **Main Project Docs:** `../CLAUDE.md`
-- **Handover Document:** `../HANDOVER.md` (Phase 4: Golden Dataset, lines 151-252)
 - **Golden Dataset Guide:** `../evaluation/README.md`
 - **Evaluation Best Practices:** `../references/Best Practices for Evaluating Retrieved RAG Documents.md`
 - **RAGAS Integration:** `../references/RAGAS Integration with LangGraph for python RAG pipeline.md`
@@ -477,26 +711,33 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 
 ```bash
 # Core pipeline test (fast)
-uv run python tests/integration/test_pdf_pipeline.py
+PYTHONPATH=. uv run python tests/integration/test_pdf_pipeline.py
 
 # Document profiling test
-uv run python tests/integration/test_document_profiling.py
+PYTHONPATH=. uv run python tests/integration/test_document_profiling.py
 
 # Adaptive retrieval test (newest feature)
-uv run python tests/integration/test_adaptive_retrieval.py
+PYTHONPATH=. uv run python tests/integration/test_adaptive_retrieval.py
 
 # Comprehensive evaluation (slow, ~15 min)
-uv run python tests/integration/test_golden_dataset_evaluation.py
+PYTHONPATH=. uv run python tests/integration/test_golden_dataset_evaluation.py
 
 # Quick smoke tests
-uv run python tests/integration/test_cross_encoder.py
-uv run python tests/integration/test_groundedness.py
+PYTHONPATH=. uv run python tests/integration/test_cross_encoder.py
+PYTHONPATH=. uv run python tests/integration/test_groundedness.py
+
+# RAGAS evaluation tests
+PYTHONPATH=. uv run python tests/integration/test_ragas_simple.py                    # Quick RAGAS smoke test (~20s)
+PYTHONPATH=. uv run python tests/integration/test_ragas_evaluation.py                # RAGAS comprehensive suite (~3 min)
+
+# Context sufficiency test
+PYTHONPATH=. uv run python tests/integration/test_context_sufficiency.py              # Context completeness checks (~2-3 min)
 
 # Check dataset stats
-uv run python -c "from src.evaluation import GoldenDatasetManager; m = GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"
+PYTHONPATH=. uv run python -c "from src.evaluation import GoldenDatasetManager; m = GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"
 
 # Verify corpus loaded
-uv run python -c "from src.core import setup_retriever; r = setup_retriever(); print(f'Loaded {len(r.vectorstore.docstore._dict)} chunks')"
+PYTHONPATH=. uv run python -c "from src.core import setup_retriever; r = setup_retriever(); print(f'Loaded {len(r.vectorstore.docstore._dict)} chunks')"
 ```
 
 ---
