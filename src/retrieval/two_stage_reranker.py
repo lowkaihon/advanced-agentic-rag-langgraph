@@ -14,10 +14,10 @@ This architecture balances:
 from typing import List, Tuple
 from langchain_core.documents import Document
 from .cross_encoder_reranker import CrossEncoderReRanker
-from .reranking import ReRanker
+from .llm_metadata_reranker import LLMMetadataReRanker
 
 
-class HybridReRanker:
+class TwoStageReRanker:
     """
     Two-stage hybrid reranking: CrossEncoder then LLM-as-judge.
 
@@ -42,7 +42,7 @@ class HybridReRanker:
     - Combines semantic similarity (CrossEncoder) with contextual appropriateness (LLM)
 
     Usage:
-        reranker = HybridReRanker(k_cross_encoder=10, k_final=4)
+        reranker = TwoStageReRanker(k_cross_encoder=10, k_final=4)
         final_docs = reranker.rank("What is attention?", documents)
     """
 
@@ -72,8 +72,8 @@ class HybridReRanker:
         )
 
         # Stage 2: LLM-as-judge for metadata-aware quality scoring
-        # Note: ReRanker already uses gpt-4o-mini by default
-        self.llm_judge = ReRanker(top_k=k_final)
+        # Note: LLMMetadataReRanker already uses gpt-4o-mini by default
+        self.llm_judge = LLMMetadataReRanker(top_k=k_final)
 
     def rank(
         self,
@@ -92,7 +92,7 @@ class HybridReRanker:
             sorted by relevance (highest first), limited to k_final
 
         Example:
-            >>> reranker = HybridReRanker(k_cross_encoder=10, k_final=4)
+            >>> reranker = TwoStageReRanker(k_cross_encoder=10, k_final=4)
             >>> docs = retriever.get_relevant_documents("attention mechanism", k=20)
             >>> final_docs = reranker.rank("attention mechanism", docs)
             >>> # Returns 4 best documents after two-stage filtering

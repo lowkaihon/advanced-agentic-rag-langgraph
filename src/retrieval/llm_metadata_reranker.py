@@ -10,7 +10,7 @@ class RankingResult(TypedDict):
     reasoning: str  # Brief explanation of ranking decisions
 
 
-class ReRanker:
+class LLMMetadataReRanker:
     """
     Rerank documents using LLM-as-Judge pattern with metadata awareness.
 

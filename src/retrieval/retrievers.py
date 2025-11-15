@@ -2,7 +2,7 @@ from langchain_community.retrievers import BM25Retriever
 from langchain_core.documents import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
-from .hybrid_reranker import HybridReRanker
+from .two_stage_reranker import TwoStageReRanker
 
 
 class HybridRetriever:
@@ -11,8 +11,8 @@ class HybridRetriever:
     def __init__(self, documents: list[Document]):
         self.semantic_retriever = SemanticRetriever(documents)
         self.keyword_retriever = BM25Retriever.from_documents(documents)
-        # HybridReRanker: CrossEncoder (top-10) then LLM-as-judge (top-4)
-        self.reranker = HybridReRanker(k_cross_encoder=10, k_final=4)
+        # TwoStageReRanker: CrossEncoder (top-10) then LLM-as-judge (top-4)
+        self.reranker = TwoStageReRanker(k_cross_encoder=10, k_final=4)
 
     def retrieve(
         self,

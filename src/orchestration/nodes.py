@@ -4,7 +4,7 @@ from src.retrieval import (
     expand_query,
     rewrite_query,
     HybridRetriever,
-    ReRanker,
+    LLMMetadataReRanker,
     SemanticRetriever,
 )
 from src.retrieval.strategy_selection import StrategySelector
