@@ -550,9 +550,10 @@ PYTHONPATH=. uv run python -c "from tests.integration.test_ragas_evaluation impo
 - Add `OPENAI_API_KEY=sk-...` to `.env`
 
 **Issue: "403 Forbidden LangSmith warnings"**
-- Benign - LangSmith tracing not configured
-- Tests automatically set `LANGCHAIN_TRACING_V2=false`
-- Warnings don't affect test execution
+- **Cause:** LangSmith tracing attempted without valid API key
+- **Solution:** Tests automatically disable all tracing (fixed in conftest.py)
+- **Status:** All tests now force-disable tracing to eliminate warnings
+- **Note:** To enable tracing for demos/self-testing, set `LANGSMITH_TRACING=true` in `.env` (only affects main.py, not tests)
 
 ---
 

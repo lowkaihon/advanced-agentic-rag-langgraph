@@ -13,7 +13,15 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # Disable LangSmith tracing for all tests to avoid 403 warnings
+# Force disable even if .env enables it (tests should never trace)
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGCHAIN_TRACING"] = "false"
+os.environ["LANGSMITH_TRACING"] = "false"
+# Prevent any tracing attempts by unsetting endpoints
+if "LANGCHAIN_ENDPOINT" in os.environ:
+    del os.environ["LANGCHAIN_ENDPOINT"]
+if "LANGSMITH_ENDPOINT" in os.environ:
+    del os.environ["LANGSMITH_ENDPOINT"]
 
 
 def pytest_configure(config):

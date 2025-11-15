@@ -1,4 +1,7 @@
 """Quick test to verify groundedness check executes"""
+import os
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
 from src.orchestration.graph import advanced_rag_graph
 
 # Simple query

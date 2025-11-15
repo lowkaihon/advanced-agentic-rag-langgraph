@@ -7,6 +7,9 @@ Tests:
 3. Metadata-aware retrieval and reranking
 """
 
+import os
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+
 from src.core.config import setup_retriever, reset_retriever, get_corpus_stats
 from src.retrieval.strategy_selection import StrategySelector
 

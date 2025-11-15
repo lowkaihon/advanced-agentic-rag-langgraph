@@ -11,9 +11,9 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 
-# Enable LangSmith tracing (optional)
-if LANGSMITH_API_KEY:
-    os.environ["LANGSMITH_TRACING"] = "true"
+# Enable LangSmith tracing only if explicitly requested in .env
+if LANGSMITH_API_KEY and os.getenv("LANGSMITH_TRACING", "false").lower() == "true":
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
     os.environ["LANGSMITH_PROJECT"] = "advanced-agentic-rag"
 
 # Global retriever instance and corpus statistics
