@@ -29,10 +29,11 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
 - Strategy selection based on corpus characteristics + query analysis
-- LLM-as-Judge reranking for relevance scoring
+- RRF-based multi-query fusion: Reciprocal Rank Fusion aggregates rankings across query variants BEFORE reranking (3-5% MRR improvement)
+- Two-stage reranking applied to RRF-fused results for final relevance scoring
 
 **Evaluation & Quality Assurance**
-- Two-stage reranking: CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
+- Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-15) → LLM-as-judge (stage 2, top-4)
 - NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification
 - Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 - RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
@@ -79,6 +80,8 @@ cp .env.example .env                 # Create environment file (add your OPENAI_
 ```
 
 ### Python Cache Management
+
+**For comprehensive guidance, see:** `references/Python '__pycache__' Best Practices.md`
 
 Centralize bytecode cache to avoid `__pycache__` clutter (optional):
 ```bash
@@ -150,6 +153,12 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 
 **Run with**: `uv run python <file>` or activate venv first
 See `tests/CLAUDE.md` for detailed explanation and common issues.
+
+**File paths**: Use same package-based resolution for project files:
+```python
+import advanced_agentic_rag_langgraph
+PROJECT_ROOT = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
+```
 
 ## Quick Reference by Task
 

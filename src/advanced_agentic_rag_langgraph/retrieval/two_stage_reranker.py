@@ -26,14 +26,14 @@ class TwoStageReRanker:
             |
             v
         Stage 1: CrossEncoder semantic filtering
-            produces Top 10 documents (~250ms, ~$0.0001)
+            produces Top 15 documents (~375ms, ~$0.0001)
             |
             v
         Stage 2: LLM-as-judge with metadata analysis
             produces Final top 4 documents (~400ms, ~$0.005)
             |
             v
-        Total: ~650ms, ~$0.006 per query
+        Total: ~775ms, ~$0.006 per query
 
     Benefits vs. LLM-only reranking:
     - 3-5x faster (650ms vs 2-5s)
@@ -42,13 +42,13 @@ class TwoStageReRanker:
     - Combines semantic similarity (CrossEncoder) with contextual appropriateness (LLM)
 
     Usage:
-        reranker = TwoStageReRanker(k_cross_encoder=10, k_final=4)
+        reranker = TwoStageReRanker(k_cross_encoder=15, k_final=4)
         final_docs = reranker.rank("What is attention?", documents)
     """
 
     def __init__(
         self,
-        k_cross_encoder: int = 10,
+        k_cross_encoder: int = 15,
         k_final: int = 4,
         cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
         llm_model: str = "gpt-4o-mini"
@@ -57,7 +57,7 @@ class TwoStageReRanker:
         Initialize hybrid reranker with two-stage pipeline.
 
         Args:
-            k_cross_encoder: Number of docs to keep after CrossEncoder stage (default: 10)
+            k_cross_encoder: Number of docs to keep after CrossEncoder stage (default: 15)
             k_final: Number of final docs after LLM stage (default: 4)
             cross_encoder_model: CrossEncoder model name (default: ms-marco-MiniLM-L-6-v2)
             llm_model: LLM model for metadata-aware scoring (default: gpt-4o-mini)

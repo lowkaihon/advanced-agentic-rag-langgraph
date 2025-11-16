@@ -330,7 +330,7 @@ class GoldenDatasetManager:
         Verify that all chunk IDs in the dataset exist in the corpus.
 
         Args:
-            retriever: HybridRetriever instance with loaded documents
+            retriever: AdaptiveRetriever instance with loaded documents
 
         Returns:
             Dictionary with validation results

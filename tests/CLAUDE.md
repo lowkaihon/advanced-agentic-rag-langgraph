@@ -92,6 +92,7 @@ from src.orchestration import ...
 Complete RAG pipeline validation from PDF loading through generation.
 
 **Tests:** PDF loading with profiling, strategy selection, conversational query rewriting, full LangGraph workflow
+**Method used:** Graph workflow with multi-query RRF fusion (uses `retrieve_without_reranking()` internally before final reranking)
 **Run after:** Changes to core pipeline, PDF processing, or before commits
 **Command:** `uv run python tests/integration/test_pdf_pipeline.py`
 
@@ -101,6 +102,7 @@ Complete RAG pipeline validation from PDF loading through generation.
 Validates LLM-based document profiling and corpus statistics.
 
 **Tests:** Document profiling with LLM, corpus stats (technical density, domains, types), metadata-aware retrieval
+**Method used:** Direct `retriever.retrieve()` call (tests complete pipeline: retrieval → two-stage reranking)
 **Run after:** Changes to document profiling logic or corpus analysis
 **Command:** `uv run python tests/integration/test_document_profiling.py`
 

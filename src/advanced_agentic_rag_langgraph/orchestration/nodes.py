@@ -1,9 +1,10 @@
+from typing import TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from advanced_agentic_rag_langgraph.retrieval import (
     expand_query,
     rewrite_query,
-    HybridRetriever,
+    AdaptiveRetriever,
     LLMMetadataReRanker,
     SemanticRetriever,
 )
@@ -16,10 +17,24 @@ import re
 import json
 
 llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
-hybrid_retriever = None  # Will be initialized via setup_retriever()
+adaptive_retriever = None  # Will be initialized via setup_retriever()
 conversational_rewriter = ConversationalRewriter()  # For query rewriting
 strategy_selector = StrategySelector()  # For intelligent strategy selection
 nli_detector = NLIHallucinationDetector()  # NLI-based hallucination detection
+
+
+# ============ STRUCTURED OUTPUT SCHEMAS ============
+
+class RetrievalQualityEvaluation(TypedDict):
+    """Structured output schema for retrieval quality assessment.
+
+    Used with .with_structured_output() to ensure reliable parsing of LLM evaluations.
+    Eliminates regex-based score extraction errors.
+    """
+    quality_score: float  # 0-100 scale
+    reasoning: str  # Explanation of the quality score
+    issues: list[str]  # Specific problems identified (empty list if none)
+
 
 # ============ CONVERSATIONAL QUERY REWRITING ============
 
@@ -172,28 +187,89 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
 # ============ HYBRID RETRIEVAL STAGE ============
 
 def retrieve_with_expansion_node(state: dict) -> dict:
-    """Retrieve documents using query expansions and selected strategy"""
+    """
+    Retrieve documents using query expansions with RRF (Reciprocal Rank Fusion).
 
-    global hybrid_retriever
-    if hybrid_retriever is None:
-        hybrid_retriever = setup_retriever()
+    RRF aggregates rankings across multiple query variants to improve retrieval quality.
+    Formula: score(doc) = sum(1/(rank + k)) across all queries where doc appears.
+    Research shows 3-5% MRR improvement over naive deduplication.
+    """
+
+    global adaptive_retriever
+    if adaptive_retriever is None:
+        adaptive_retriever = setup_retriever()
 
     strategy = state.get("retrieval_strategy", "hybrid")
 
-    # Retrieve using all query variations
-    all_docs = []
-    for query in state["query_expansions"]:
-        docs = hybrid_retriever.retrieve(query, strategy=strategy)
-        all_docs.extend(docs)
+    # ============ RRF-BASED MULTI-QUERY RETRIEVAL ============
+    # Step 1: Retrieve for each query variant WITHOUT reranking (for RRF fusion)
+    doc_ranks = {}  # {doc_id: [rank1, rank2, ...]}
+    doc_objects = {}  # {doc_id: Document}
 
-    # Deduplicate
-    seen = set()
-    unique_docs = []
-    for doc in all_docs:
-        doc_id = doc.metadata.get("id", doc.page_content[:50])
-        if doc_id not in seen:
-            unique_docs.append(doc)
-            seen.add(doc_id)
+    for query in state["query_expansions"]:
+        # Use retrieve_without_reranking() to get larger candidate pool for RRF
+        docs = adaptive_retriever.retrieve_without_reranking(query, strategy=strategy)
+
+        # Track rank position for each document in this query's results
+        for rank, doc in enumerate(docs):
+            doc_id = doc.metadata.get("id", doc.page_content[:50])
+
+            if doc_id not in doc_ranks:
+                doc_ranks[doc_id] = []
+                doc_objects[doc_id] = doc
+
+            doc_ranks[doc_id].append(rank)
+
+    # Step 2: Calculate RRF scores
+    # Formula: score(doc) = sum(1/(rank + k)) across all queries
+    # k=60 is standard constant from research
+    k = 60
+    rrf_scores = {}
+
+    for doc_id, ranks in doc_ranks.items():
+        rrf_score = sum(1.0 / (rank + k) for rank in ranks)
+        rrf_scores[doc_id] = rrf_score
+
+    # Step 3: Sort documents by RRF score (descending)
+    sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+
+    # Step 4: Reconstruct unique_docs in RRF-ranked order
+    unique_docs = [doc_objects[doc_id] for doc_id in sorted_doc_ids]
+
+    # Log RRF statistics for debugging/monitoring
+    print(f"\n{'='*60}")
+    print(f"RRF MULTI-QUERY RETRIEVAL")
+    print(f"Query variants: {len(state['query_expansions'])}")
+    print(f"Total retrievals: {sum(len(ranks) for ranks in doc_ranks.values())}")
+    print(f"Unique docs after RRF: {len(unique_docs)}")
+    if sorted_doc_ids[:3]:
+        print(f"Top 3 RRF scores: {[f'{rrf_scores[doc_id]:.4f}' for doc_id in sorted_doc_ids[:3]]}")
+    print(f"{'='*60}\n")
+
+    # ============ TWO-STAGE RERANKING AFTER RRF ============
+    # Step 5: Apply two-stage reranking to RRF-fused results
+    # Limit input to top-40 for efficiency (prevents excessive CrossEncoder processing)
+    reranking_input = unique_docs[:40]
+
+    print(f"{'='*60}")
+    print(f"TWO-STAGE RERANKING (After RRF)")
+    print(f"Input: {len(reranking_input)} docs (from RRF top-40)")
+
+    # Apply TwoStageReRanker: CrossEncoder (top-15) then LLM-as-judge (top-4)
+    # Use rewritten_query if available, otherwise fall back to original_query
+    query_for_reranking = state.get('rewritten_query', state.get('original_query', ''))
+    ranked_results = adaptive_retriever.reranker.rank(
+        query_for_reranking,
+        reranking_input
+    )
+
+    # Extract documents and scores
+    unique_docs = [doc for doc, score in ranked_results]
+    reranking_scores = [score for doc, score in ranked_results]
+
+    print(f"Output: {len(unique_docs)} docs after two-stage reranking")
+    print(f"Reranking scores (top-3): {[f'{score:.4f}' for score in reranking_scores[:3]]}")
+    print(f"{'='*60}\n")
 
     # Format for state
     docs_text = "\n---\n".join([
@@ -201,23 +277,85 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         for doc in unique_docs[:5]  # Top 5
     ])
 
-    # Evaluate retrieval quality
+    # Evaluate retrieval quality using structured output
+    quality_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
+
     quality_prompt = f"""Query: {state['original_query']}
 
-Retrieved documents:
+Retrieved documents (top 5 after reranking):
 {docs_text}
 
-Rate the quality of these results (0-100):
-- 0-30: Poor - irrelevant or off-topic
-- 31-60: Fair - some relevance but incomplete
-- 61-85: Good - relevant and useful
-- 86-100: Excellent - directly answers the query"""
+Evaluate retrieval quality to determine if these documents are sufficient for answer generation.
 
-    response = llm.invoke(quality_prompt)
+EVALUATION CRITERIA:
 
-    # Extract score
-    score_match = re.search(r'\d+', response.content)
-    quality_score = float(score_match.group()) / 100 if score_match else 0.5
+1. Coverage: How many aspects of the query are addressed?
+   - Multi-aspect query (e.g., "advantages AND disadvantages"): Both aspects needed
+   - Single-aspect query: Core information must be present
+   - Consider: Are all parts of the question answered by the documents?
+
+2. Completeness: Can the query be fully answered with these documents?
+   - Complete information present: Documents contain everything needed
+   - Partial information: Some details present but gaps exist
+   - Insufficient: Cannot answer without additional sources
+
+3. Relevance: Are documents on-topic and directly useful?
+   - High relevance: Documents directly address query topic
+   - Mixed relevance: Some docs relevant, others tangential
+   - Low relevance: Documents off-topic or only peripherally related
+
+SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
+
+- 80-100: EXCELLENT - Proceed to answer generation immediately
+  * All/most query aspects directly addressed
+  * Complete information for full answer
+  * All documents highly relevant to query
+
+- 60-79: GOOD - Acceptable for answer generation [THRESHOLD: Will proceed]
+  * Key query aspects covered (may have minor gaps)
+  * Sufficient information for complete answer
+  * Most documents relevant, minimal noise
+
+- 40-59: FAIR - Requires query rewriting [THRESHOLD: Will retry if attempts < 2]
+  * Partial coverage, key information missing
+  * Incomplete information, gaps in answer
+  * Documents tangential or only partially relevant
+
+- 0-39: POOR - Inadequate retrieval, needs strategy change
+  * Wrong domain or off-topic documents
+  * Cannot answer query with current results
+  * Most/all documents irrelevant
+
+STRUCTURED OUTPUT:
+
+- quality_score (0-100): Aggregate score following guidelines above
+
+- reasoning: 2-3 sentences explaining:
+  * Which aspects are covered vs missing
+  * Whether information is complete for answering
+  * Relevance quality of documents
+
+- issues: List specific problems (empty list if none):
+  * "missing_key_info": Required information not in documents
+  * "partial_coverage": Some query aspects covered, others missing
+  * "wrong_domain": Documents from unrelated topic area
+  * "insufficient_depth": Surface-level info only, lacks detail
+  * "off_topic": Documents irrelevant to query
+  * "mixed_relevance": Combination of relevant and irrelevant docs
+
+Return your evaluation as structured data."""
+
+    try:
+        evaluation = structured_quality_llm.invoke(quality_prompt)
+        quality_score = evaluation["quality_score"] / 100
+        quality_reasoning = evaluation["reasoning"]
+        quality_issues = evaluation["issues"]
+    except Exception as e:
+        print(f"Warning: Quality evaluation failed: {e}. Using neutral score.")
+        quality_score = 0.5
+        quality_reasoning = "Evaluation failed"
+        quality_issues = []
 
     # Calculate retrieval metrics if ground truth available (from golden dataset evaluation)
     retrieval_metrics = {}
@@ -256,6 +394,8 @@ Rate the quality of these results (0-100):
     return {
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
+        "retrieval_quality_reasoning": quality_reasoning,  # LLM explanation of quality score
+        "retrieval_quality_issues": quality_issues,  # Specific problems identified
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
         "unique_docs_list": unique_docs,  # Store Document objects for metadata analysis
         "retrieval_metrics": retrieval_metrics,  # Store metrics for golden dataset evaluation

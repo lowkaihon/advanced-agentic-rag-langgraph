@@ -10,8 +10,8 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
         thread_id = str(uuid.uuid4())
     
     # Initialize retriever in global
-    if nodes.hybrid_retriever is None:
-        nodes.hybrid_retriever = setup_retriever()
+    if nodes.adaptive_retriever is None:
+        nodes.adaptive_retriever = setup_retriever()
     
     # Initial state
     initial_state = {

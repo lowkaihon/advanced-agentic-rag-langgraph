@@ -1,7 +1,8 @@
 import os
+from pathlib import Path
 from typing import Dict, List
 from dotenv import load_dotenv
-from advanced_agentic_rag_langgraph.retrieval import HybridRetriever
+from advanced_agentic_rag_langgraph.retrieval import AdaptiveRetriever
 from advanced_agentic_rag_langgraph.preprocessing.pdf_loader import PDFDocumentLoader
 from advanced_agentic_rag_langgraph.preprocessing.profiling_pipeline import DocumentLoader
 from langchain_core.documents import Document
@@ -21,11 +22,11 @@ _retriever_instance = None
 _corpus_stats = None
 _document_profiles = None
 
-# PDF directory
-DOCS_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-    "docs"
-)
+# PDF directory - uses package-based path resolution (works with editable install)
+# This approach is consistent with import best practices (no PYTHONPATH needed)
+import advanced_agentic_rag_langgraph
+PROJECT_ROOT = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
+DOCS_DIR = PROJECT_ROOT / "docs"
 
 
 def get_all_pdf_paths_from_docs() -> List[str]:
@@ -38,7 +39,7 @@ def get_all_pdf_paths_from_docs() -> List[str]:
     Raises:
         FileNotFoundError: If docs/ folder doesn't exist or contains no PDFs
     """
-    if not os.path.exists(DOCS_DIR):
+    if not DOCS_DIR.exists():
         raise FileNotFoundError(
             f"docs/ directory not found at: {DOCS_DIR}\n"
             f"Please create the directory and add PDF files for RAG."
@@ -111,7 +112,7 @@ def setup_retriever(
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
     verbose: bool = True
-) -> HybridRetriever:
+) -> AdaptiveRetriever:
     """
     Initialize hybrid retriever with PDF documents from docs/ folder.
 
@@ -120,7 +121,7 @@ def setup_retriever(
     2. Profiles each FULL document with LLM
     3. Chunks documents
     4. Attaches profile metadata to each chunk
-    5. Creates HybridRetriever with profiled documents
+    5. Creates AdaptiveRetriever with profiled documents
     6. Stores corpus statistics globally
 
     Args:
@@ -133,7 +134,7 @@ def setup_retriever(
         verbose: Print loading progress
 
     Returns:
-        HybridRetriever instance with profiled documents
+        AdaptiveRetriever instance with profiled documents
 
     Examples:
         >>> # Load all PDFs (default)
@@ -281,7 +282,7 @@ def setup_retriever(
         print("="*60 + "\n")
 
     # Create retriever with profiled documents
-    _retriever_instance = HybridRetriever(all_chunks)
+    _retriever_instance = AdaptiveRetriever(all_chunks)
 
     return _retriever_instance
 
