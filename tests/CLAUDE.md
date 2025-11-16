@@ -32,6 +32,43 @@ python tests/integration/test_<name>.py  # No "uv run" needed when venv active
 
 ---
 
+## Import Patterns for New Tests
+
+**Package name:** `advanced_agentic_rag_langgraph` (NOT `src`)
+
+**Correct imports in test files:**
+```python
+# Always use the package name after uv sync
+from advanced_agentic_rag_langgraph.core import setup_retriever
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager
+from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
+```
+
+**Common mistakes to avoid:**
+```python
+# WRONG - Don't import from 'src'
+from src.core import setup_retriever  # ModuleNotFoundError: No module named 'src'
+from src.orchestration import ...
+
+# WRONG - Don't use PYTHONPATH
+# PYTHONPATH=. uv run python ...  # Unnecessary, creates confusion
+```
+
+**Why 'src' doesn't work:**
+- Package name is defined in `pyproject.toml` as `advanced_agentic_rag_langgraph`
+- Source lives in `src/advanced_agentic_rag_langgraph/` (directory structure)
+- After `uv sync`, Python knows: `advanced_agentic_rag_langgraph` → `src/advanced_agentic_rag_langgraph/`
+- The `src` directory is NOT a package itself
+
+**Creating new test files:**
+1. Always run `uv sync` once after cloning/setup
+2. Use `from advanced_agentic_rag_langgraph.<module>` imports
+3. Run with `uv run python <file>` (no PYTHONPATH needed)
+4. If errors: check package name spelling, verify uv sync completed
+
+---
+
 ## Test Selection Matrix
 
 | When to Run | Test File | Runtime | Key Purpose |

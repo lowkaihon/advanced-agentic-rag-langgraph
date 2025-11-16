@@ -28,7 +28,7 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - Generates query variations and rewrites unclear queries to improve retrieval coverage
 
 ### 4. Intelligent Strategy Selection
-- Rule-based + LLM fallback system to select optimal retrieval strategy (semantic/keyword/hybrid) per query
+- Pure LLM-based system to select optimal retrieval strategy (semantic/keyword/hybrid) per query
 
 ### 5. Multi-Strategy Retrieval
 - Three retrieval approaches (FAISS semantic, BM25 keyword, or hybrid) with dynamic selection
@@ -104,8 +104,8 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - **Complexity Assessment**: simple, moderate, complex
 
 **3. Intelligent Strategy Selection** (`retrieval/strategy_selection.py`)
-- 10 heuristic rules analyze query features + corpus characteristics
-- LLM fallback for ambiguous cases (when confidence < 0.7)
+- Pure LLM classification - domain-agnostic, handles all edge cases
+- Analyzes query characteristics + corpus statistics
 - Selects semantic/keyword/hybrid with confidence score + reasoning
 
 **4. Multi-Strategy Retrieval** (`retrieval/retrievers.py`, `retrieval/two_stage_reranker.py`)
@@ -202,12 +202,13 @@ run_advanced_rag("What are the key components?", thread_id="conv-1")
 
 **2. Strategy Selection**
 ```
-Heuristic rules fire:
-- Conceptual questions → semantic (+0.35)
-- Short queries (<5 words) → semantic (+0.2)
+LLM analyzes query characteristics:
+- Intent: conceptual question about core concept
+- Corpus: technical research papers
+- Best match: semantic search for conceptual understanding
 
 Selected: SEMANTIC (confidence: 0.85)
-Reasoning: "Conceptual query with simple phrasing"
+Reasoning: "Conceptual query best matched by semantic similarity"
 ```
 
 **3. Query Expansion**
@@ -317,7 +318,7 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 ┌─────────────────────────────────────────────────────────────────┐
 │ Node 3: Strategy Selection                                      │
 │ • Analyzes query features + corpus characteristics             │
-│ • 10 heuristic rules + LLM fallback                            │
+│ • Pure LLM classification (domain-agnostic)                    │
 │ • Selects: SEMANTIC, KEYWORD, or HYBRID                        │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
@@ -426,7 +427,7 @@ Self-Correction Loops:
 
 These features can be implemented by extending existing components:
 
-- **Add custom retrieval strategies** - Implement retrievers in `retrieval/retrievers.py` and update `StrategySelector` heuristics
+- **Add custom retrieval strategies** - Implement retrievers in `retrieval/retrievers.py` and update `StrategySelector` LLM prompt
 - **Adjust quality thresholds** - Customize retrieval/answer quality thresholds in `orchestration/graph.py` routing functions (default: 0.6)
 - **Extend document profiling** - Add custom analysis features in `preprocessing/document_profiler.py`
 - **Integrate external reranking** - Replace internal reranking with Cohere or Pinecone using `ContextualCompressionRetriever`

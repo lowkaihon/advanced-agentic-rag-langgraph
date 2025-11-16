@@ -56,25 +56,95 @@ def conversational_rewrite_node(state: dict) -> dict:
 
 # ============ QUERY OPTIMIZATION STAGE ============
 
+def _should_skip_expansion_llm(query: str) -> bool:
+    """
+    Use LLM to determine if query expansion would improve retrieval.
+
+    Domain-agnostic - works for any query type and corpus.
+    More accurate than heuristics - handles context and intent.
+    """
+    expansion_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+
+    prompt = f"""Should this query be expanded into multiple variations for better retrieval?
+
+Query: "{query}"
+
+EXPANSION IS BENEFICIAL FOR:
+- Ambiguous queries that could be phrased multiple ways
+- Complex questions where synonyms/related terms would help
+- Queries where users might use different terminology
+- Conceptual questions with multiple valid phrasings
+
+SKIP EXPANSION FOR:
+- Clear, specific queries that are already well-formed
+- Simple factual lookups (definitions, direct questions)
+- Queries with exact-match intent only (pure lookups)
+- Procedural queries with specific steps (expansion adds noise)
+- Queries that are already precise and unambiguous
+
+IMPORTANT CONSIDERATIONS:
+- Consider overall intent, not just query length or presence of quotes
+- Quoted terms don't automatically mean skip - consider if variations help
+- Example: "Compare 'X' and 'Y'" has quotes BUT expansion helps (synonyms for "compare")
+- Example: "What is Z?" is simple BUT expansion might help (rephrasing)
+
+Return ONLY 'yes' to expand or 'no' to skip expansion.
+No explanation needed."""
+
+    try:
+        response = expansion_llm.invoke(prompt)
+        decision = response.content.strip().lower()
+
+        # Parse yes/no (handle variations)
+        skip = decision.startswith('no')
+
+        return skip
+
+    except Exception as e:
+        print(f"Warning: Expansion decision LLM failed: {e}, defaulting to expand")
+        return False  # On error, expand (safer default)
+
+
 def query_expansion_node(state: dict) -> dict:
-    """Generate query variations for comprehensive retrieval"""
+    """
+    Conditionally expand queries using LLM to assess expansion benefit.
 
+    Aligns with best practices: 'Apply selective expansion using confidence thresholds'
+    Domain-agnostic - works for any query type.
+    """
     query = state["original_query"]
-    expansions = expand_query(query)
 
+    # Use LLM to decide if expansion is beneficial
+    if _should_skip_expansion_llm(query):
+        print(f"\n{'='*60}")
+        print(f"EXPANSION SKIPPED")
+        print(f"Query: {query}")
+        print(f"Reason: LLM determined query is clear/specific enough")
+        print(f"{'='*60}\n")
+
+        return {
+            "query_expansions": [query],
+            "current_query": query,
+        }
+
+    # Expand queries that would benefit from variation
+    expansions = expand_query(query)
+    print(f"\n{'='*60}")
+    print(f"QUERY EXPANDED")
     print(f"Original: {query}")
-    print(f"Expansions: {expansions[1:]}")  # Skip the original
+    print(f"Expansions: {expansions[1:]}")
+    print(f"{'='*60}\n")
 
     return {
         "query_expansions": expansions,
-        "current_query": query,  # Start with original
+        "current_query": query,
     }
 
 def decide_retrieval_strategy_node(state: dict) -> dict:
     """
     Decide which retrieval strategy to use based on query and corpus characteristics.
 
-    Uses hybrid heuristics + LLM fallback for intelligent strategy selection.
+    Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
     """
     query = state["current_query"]
     corpus_stats = state.get("corpus_stats", {})

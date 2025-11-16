@@ -42,8 +42,8 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **Intelligent Adaptation**
 - Document profiling: analyzes technical density, type, domain
-- Query analysis: classifies intent, complexity, technical content
-- Strategy selector: heuristic rules + LLM fallback for ambiguous cases
+- Query analysis: LLM-based intent classification and expansion decisions
+- Strategy selector: pure LLM classification (domain-agnostic, handles all edge cases)
 - Conversational rewriting: injects context from conversation history
 
 **Metadata-Driven Adaptation**
@@ -78,24 +78,30 @@ uv sync                              # Install/sync all dependencies
 cp .env.example .env                 # Create environment file (add your OPENAI_API_KEY)
 ```
 
-### Testing
+### Python Cache Management
+
+Centralize bytecode cache to avoid `__pycache__` clutter (optional):
 ```bash
-# Core pipeline tests (fast, ~1-2 min)
-uv run python tests/integration/test_pdf_pipeline.py       # Complete PDF pipeline
-uv run python tests/integration/test_adaptive_retrieval.py # Metadata-driven retrieval
-
-# Evaluation tests (30s - 3 min each)
-uv run python tests/integration/test_cross_encoder.py      # CrossEncoder reranking
-uv run python tests/integration/test_nli_hallucination_detector.py  # NLI hallucination detection
-
-# Comprehensive evaluation (slow, 10-15 min)
-uv run python tests/integration/test_golden_dataset_evaluation.py   # Golden dataset (20 examples)
-
-# Run main demo
-uv run python main.py
+export PYTHONPYCACHEPREFIX="$HOME/.cache/cpython/"  # Unix/Mac/Git Bash
+$env:PYTHONPYCACHEPREFIX = "$env:USERPROFILE\.cache\cpython"  # Windows PowerShell
 ```
 
-See `tests/CLAUDE.md` for all 10 integration tests with detailed documentation.
+Clear cache if stale code issues after refactoring:
+```bash
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null  # Unix/Mac/Git Bash
+Get-ChildItem -Path . -Recurse -Directory -Filter __pycache__ | Remove-Item -Recurse -Force  # Windows PS
+```
+
+### Testing
+```bash
+# Fast tests (~1-2 min)
+uv run python tests/integration/test_pdf_pipeline.py
+uv run python tests/integration/test_adaptive_retrieval.py
+
+# Comprehensive evaluation (~10-15 min)
+uv run python tests/integration/test_golden_dataset_evaluation.py
+```
+See `tests/CLAUDE.md` for all 10 tests, selection matrix, and detailed documentation.
 
 ### Development
 ```bash
@@ -128,6 +134,22 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 - Example: debug_nli.py (deleted after understanding model output)
 
 **Rule:** Permanent → tests/integration/, Temporary → root with debug_ prefix
+
+### Import Best Practices
+
+**Package name**: `advanced_agentic_rag_langgraph` (after `uv sync`)
+
+**Correct imports**:
+```python
+from advanced_agentic_rag_langgraph.core import setup_retriever
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+```
+
+**Wrong**: `from src.core import ...` (ModuleNotFoundError)
+**Wrong**: Using PYTHONPATH (unnecessary with editable install)
+
+**Run with**: `uv run python <file>` or activate venv first
+See `tests/CLAUDE.md` for detailed explanation and common issues.
 
 ## Quick Reference by Task
 
