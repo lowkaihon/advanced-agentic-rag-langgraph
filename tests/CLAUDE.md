@@ -82,7 +82,6 @@ from src.orchestration import ...
 | After NLI detector changes | test_nli_hallucination_detector.py | 20-30s | NLI-based hallucination detection validation |
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
-| Context completeness checks | test_context_sufficiency.py | 2-3min | Context sufficiency validation |
 
 ---
 
@@ -174,16 +173,6 @@ Quick verification that RAGAS evaluation executes correctly.
 **Tests:** RAGASEvaluator initialization, sample preparation, single sample evaluation
 **Run after:** RAGAS library updates or quick validation
 **Command:** `uv run python tests/integration/test_ragas_simple.py`
-
----
-
-### 10. test_context_sufficiency.py (~2-3min)
-Validates context completeness checks before answer generation.
-
-**Tests:** Context sufficiency evaluation, missing aspects detection, context-driven strategy switching, multi-aspect queries
-**Run after:** Changes to context sufficiency logic or answer evaluation
-**Command:** `uv run python tests/integration/test_context_sufficiency.py`
-**Enhancement:** Reduces hallucinations by 5-10% through early validation
 
 ---
 
@@ -302,9 +291,6 @@ uv run python tests/integration/test_nli_hallucination_detector.py
 uv run python tests/integration/test_ragas_simple.py
 uv run python tests/integration/test_ragas_evaluation.py
 
-# Context sufficiency test
-uv run python tests/integration/test_context_sufficiency.py
-
 # Check dataset stats
 uv run python -c "from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager; m = GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"
 
@@ -324,4 +310,4 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 ---
 
 *Note: All tests use ASCII-only output per project guidelines (no emojis/unicode)*
-*Last Updated: 2025-11-15*
+*Last Updated: 2025-11-16*

@@ -5,6 +5,7 @@ This module uses LLMs to profile full documents before chunking,
 generating rich metadata that informs retrieval strategy selection.
 """
 
+import re
 from typing import TypedDict, Literal
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
@@ -67,9 +68,95 @@ class DocumentProfiler:
         self.llm = ChatOpenAI(model=model, temperature=temperature)
         self.structured_llm = self.llm.with_structured_output(DocumentProfile)
 
+    def _detect_signals(self, doc_text: str) -> dict:
+        """
+        Quick regex-based signal detection (zero-cost preprocessing).
+
+        Detects presence of code and math patterns before LLM profiling,
+        allowing LLM to confirm and classify rather than discover from scratch.
+
+        Args:
+            doc_text: Full document text
+
+        Returns:
+            Dictionary with has_code_signal and has_math_signal booleans
+        """
+        return {
+            'has_code_signal': bool(re.search(
+                r'```|^def |^class |^function|import |#include|public class|private |protected ',
+                doc_text,
+                re.MULTILINE
+            )),
+            'has_math_signal': bool(re.search(
+                r'\$.*?\$|\\[.*?\\]|\\begin\{equation\}|∑|∏|∫|≤|≥|∂|∇',
+                doc_text
+            )),
+        }
+
+    def _stratified_sample(self, doc_text: str, target_tokens: int = 5000) -> str:
+        """
+        Sample document using stratified positional strategy.
+
+        Research-backed approach:
+        - First 30% of document: 40-50% of token budget (intro, abstract, metadata)
+        - Last 20% of document: 20-25% of token budget (conclusions, key takeaways)
+        - Middle sections: 25-30% of token budget (body content, technical details)
+
+        This maximizes coverage of metadata that appears at document boundaries
+        while ensuring middle sections are sampled for code/math/concepts.
+
+        Args:
+            doc_text: Full document text
+            target_tokens: Target token count (default: 5000 for optimal cost/accuracy)
+
+        Returns:
+            Stratified sample of document with section markers
+        """
+        # Rough estimate: 1 token ≈ 4 chars
+        target_chars = target_tokens * 4  # ~20,000 chars for 5,000 tokens
+
+        doc_length = len(doc_text)
+
+        # If document is shorter than target, use it all
+        if doc_length <= target_chars:
+            return doc_text
+
+        # Calculate section boundaries (positional strategy)
+        first_30_pct = int(doc_length * 0.30)
+        last_20_pct_start = int(doc_length * 0.80)
+
+        # Token budget allocation (in characters)
+        first_budget = int(target_chars * 0.45)  # 45% for first 30%
+        last_budget = int(target_chars * 0.22)   # 22% for last 20%
+        middle_budget = target_chars - first_budget - last_budget  # ~33% for middle
+
+        # Sample first section (intro, abstract, early content)
+        first_section = doc_text[:min(first_30_pct, first_budget)]
+
+        # Sample last section (conclusions, appendices, final content)
+        last_section = doc_text[max(last_20_pct_start, doc_length - last_budget):]
+
+        # Sample middle section (body, methods, results)
+        middle_start = first_30_pct
+        middle_end = last_20_pct_start
+        middle_available = middle_end - middle_start
+
+        if middle_available > middle_budget:
+            # Sample from middle of the middle section
+            middle_sample_start = middle_start + (middle_available - middle_budget) // 2
+            middle_section = doc_text[middle_sample_start:middle_sample_start + middle_budget]
+        else:
+            middle_section = doc_text[middle_start:middle_end]
+
+        # Combine sections with clear separators
+        return f"{first_section}\n\n[... middle section sampled ...]\n\n{middle_section}\n\n[... final section sampled ...]\n\n{last_section}"
+
     def profile_document(self, doc_text: str, doc_id: str = None) -> DocumentProfile:
         """
-        Profile a full document using LLM analysis.
+        Profile a full document using LLM analysis with stratified sampling.
+
+        Uses research-backed stratified positional sampling (5000 tokens) and
+        regex-based signal pre-detection for optimal accuracy/cost trade-off.
 
         Args:
             doc_text: Full document text (before chunking)
@@ -78,15 +165,22 @@ class DocumentProfiler:
         Returns:
             DocumentProfile with structured metadata
         """
-        # Truncate if too long (keep first 3000 chars for context)
-        content = doc_text[:3000]
-        truncated = len(doc_text) > 3000
+        # Quick signal detection (zero-cost preprocessing)
+        signals = self._detect_signals(doc_text)
+
+        # Stratified sampling for comprehensive coverage
+        content = self._stratified_sample(doc_text, target_tokens=5000)
+        sampled = len(doc_text) > 20000  # ~5000 tokens
 
         prompt = f"""Analyze this document comprehensively for retrieval optimization.
 
 Document ID: {doc_id or 'unknown'}
-Content: {content}
-{'... [truncated, original length: ' + str(len(doc_text)) + ' chars]' if truncated else ''}
+Content (stratified sample from full document): {content}
+{'... [sampled from full document, original length: ' + str(len(doc_text)) + ' chars]' if sampled else ''}
+
+Pre-detected signals (confirm and classify if present):
+- Code patterns detected: {signals['has_code_signal']}
+- Math notation detected: {signals['has_math_signal']}
 
 Profile the document according to these criteria:
 

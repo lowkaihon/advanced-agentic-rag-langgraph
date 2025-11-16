@@ -55,15 +55,16 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
     """
     Route based on answer evaluation with metadata-driven strategy switching.
 
-    Phase 6 Enhancement: Consider context sufficiency when deciding retry strategy.
-    Uses document metadata analysis to intelligently select next strategy.
+    Streamlined: Uses retrieval_quality_issues to detect missing information,
+    eliminating redundant context sufficiency check.
     """
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
-        # Phase 6: Check context sufficiency to inform routing
-        context_is_sufficient = state.get("context_is_sufficient", True)
-        sufficiency_score = state.get("context_sufficiency_score", 0.7)
+        # Check for missing information from retrieval quality issues
+        retrieval_quality_issues = state.get("retrieval_quality_issues", [])
+        has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
+        retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
 
         # Metadata-driven strategy switching
         current = state.get("retrieval_strategy", "hybrid")
@@ -77,16 +78,16 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
                 suggested_strategy = issue["suggested_strategy"]
                 break
 
-        # Phase 6: If context is insufficient, prioritize semantic search
+        # If retrieval detected missing information, prioritize semantic search
         # (semantic may capture conceptual completeness better than keyword)
-        if not context_is_sufficient and sufficiency_score < 0.6:
+        if has_missing_info and retrieval_quality_score < 0.6:
             if current != "semantic":
                 next_strategy = "semantic"
-                reasoning = f"Context-driven: Insufficient context ({sufficiency_score:.0%}), switching to semantic search for better conceptual coverage"
+                reasoning = f"Quality-driven: Missing information detected ({', '.join([i for i in retrieval_quality_issues if i in ['partial_coverage', 'missing_key_info', 'incomplete_context']])}), switching to semantic search"
             else:
                 # Already semantic, try hybrid as fallback
                 next_strategy = "hybrid"
-                reasoning = f"Context-driven: Semantic failed to provide complete context, trying hybrid"
+                reasoning = f"Quality-driven: Semantic failed to provide complete information, trying hybrid"
         # Use metadata suggestion if available and no context issues
         elif suggested_strategy and suggested_strategy != current:
             next_strategy = suggested_strategy
@@ -109,7 +110,8 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             "to_strategy": next_strategy,
             "reasoning": reasoning,
             "metadata_issues": [issue.get("issue") for issue in quality_issues],
-            "context_sufficiency": sufficiency_score,  # Phase 6: Track context sufficiency
+            "retrieval_quality_issues": retrieval_quality_issues,  # Track retrieval quality issues
+            "retrieval_quality_score": retrieval_quality_score,  # Track retrieval quality score
         }
 
         print(f"\n{'='*60}")
@@ -118,7 +120,8 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"Switch: {current} to {next_strategy}")
         print(f"Reasoning: {reasoning}")
         print(f"Metadata issues: {refinement['metadata_issues']}")
-        print(f"Context sufficiency: {sufficiency_score:.0%}")  # Phase 6: Log context sufficiency
+        print(f"Retrieval quality: {retrieval_quality_score:.0%}")
+        print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
         print(f"{'='*60}\n")
 
         # Update state with new strategy and log refinement

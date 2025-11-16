@@ -424,7 +424,7 @@ Self-Correction Loops:
 - Two self-correction loops with quality gates (see diagram above for thresholds and attempts)
 - Strategy switching is metadata-driven when mismatches detected, otherwise uses fallback progression
 - Groundedness check uses NLI-based claim verification (zero-shot F1: 0.65-0.70)
-- 9 nodes total (added groundedness validation in Phase 2)
+- 9 nodes total
 
 ## Future Improvements
 
@@ -434,7 +434,7 @@ These features can be implemented by extending existing components:
 
 - **Add custom retrieval strategies** - Implement retrievers in `retrieval/retrievers.py` and update `StrategySelector` LLM prompt
 - **Adjust quality thresholds** - Customize retrieval/answer quality thresholds in `orchestration/graph.py` routing functions (default: 0.6)
-- **Extend document profiling** - Add custom analysis features in `preprocessing/document_profiler.py`
+- **Extend document profiling** - Add custom analysis features in `preprocessing/document_profiler.py` (now using stratified sampling + regex pre-detection)
 - **Integrate external reranking** - Replace internal reranking with Cohere or Pinecone using `ContextualCompressionRetriever`
 
 ### Planned Enhancements

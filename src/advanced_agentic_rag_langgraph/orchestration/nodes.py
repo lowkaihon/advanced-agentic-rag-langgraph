@@ -337,12 +337,16 @@ STRUCTURED OUTPUT:
   * Relevance quality of documents
 
 - issues: List specific problems (empty list if none):
-  * "missing_key_info": Required information not in documents
-  * "partial_coverage": Some query aspects covered, others missing
+  * "missing_key_info": Required information not in documents (specify what is missing)
+  * "partial_coverage": Some query aspects covered, others missing (list missing aspects)
+  * "incomplete_context": Context lacks necessary details to fully answer query
   * "wrong_domain": Documents from unrelated topic area
   * "insufficient_depth": Surface-level info only, lacks detail
   * "off_topic": Documents irrelevant to query
   * "mixed_relevance": Combination of relevant and irrelevant docs
+
+IMPORTANT: If key information or query aspects are missing, explicitly include "partial_coverage"
+or "missing_key_info" in the issues list. This assessment is critical for routing decisions.
 
 Return your evaluation as structured data."""
 
@@ -499,7 +503,6 @@ def analyze_retrieved_metadata_node(state: dict) -> dict:
             "issue": "mixed_complexity",
             "severity": "low",
             "description": f"Documents span all complexity levels: {technical_levels}",
-            "suggested_action": "Adjust k-values to favor {dominant_level} documents"
         })
 
     # Issue 4: Low domain alignment (domain misalignment)
@@ -682,77 +685,25 @@ def groundedness_check_node(state: dict) -> dict:
 
 def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     """
-    Evaluate answer considering retrieval quality AND context sufficiency.
+    Evaluate answer quality considering retrieval quality.
 
-    Phase 6 Enhancement: Added pre-generation context completeness checks
-    to detect insufficient retrieval early.
+    Streamlined: Context completeness now assessed in retrieval_quality_score
+    (via "partial_coverage" and "missing_key_info" issues), eliminating redundant LLM call.
     """
     question = state["original_query"]
     answer = state.get("final_answer", "")
     retrieval_quality = state.get("retrieval_quality_score", 0)
-    context = "\n\n".join(state.get("retrieved_docs", [""]))
+    retrieval_quality_issues = state.get("retrieval_quality_issues", [])
 
-    # ============ PHASE 6: CONTEXT SUFFICIENCY CHECK ============
-    # Check if retrieved context is sufficient BEFORE evaluating answer
-    context_sufficiency_prompt = f"""Retrieved Context:
-{context[:2000]}
-
-Question:
-{question}
-
-Evaluate the completeness of the retrieved context:
-1. Does context contain ALL information needed to answer the question?
-2. Are there missing key details, facts, or aspects?
-3. What is your confidence that the context is complete (0.0-1.0)?
-
-Response as JSON:
-{{
-    "is_sufficient": true/false,
-    "missing_aspects": ["aspect 1", "aspect 2"],
-    "sufficiency_score": 0.0-1.0,
-    "reasoning": "brief explanation of what is present or missing"
-}}"""
-
-    sufficiency_response = llm.invoke(context_sufficiency_prompt)
-
-    # Parse context sufficiency evaluation
-    try:
-        json_match = re.search(r'\{.*\}', sufficiency_response.content, re.DOTALL)
-        sufficiency_eval = json.loads(json_match.group()) if json_match else {}
-    except:
-        # Assume sufficient if parsing fails (fail open)
-        sufficiency_eval = {
-            "is_sufficient": True,
-            "sufficiency_score": 0.7,
-            "missing_aspects": []
-        }
-
-    context_is_sufficient = sufficiency_eval.get("is_sufficient", True)
-    sufficiency_score = sufficiency_eval.get("sufficiency_score", 0.7)
-    missing_aspects = sufficiency_eval.get("missing_aspects", [])
-    sufficiency_reasoning = sufficiency_eval.get("reasoning", "")
-
-    # Log context sufficiency analysis
-    if not context_is_sufficient or sufficiency_score < 0.6:
-        print(f"\n{'='*60}")
-        print(f"CONTEXT INSUFFICIENCY DETECTED")
-        print(f"Sufficiency Score: {sufficiency_score:.0%}")
-        print(f"Is Sufficient: {context_is_sufficient}")
-        print(f"Missing Aspects ({len(missing_aspects)}):")
-        for aspect in missing_aspects:
-            print(f"  - {aspect}")
-        print(f"Reasoning: {sufficiency_reasoning}")
-        print(f"Action: Will inform answer evaluation")
-        print(f"{'='*60}\n")
-
-    # ============ ORIGINAL ANSWER EVALUATION ============
-    # Lower the sufficiency threshold if retrieval OR context was poor
-    quality_threshold = 0.5 if (retrieval_quality < 0.6 or sufficiency_score < 0.6) else 0.65
+    # ============ ANSWER QUALITY EVALUATION ============
+    # Lower the quality threshold if retrieval indicated missing information
+    has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
+    quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
     evaluation_prompt = f"""Question: {question}
 Answer: {answer}
 Retrieval quality: {retrieval_quality:.0%}
-Context sufficiency: {sufficiency_score:.0%}
+Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}
 
 Evaluate this answer:
 1. Relevant? (yes/no)
@@ -760,7 +711,7 @@ Evaluate this answer:
 3. Accurate? (yes/no)
 4. Confidence (0-100)
 
-Note: Context sufficiency of {sufficiency_score:.0%} should inform your confidence assessment.
+Note: Retrieval quality and detected issues should inform your confidence assessment.
 
 Response as JSON:
 {{
@@ -787,13 +738,8 @@ Response as JSON:
     )
 
     return {
-        # Phase 6: Context sufficiency fields
-        "context_sufficiency_score": sufficiency_score,
-        "context_is_sufficient": context_is_sufficient,
-        "missing_context_aspects": missing_aspects,
-
-        # Original answer evaluation fields
+        # Answer evaluation fields (context completeness now in retrieval_quality_issues)
         "is_answer_sufficient": is_sufficient,
         "confidence_score": confidence,
-        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}, Context={sufficiency_score:.0%}")],
+        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}")],
     }

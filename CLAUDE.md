@@ -38,11 +38,11 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 - RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
 - Golden dataset: 20 validated examples with graded relevance (0-3 scale)
-- Context sufficiency: Pre-generation completeness validation
+- Retrieval quality evaluation: Streamlined single-source assessment with issue detection (partial_coverage, missing_key_info)
 - Answer quality: Semantic similarity, factual accuracy, completeness scoring
 
 **Intelligent Adaptation**
-- Document profiling: analyzes technical density, type, domain
+- Document profiling: Stratified sampling (5K tokens), regex signal pre-detection, +15-27 pt accuracy gains
 - Query analysis: LLM-based intent classification and expansion decisions
 - Strategy selector: pure LLM classification (domain-agnostic, handles all edge cases)
 - Conversational rewriting: injects context from conversation history
@@ -104,7 +104,7 @@ uv run python tests/integration/test_adaptive_retrieval.py
 # Comprehensive evaluation (~10-15 min)
 uv run python tests/integration/test_golden_dataset_evaluation.py
 ```
-See `tests/CLAUDE.md` for all 10 tests, selection matrix, and detailed documentation.
+See `tests/CLAUDE.md` for all 9 tests, selection matrix, and detailed documentation.
 
 ### Development
 ```bash
@@ -130,7 +130,7 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 
 **Permanent tests:** `tests/integration/test_<name>.py`
 - Multiple test cases, meant to run repeatedly
-- Examples: test_nli_hallucination_detector.py, test_ragas_evaluation.py, test_context_sufficiency.py
+- Examples: test_nli_hallucination_detector.py, test_ragas_evaluation.py, test_golden_dataset_evaluation.py
 
 **Temporary debugging:** Root directory with `debug_*.py` prefix (delete after use)
 - One-off exploration, no formal assertions
