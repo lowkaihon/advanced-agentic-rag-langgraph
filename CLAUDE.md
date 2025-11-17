@@ -1,10 +1,20 @@
 # Advanced Agentic RAG using LangGraph
 
-A portfolio project showcasing advanced RAG and LangGraph capabilities through an intelligent, adaptive retrieval pipeline. The system analyzes both corpus characteristics (document types, technical density, content patterns) and query context (intent, conversational history, complexity) to dynamically select optimal retrieval strategies. Built-in quality gates, self-correction loops, and automatic strategy switching ensure retrieved documents meet relevance thresholds. While demonstrated using research papers, the architecture generalizes to diverse document types and use cases, making it a foundation for production-grade RAG systems.
+An advanced agentic RAG system implementing the "Dynamic Planning and Execution Agents" pattern. The LangGraph StateGraph itself IS the agent—decision-making is distributed across 4 specialized routing functions rather than centralized in a single LLM orchestrator. Autonomous adaptation through quality-driven conditional routing at every stage.
 
-**Framework Status**: LangChain 1.0 & LangGraph 1.0 (production-ready, stability commitment)
+**Architecture**: 9-node StateGraph with distributed intelligence, not linear pipeline
+**Pattern**: Dynamic Planning and Execution Agents (graph structure encodes planning logic)
+**Framework**: LangChain 1.0 & LangGraph 1.0 (production-ready)
 **Requirements**: Python 3.11+
-**Migration Guide**: https://docs.langchain.com/oss/python/migrate/langchain-v1
+
+## Agentic Architecture
+
+**No Central Agent Orchestrator**: The StateGraph itself provides autonomous decision-making through:
+- **4 routing functions** with specialized logic: retrieval quality assessment, groundedness routing, answer evaluation, strategy selection
+- **Conditional edges** that change behavior based on state (quality scores, detected issues, attempt counts)
+- **Quality-driven flow**: Each routing point evaluates intermediate results and autonomously decides next action (proceed/rewrite/switch/retry)
+
+**"Tools" in Broader Context**: In agentic RAG, "tools" = retrieval strategies (semantic/keyword/hybrid), processing techniques (reranking, NLI), not just LLM function-calling. The "intelligence" is deciding which to use when based on content analysis.
 
 ## Key Design Patterns
 
@@ -15,10 +25,13 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Answer evaluation → strategy switching → improved results
 - Adaptive thresholds based on retrieval performance
 
-**LangGraph Workflow Pattern**
+**LangGraph Workflow Pattern** (Dynamic Planning and Execution Agents)
 - 9 nodes with conditional edges (not linear pipeline)
 - Integrated metadata analysis within retrieval evaluation
-- State accumulation for messages/documents/history using `Annotated[list, operator.add]`; query_expansions regenerated fresh per iteration (ensures expansion-query alignment)
+- **State management pattern**:
+  - `Annotated[list, operator.add]` for: messages, retrieved_docs, refinement_history (accumulate across turns/iterations)
+  - Direct replacement (no operator.add) for: query_expansions (regenerated fresh per iteration to ensure expansion-query alignment)
+  - Rationale: Expansions must match current query context; accumulation would mix variants for different queries/strategies
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
 - Single-use nodes: conversational_rewrite and decide_strategy used only on initial flow; retry paths skip them
 - conversational_rewrite: Makes query self-contained using conversation history (once per user query)
@@ -307,6 +320,54 @@ return grade["relevant"]
 https://docs.langchain.com/oss/python/integrations/retrievers/bm25
 Covers: Keyword ranking, preprocessing functions, sparse search alternative to vector search
 Use for: The keyword/sparse component of hybrid retrieval systems (exact term matching, proper nouns, technical terms)
+
+---
+
+### LangGraph Best Practices
+
+**State Reducers** - add_messages vs operator.add for state management
+Use `add_messages` for message history (idempotent, deduplicates by message ID), `operator.add` for generic list accumulation. This system uses selective accumulation: `operator.add` for messages/docs/history, direct replacement for query_expansions (ensures expansion-query alignment).
+https://docs.langchain.com/oss/python/langgraph/use-graph-api#messagesstate
+Code Pattern:
+```python
+# state.py - Selective accumulation
+class AdvancedRAGState(TypedDict):
+    messages: Annotated[list[BaseMessage], operator.add]  # Accumulate
+    query_expansions: list[str]  # Regenerate fresh per iteration
+```
+
+**Router Function Purity** - Deterministic conditional edges without side effects
+Router functions should be pure (deterministic output based only on state, no side effects). Enables reliable checkpointing, testability, and observability. Avoid: random(), datetime.now(), DB queries, global state mutations.
+https://docs.langchain.com/oss/python/langgraph/use-graph-api#conditional-branching
+Code Pattern:
+```python
+# graph.py - Pure router
+def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
+    if state.get("strategy_changed", False):
+        return "retrieve_with_expansion"  # Skip strategy on retry
+    return "decide_strategy"  # Initial flow
+```
+
+**Error Handling** - Quality gates and retry policies over exceptions
+This system uses quality gates (quality scores + retry limits) over try/catch. LangGraph retries transient errors (network, rate limits, 5xx) automatically but NOT programming errors (ValueError, TypeError). Store LLM-recoverable errors in state for feedback loops.
+https://docs.langchain.com/oss/python/langgraph/thinking-in-langgraph#handle-errors-appropriately
+Code Pattern:
+```python
+# Quality-driven routing (not exception handling)
+if state["retrieval_quality_score"] < 0.6 and state["retrieval_attempts"] < 2:
+    return "rewrite"  # Poor retrieval -> retry
+return "generate"
+```
+
+**Async & Parallel Execution** - Supersteps and concurrent branches
+Use parallel edges from START or Send API for fan-out. LangGraph executes nodes in supersteps (transactional boundaries): all parallel branches succeed or all fail. Successful results ARE checkpointed even if superstep fails, so retries don't repeat work. Current system: synchronous (invoke() not ainvoke()).
+https://docs.langchain.com/oss/python/langgraph/workflows-agents#parallelization
+Code Pattern:
+```python
+# Parallel branches from START
+builder.add_edge(START, "node_a")
+builder.add_edge(START, "node_b")  # Concurrent with node_a
+```
 
 ---
 

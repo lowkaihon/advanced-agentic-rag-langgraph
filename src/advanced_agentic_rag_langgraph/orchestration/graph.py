@@ -64,18 +64,20 @@ def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_stra
 
 def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
     """
-    Route based on retrieval quality with content-driven early strategy switching.
+    Pure router: Route based on retrieval quality with content-driven early strategy switching.
 
     Implements dual-tier strategy switching:
     - Early tier (here): Detects obvious strategy mismatches (off_topic, wrong_domain)
     - Late tier (route_after_evaluation): Handles subtle insufficiency after answer generation
 
     Research-backed CRAG pattern: confidence-based action triggering.
+
+    Note: Pure function - only reads state and returns routing decision.
+    State updates for early strategy switching happen in query_expansion_node.
     """
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
-    current_strategy = state.get("retrieval_strategy", "hybrid")
 
     # Good quality: proceed to answer generation
     if quality > 0.6:
@@ -88,34 +90,9 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     # Poor quality: Content-driven decision
     # Strategy mismatch indicators suggest fundamental approach problem, not query problem
     if "off_topic" in issues or "wrong_domain" in issues:
-        # Switch strategy and optimize query for new strategy
-        # This avoids wasting retrieval attempts on wrong strategy
-        next_strategy = select_next_strategy(current_strategy, issues)
-
-        # Optimize query for new strategy (CRAG/PreQRAG pattern)
-        optimized_query = optimize_query_for_strategy(
-            query=state["current_query"],
-            new_strategy=next_strategy,
-            old_strategy=current_strategy,
-            issues=issues
-        )
-
-        state["current_query"] = optimized_query
-        state["retrieval_strategy"] = next_strategy
-        state["strategy_switch_reason"] = f"Early detection: {', '.join(issues)}"
-        state["strategy_changed"] = True
-        state["query_expansions"] = []  # Trigger regeneration for optimized query
-
-        print(f"\n{'='*60}")
-        print(f"EARLY STRATEGY SWITCH")
-        print(f"From: {current_strategy} to {next_strategy}")
-        print(f"Reason: {', '.join(issues)}")
-        print(f"Attempt: {attempts + 1}")
-        print(f"Quality score: {quality:.0%}")
-        print(f"Note: Query optimized for {next_strategy} strategy")
-        print(f"{'='*60}\n")
-
-        return "query_expansion"  # Regenerate expansions for optimized query
+        # Route to query_expansion for early strategy switch
+        # query_expansion_node will detect this scenario and update state accordingly
+        return "query_expansion"
     else:
         # Other issues (partial_coverage, missing_key_info, etc.) may benefit from query rewriting
         return "rewrite_and_refine"
@@ -125,7 +102,7 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
 
 def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generation", "evaluate_answer"]:
     """
-    Route based on groundedness with retrieval quality awareness and false positive protection.
+    Pure router: Route based on groundedness with retrieval quality awareness and false positive protection.
 
     Three-tier threshold strategy:
     - NONE (0.8-1.0): No hallucination, proceed
@@ -137,6 +114,9 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
     Research-backed approach:
     - Protects against over-conservative NLI detector (zero-shot F1: 0.65-0.70)
     - Re-retrieval reduces hallucination 46% more than regeneration when context is the issue
+
+    Note: Pure function - only reads state and returns routing decision.
+    State updates for retry counter and re-retrieval flags happen in target nodes.
     """
     retry_needed = state.get("retry_needed", False)
     retry_count = state.get("groundedness_retry_count", 0)
@@ -166,6 +146,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
         if retrieval_quality >= 0.6:
             # Good context, bad generation → Genuine LLM hallucination
             # Retry generation with stricter grounding instructions
+            # answer_generation_node will increment retry counter
             print(f"\n{'='*60}")
             print(f"GROUNDEDNESS RETRY (LLM Hallucination)")
             print(f"Groundedness: {groundedness_score:.0%}")
@@ -174,10 +155,12 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
             print(f"Action: Regenerating with stricter grounding")
             print(f"Retry count: {retry_count + 1}/2")
             print(f"{'='*60}\n")
+
             return "answer_generation"
         else:
             # Poor context → Hallucination due to missing/insufficient information
             # Research: Re-retrieval superior to regeneration (46% hallucination reduction)
+            # evaluate_answer_node will set re-retrieval flags
             print(f"\n{'='*60}")
             print(f"GROUNDEDNESS ISSUE (Retrieval-Caused)")
             print(f"Groundedness: {groundedness_score:.0%}")
@@ -186,10 +169,6 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
             print(f"Action: Flagging for re-retrieval (not regeneration)")
             print(f"Research: Re-retrieval > regeneration for context gaps")
             print(f"{'='*60}\n")
-
-            # Flag for evaluation to trigger re-retrieval with strategy change
-            state["retrieval_caused_hallucination"] = True
-            state["is_answer_sufficient"] = False  # Force retry in evaluation
 
             return "evaluate_answer"
 
@@ -201,7 +180,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion", "END"]:
     """
-    Route based on answer evaluation with content-driven strategy switching.
+    Pure router: Route based on answer evaluation with content-driven strategy switching.
 
     Uses retrieval quality issues (content-based) to intelligently select
     next retrieval strategy, following research-backed CRAG/Self-RAG patterns.
@@ -210,6 +189,9 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
     1. Retrieval-caused hallucination → Force re-retrieval with strategy change
     2. Answer sufficient → END
     3. Answer insufficient → Content-driven strategy switching
+
+    Note: Pure function - only reads state and returns routing decision.
+    State updates for strategy switching happen in query_expansion_node.
     """
     # PRIORITY CHECK: Retrieval-caused hallucination detected
     # Research: Re-retrieval reduces hallucination 46% more than regeneration
@@ -217,42 +199,9 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
         retrieval_attempts = state.get("retrieval_attempts", 0)
 
         if retrieval_attempts < 3:
-            # Force re-retrieval with strategy change to address context gaps
-            current_strategy = state.get("retrieval_strategy", "hybrid")
-
-            # Intelligent strategy switching based on current strategy
-            if current_strategy == "semantic":
-                next_strategy = "keyword"  # Try precision-based approach
-            elif current_strategy == "keyword":
-                next_strategy = "hybrid"   # Try balanced approach
-            else:  # hybrid
-                next_strategy = "semantic"  # Try conceptual approach
-
-            # Optimize query for new strategy (CRAG/PreQRAG pattern)
-            optimized_query = optimize_query_for_strategy(
-                query=state["current_query"],
-                new_strategy=next_strategy,
-                old_strategy=current_strategy,
-                issues=["retrieval_caused_hallucination"]
-            )
-
-            print(f"\n{'='*60}")
-            print(f"RE-RETRIEVAL (Hallucination Mitigation)")
-            print(f"Trigger: Poor retrieval caused hallucination")
-            print(f"Strategy: {current_strategy} to {next_strategy}")
-            print(f"Attempt: {retrieval_attempts + 1}/3")
-            print(f"Research: Re-retrieval > regeneration for context gaps")
-            print(f"Note: Query optimized for {next_strategy} strategy")
-            print(f"{'='*60}\n")
-
-            # Update state for strategy change
-            state["current_query"] = optimized_query
-            state["retrieval_strategy"] = next_strategy
-            state["strategy_changed"] = True
-            state["query_expansions"] = []  # Regenerate for optimized query
-            state["retrieval_caused_hallucination"] = False  # Clear flag
-
-            return "query_expansion"  # Regenerate expansions for optimized query
+            # Route to query_expansion for re-retrieval with strategy change
+            # query_expansion_node will detect this scenario and update state accordingly
+            return "query_expansion"
         else:
             # Max attempts reached, give up
             return END
@@ -261,99 +210,10 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
-        # Content-driven strategy selection based on retrieval quality issues
-        retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-        retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
-        current = state.get("retrieval_strategy", "hybrid")
-
-        # Map content issues to optimal strategies (research-backed)
-        if "missing_key_info" in retrieval_quality_issues and retrieval_quality_score < 0.6:
-            # Missing information suggests need for semantic/conceptual search
-            if current != "semantic":
-                next_strategy = "semantic"
-                reasoning = f"Content-driven: Missing key information detected, switching to semantic search for better conceptual coverage"
-            else:
-                # Already semantic, try hybrid for balanced approach
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Semantic failed to find key information, trying hybrid for broader coverage"
-        elif "off_topic" in retrieval_quality_issues or "wrong_domain" in retrieval_quality_issues:
-            # Off-topic results suggest need for precise keyword matching
-            if current != "keyword":
-                next_strategy = "keyword"
-                reasoning = f"Content-driven: Off-topic results detected, switching to keyword search for precision"
-            else:
-                # Already keyword, try hybrid
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Keyword search not precise enough, trying hybrid"
-        elif "partial_coverage" in retrieval_quality_issues or "incomplete_context" in retrieval_quality_issues:
-            # Partial coverage suggests need for different search approach
-            if current == "hybrid":
-                next_strategy = "semantic"
-                reasoning = "Content-driven: Partial coverage with hybrid, trying semantic for depth"
-            elif current == "semantic":
-                next_strategy = "keyword"
-                reasoning = "Content-driven: Semantic incomplete, trying keyword for specificity"
-            else:
-                next_strategy = "hybrid"
-                reasoning = "Content-driven: Keyword insufficient, trying hybrid for balance"
-        else:
-            # Fallback: traditional progression (hybrid → semantic → keyword)
-            if current == "hybrid":
-                next_strategy = "semantic"
-                reasoning = "Fallback: hybrid to semantic"
-            elif current == "semantic":
-                next_strategy = "keyword"
-                reasoning = "Fallback: semantic to keyword"
-            else:
-                return END  # Exhausted all strategies
-
-        # Log refinement
-        refinement = {
-            "iteration": state.get("retrieval_attempts", 0),
-            "from_strategy": current,
-            "to_strategy": next_strategy,
-            "reasoning": reasoning,
-            "retrieval_quality_issues": retrieval_quality_issues,
-            "retrieval_quality_score": retrieval_quality_score,
-        }
-
-        # Check if strategy changed - if yes, optimize query and regenerate expansions
-        strategy_changed = (next_strategy != current)
-
-        # Optimize query for new strategy if switching (CRAG/PreQRAG pattern)
-        if strategy_changed:
-            # Combine retrieval and answer quality issues for comprehensive feedback
-            answer_quality_issues = state.get("answer_quality_issues", [])
-            combined_issues = list(set(retrieval_quality_issues + answer_quality_issues))
-
-            optimized_query = optimize_query_for_strategy(
-                query=state["current_query"],
-                new_strategy=next_strategy,
-                old_strategy=current,
-                issues=combined_issues  # Use both retrieval AND answer feedback
-            )
-            state["current_query"] = optimized_query
-
-        print(f"\n{'='*60}")
-        print(f"STRATEGY REFINEMENT")
-        print(f"Iteration: {refinement['iteration']}")
-        print(f"Switch: {current} to {next_strategy}")
-        print(f"Reasoning: {reasoning}")
-        print(f"Retrieval quality: {retrieval_quality_score:.0%}")
-        print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
-        if strategy_changed:
-            print(f"Strategy changed: Query optimized and will regenerate expansions")
-        print(f"{'='*60}\n")
-
-        # Update state with new strategy and log refinement
-        state["retrieval_strategy"] = next_strategy
-        state.setdefault("refinement_history", []).append(refinement)
-
-        # Strategy always changes in retry logic (content-driven or fallback guarantees this)
-        # Clear expansions and route through query_expansion for optimized query
-        state["query_expansions"] = []  # Signal regeneration needed
-        state["strategy_changed"] = True  # Flag for logging
-        return "query_expansion"  # Regenerate expansions for optimized query
+        # Route to query_expansion for content-driven strategy switching
+        # query_expansion_node will detect this scenario and update state accordingly
+        # (no state mutations here - router remains pure)
+        return "query_expansion"
     else:
         return END
 
@@ -406,7 +266,7 @@ def build_advanced_rag_graph():
         {
             "answer_generation": "answer_generation",
             "rewrite_and_refine": "rewrite_and_refine",
-            "query_expansion": "query_expansion",  # Early strategy switch
+            "query_expansion": "query_expansion",
         }
     )
 
@@ -422,8 +282,8 @@ def build_advanced_rag_graph():
         "groundedness_check",
         route_after_groundedness,
         {
-            "answer_generation": "answer_generation",  # Retry if severe hallucination
-            "evaluate_answer": "evaluate_answer",      # Proceed to evaluation
+            "answer_generation": "answer_generation",
+            "evaluate_answer": "evaluate_answer",
         }
     )
 
@@ -432,7 +292,7 @@ def build_advanced_rag_graph():
         "evaluate_answer",
         route_after_evaluation,
         {
-            "query_expansion": "query_expansion",  # Regenerate expansions for new strategy
+            "query_expansion": "query_expansion",
             END: END,
         }
     )
