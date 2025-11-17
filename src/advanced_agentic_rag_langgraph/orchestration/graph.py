@@ -79,22 +79,15 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
 
-    # Good quality: proceed to answer generation
     if quality > 0.6:
         return "answer_generation"
 
-    # Max attempts reached: forced to proceed
     if attempts >= 2:
         return "answer_generation"
 
-    # Poor quality: Content-driven decision
-    # Strategy mismatch indicators suggest fundamental approach problem, not query problem
     if "off_topic" in issues or "wrong_domain" in issues:
-        # Route to query_expansion for early strategy switch
-        # query_expansion_node will detect this scenario and update state accordingly
         return "query_expansion"
     else:
-        # Other issues (partial_coverage, missing_key_info, etc.) may benefit from query rewriting
         return "rewrite_and_refine"
 
 
@@ -123,13 +116,9 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
     groundedness_score = state.get("groundedness_score", 1.0)
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
 
-    # Check if retry limit reached
     if retry_count >= 2:
         return "evaluate_answer"
 
-    # MODERATE severity (0.6-0.8): Likely NLI false positive
-    # Empirical evidence: Correct facts marked as unsupported (110M parameters, 15% MLM)
-    # Proceed without retry to avoid degrading correct answers
     if 0.6 <= groundedness_score < 0.8:
         print(f"\n{'='*60}")
         print(f"GROUNDEDNESS WARNING (Likely NLI False Positive)")
@@ -139,14 +128,8 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
         print(f"{'='*60}\n")
         return "evaluate_answer"
 
-    # SEVERE groundedness issue (score < 0.6): Root cause detection
     if retry_needed and retry_count < 2:
-        # Distinguish: Is this an LLM problem or a retrieval problem?
-
         if retrieval_quality >= 0.6:
-            # Good context, bad generation → Genuine LLM hallucination
-            # Retry generation with stricter grounding instructions
-            # answer_generation_node will increment retry counter
             print(f"\n{'='*60}")
             print(f"GROUNDEDNESS RETRY (LLM Hallucination)")
             print(f"Groundedness: {groundedness_score:.0%}")
@@ -158,9 +141,6 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
 
             return "answer_generation"
         else:
-            # Poor context → Hallucination due to missing/insufficient information
-            # Research: Re-retrieval superior to regeneration (46% hallucination reduction)
-            # evaluate_answer_node will set re-retrieval flags
             print(f"\n{'='*60}")
             print(f"GROUNDEDNESS ISSUE (Retrieval-Caused)")
             print(f"Groundedness: {groundedness_score:.0%}")
@@ -172,7 +152,6 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
 
             return "evaluate_answer"
 
-    # Default: proceed to evaluation
     return "evaluate_answer"
 
 
@@ -193,26 +172,16 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
     Note: Pure function - only reads state and returns routing decision.
     State updates for strategy switching happen in query_expansion_node.
     """
-    # PRIORITY CHECK: Retrieval-caused hallucination detected
-    # Research: Re-retrieval reduces hallucination 46% more than regeneration
     if state.get("retrieval_caused_hallucination"):
         retrieval_attempts = state.get("retrieval_attempts", 0)
-
         if retrieval_attempts < 3:
-            # Route to query_expansion for re-retrieval with strategy change
-            # query_expansion_node will detect this scenario and update state accordingly
             return "query_expansion"
         else:
-            # Max attempts reached, give up
             return END
 
-    # Standard evaluation flow
     if state.get("is_answer_sufficient"):
         return END
-    elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
-        # Route to query_expansion for content-driven strategy switching
-        # query_expansion_node will detect this scenario and update state accordingly
-        # (no state mutations here - router remains pure)
+    elif state.get("retrieval_attempts", 0) < 3:
         return "query_expansion"
     else:
         return END
@@ -240,14 +209,9 @@ def build_advanced_rag_graph():
     builder.add_node("groundedness_check", groundedness_check_node)
     builder.add_node("evaluate_answer", evaluate_answer_with_retrieval_node)
 
-    # ========== EDGES ==========
-    # Start with conversational rewrite, then query optimization
     builder.add_edge(START, "conversational_rewrite")
     builder.add_edge("conversational_rewrite", "query_expansion")
 
-    # Conditional routing from query_expansion (RAG-Fusion pattern):
-    # - Initial flow: generate strategy-agnostic expansions → decide best strategy
-    # - Retry flow: strategy already changed → skip decide_strategy, go straight to retrieve
     builder.add_conditional_edges(
         "query_expansion",
         route_after_query_expansion,
@@ -259,7 +223,6 @@ def build_advanced_rag_graph():
 
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 
-    # Route based on retrieval quality (content-driven with early strategy switching)
     builder.add_conditional_edges(
         "retrieve_with_expansion",
         route_after_retrieval,
@@ -270,14 +233,9 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Rewrite always routes to query expansion (expansions always cleared by rewrite_and_refine_node)
-    # Critical: Query rewriting clears expansions, requiring regeneration for effectiveness
     builder.add_edge("rewrite_and_refine", "query_expansion")
-
-    # Answer generation leads to groundedness check
     builder.add_edge("answer_generation", "groundedness_check")
 
-    # Route after groundedness check
     builder.add_conditional_edges(
         "groundedness_check",
         route_after_groundedness,
@@ -287,7 +245,6 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Self-correction: routes to query_expansion (strategy always changes in retry logic)
     builder.add_conditional_edges(
         "evaluate_answer",
         route_after_evaluation,
@@ -297,11 +254,9 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Compile with memory
     checkpointer = MemorySaver()
     graph = builder.compile(checkpointer=checkpointer)
 
     return graph
 
-# Create the graph
 advanced_rag_graph = build_advanced_rag_graph()
