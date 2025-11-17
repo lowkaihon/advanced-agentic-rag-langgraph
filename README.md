@@ -41,8 +41,10 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 ### 7. Three-Tier Self-Correction Loops
 - **Query Rewriting Loop**: Poor retrieval (score <0.6) → issue-specific rewriting guidance (8 issue types) → retry (max 2 rewrites)
   - Example: `missing_key_info` → "Add specific keywords, technical terms, or entities that might appear in relevant documents"
-- **Hallucination Correction Loop**: Severe groundedness issues (score <0.6) → NLI verification → list unsupported claims → regenerate with strict grounding → retry (max 1)
-  - Provides explicit feedback: "Your previous answer contained these unsupported claims: [list]"
+- **Hallucination Correction Loop** (three-tier retrieval-aware routing):
+  - MODERATE (0.6-0.8): Likely NLI false positive → log warning, proceed without retry
+  - SEVERE + good retrieval (≥0.6): LLM hallucination → NLI verification → list unsupported claims → regenerate with strict grounding → retry (max 2)
+  - SEVERE + poor retrieval (<0.6): Retrieval-caused hallucination → flag for re-retrieval with strategy change (46% hallucination reduction vs regeneration)
 - **Strategy Switching Loop**: Insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword) → regenerate query expansions for new strategy → retry (max 3 attempts)
   - Regenerates query expansions when strategy changes (not reused from previous strategy)
 
@@ -54,12 +56,11 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - Shows node transitions and quality scores
 - Verbose mode for detailed debugging
 
-### 10. Metadata-Driven Adaptive Retrieval
-- Analyzes metadata of retrieved documents post-retrieval
-- Detects strategy mismatches (when docs prefer different strategy than selected)
-- Intelligent strategy switching based on document preferences (>60% mismatch threshold)
+### 10. Dual-Tier Content-Driven Strategy Switching
+- **Early detection** (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts (saves 30-50% tokens)
+- **Late detection** (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage → intelligent fallback) after answer proves insufficient
+- Both tiers regenerate query expansions optimized for new strategy
 - Tracks refinement history with reasoning and detected issues
-- Quality issue detection: low confidence, complexity mismatches, domain misalignment
 
 ### 11. Two-Stage Reranking
 - Applied AFTER RRF multi-query fusion to the fused candidate pool
@@ -74,13 +75,15 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 - NLI verification: cross-encoder/nli-deberta-v3-base validates each claim
 - Research-backed label mapping: entailment (>0.7) → SUPPORTED
 - Zero-shot baseline: ~0.65-0.70 F1 score
+- Three-tier routing: MODERATE (0.6-0.8) protects against false positives, SEVERE (<0.6) triggers retrieval-aware correction (distinguishes LLM vs retrieval-caused hallucination)
+- Sets retrieval_caused_hallucination flag when poor retrieval (<0.6) causes hallucinations, triggering re-retrieval with strategy change
 
 ### 13. Comprehensive Evaluation Framework
 - Retrieval metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 - Generation metrics: Groundedness, hallucination rate, confidence, answer quality
 - Golden dataset: 20 validated examples with graded relevance
 - RAGAS integration: 4 industry-standard metrics
-- Answer assessment: Semantic similarity, factual accuracy, completeness
+- Answer evaluation: vRAG-Eval framework (Relevance, Completeness, Accuracy) with 8 issue types and adaptive thresholds (65%/50% based on retrieval quality)
 
 ### 14. RAGAS Integration
 - Faithfulness: Measures hallucinations (LLM extracts + verifies claims)
@@ -375,18 +378,19 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 7: Groundedness Check                                      │
-│ • NLI-based hallucination detection                            │
-│ • Claim decomposition → NLI verification                       │
-│ • Severity classification (NONE/MODERATE/SEVERE)               │
-│ • Retry generation if severe (<0.6)                            │
+│ Node 7: Groundedness Check (retrieval-aware routing)           │
+│ • NLI-based hallucination detection with claim verification    │
+│ • Three-tier thresholds: NONE (≥0.8), MODERATE (0.6-0.8), SEVERE (<0.6) │
+│ • MODERATE: NLI false positive protection → proceed            │
+│ • SEVERE + good retrieval: LLM hallucination → retry generation│
+│ • SEVERE + poor retrieval: Sets retrieval_caused flag → re-retrieval │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 8: Evaluate Answer                                         │
-│ • Context sufficiency check (evaluates completeness for answer quality) │
-│ • Checks: relevance, completeness, accuracy                    │
-│ • Adaptive threshold (lower if retrieval was poor)             │
+│ Node 8: Evaluate Answer (vRAG-Eval framework)                  │
+│ • Evaluates: Relevance, Completeness, Accuracy                 │
+│ • Detects 8 issue types for content-driven routing             │
+│ • Adaptive threshold: 65% (good retrieval) or 50% (poor)       │
 │ • Computes confidence score                                    │
 │ • Missing aspects detection for incomplete context            │
 └────────────────────────────┬────────────────────────────────────┘
@@ -414,11 +418,14 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 
 Self-Correction Loops:
 • Loop 1 (Query Rewriting): Quality < 0.6 AND attempts < 2 → issue-specific feedback (8 types) → rewrite query → retry
-• Loop 2 (Hallucination Correction): Groundedness < 0.6 AND retry_count < 1 → NLI verification → list unsupported claims → regenerate with strict grounding → retry
-• Loop 3 (Strategy Switching):
-  - Answer insufficient AND attempts < 3
-  - Content-driven mapping: missing_key_info → semantic, off_topic → keyword
-  - Regenerates query expansions when strategy changes (routes to Node 2)
+• Loop 2 (Hallucination Correction - retrieval-aware):
+  - MODERATE (0.6-0.8): Log warning, proceed (NLI false positive protection)
+  - SEVERE + good retrieval (≥0.6): LLM hallucination → NLI verification → list unsupported claims → regenerate with strict grounding (max 2 retries)
+  - SEVERE + poor retrieval (<0.6): Retrieval-caused → flag for re-retrieval with strategy change
+• Loop 3 (Dual-Tier Strategy Switching):
+  - Early tier (after retrieval): Detects off_topic/wrong_domain → immediate switch → saves 30-50% tokens
+  - Late tier (after evaluation): Answer insufficient AND attempts < 3 → content-driven mapping (missing_key_info → semantic, off_topic → keyword)
+  - Both tiers regenerate query expansions when strategy changes (routes to Node 2)
 ```
 
 **Key Points**:

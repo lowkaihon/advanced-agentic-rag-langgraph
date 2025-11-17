@@ -8,7 +8,17 @@ retrieval strategies.
 
 import json
 import os
+import warnings
+import logging
+
+# Suppress LangSmith warnings
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
+warnings.filterwarnings("ignore", message=".*Failed to.*LangSmith.*")
+warnings.filterwarnings("ignore", message=".*langsmith.*")
+
+# Suppress LangSmith logging
+logging.getLogger("langsmith").setLevel(logging.CRITICAL)
+logging.getLogger("langchain").setLevel(logging.WARNING)
 
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, evaluate_on_golden_dataset
 from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph

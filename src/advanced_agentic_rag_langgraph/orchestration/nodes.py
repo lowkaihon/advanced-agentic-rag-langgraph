@@ -36,6 +36,20 @@ class RetrievalQualityEvaluation(TypedDict):
     issues: list[str]  # Specific problems identified (empty list if none)
 
 
+class AnswerQualityEvaluation(TypedDict):
+    """Structured output schema for answer quality assessment.
+
+    Used with .with_structured_output() to ensure reliable parsing of LLM evaluations.
+    Mirrors RetrievalQualityEvaluation pattern for consistency.
+    """
+    is_relevant: bool  # Answer addresses the question
+    is_complete: bool  # Answer fully addresses all aspects
+    is_accurate: bool  # Answer is factually correct
+    confidence_score: float  # 0-100 scale
+    reasoning: str  # Explanation of the evaluation
+    issues: list[str]  # Specific answer problems (empty list if none)
+
+
 # ============ CONVERSATIONAL QUERY REWRITING ============
 
 def conversational_rewrite_node(state: dict) -> dict:
@@ -677,8 +691,8 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     """
     Evaluate answer quality considering retrieval quality.
 
-    Streamlined: Context completeness now assessed in retrieval_quality_score
-    (via "partial_coverage" and "missing_key_info" issues), eliminating redundant LLM call.
+    Uses structured output (AnswerQualityEvaluation) to ensure reliable parsing.
+    Mirrors RetrievalQualityEvaluation pattern for consistency.
     """
     question = state["original_query"]
     answer = state.get("final_answer", "")
@@ -690,46 +704,122 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
     quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
+    # Create structured LLM for answer evaluation
+    quality_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    structured_answer_llm = quality_llm.with_structured_output(AnswerQualityEvaluation)
+
     evaluation_prompt = f"""Question: {question}
+
 Answer: {answer}
-Retrieval quality: {retrieval_quality:.0%}
-Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}
 
-Evaluate this answer:
-1. Relevant? (yes/no)
-2. Complete? (yes/no)
-3. Accurate? (yes/no)
-4. Confidence (0-100)
+Retrieval Context:
+- Retrieval quality: {retrieval_quality:.0%}
+- Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}
 
-Note: Retrieval quality and detected issues should inform your confidence assessment.
+Evaluate this answer using the vRAG-Eval framework (Correctness, Completeness, Honesty).
 
-Response as JSON:
-{{
-    "is_relevant": boolean,
-    "is_complete": boolean,
-    "is_accurate": boolean,
-    "confidence_score": number,
-    "reasoning": "brief note"
-}}"""
+EVALUATION CRITERIA:
 
-    response = llm.invoke(evaluation_prompt)
+1. Relevance: Does the answer address the question asked?
+   - Relevant: Answer directly addresses the question topic and intent
+   - Partially relevant: Answer touches on the topic but misses key aspects
+   - Irrelevant: Answer discusses unrelated topics or misunderstands the question
 
+2. Completeness: Does the answer fully address all aspects of the question?
+   - Complete: All question aspects covered with sufficient detail
+   - Partial: Some aspects covered, but missing important details or perspectives
+   - Incomplete: Major gaps in coverage, leaves question largely unanswered
+
+3. Accuracy: Is the answer factually correct based on the retrieved context?
+   - Accurate: All statements supported by retrieved documents
+   - Mostly accurate: Minor inaccuracies or unsupported details
+   - Inaccurate: Contains significant errors or unsupported claims
+
+SCORING GUIDELINES (0-100 confidence scale, aligned with threshold of {quality_threshold*100:.0f}):
+
+- 80-100: EXCELLENT - High confidence answer
+  * Directly relevant to question
+  * Fully addresses all aspects with comprehensive detail
+  * Factually accurate, well-grounded in retrieved context
+  * Clear synthesis of information
+
+- {quality_threshold*100:.0f}-79: GOOD - Acceptable answer [THRESHOLD: Will accept]
+  * Relevant to question with minor gaps
+  * Covers key aspects sufficiently
+  * Generally accurate with solid grounding
+  * Adequate synthesis
+
+- {(quality_threshold-0.15)*100:.0f}-{quality_threshold*100-1:.0f}: FAIR - Needs improvement [THRESHOLD: Will retry if attempts remain]
+  * Partially relevant or missing key aspects
+  * Incomplete coverage of question
+  * Some unsupported statements or weak grounding
+  * Poor synthesis or lacks specificity
+
+- 0-{(quality_threshold-0.15)*100-1:.0f}: POOR - Inadequate answer
+  * Not relevant to question
+  * Major gaps in completeness
+  * Significant factual errors or hallucinations
+  * Fails to synthesize information effectively
+
+STRUCTURED OUTPUT:
+
+- is_relevant (boolean): Answer addresses the question
+- is_complete (boolean): Answer fully addresses all aspects
+- is_accurate (boolean): Answer is factually correct
+- confidence_score (0-100): Overall confidence in answer quality
+
+- reasoning: 2-3 sentences explaining:
+  * How well the answer addresses the question
+  * What aspects are complete vs incomplete
+  * Accuracy and grounding assessment
+  * How retrieval quality affected answer quality
+
+- issues: List specific problems (empty list if none):
+  * "incomplete_synthesis": Answer lists facts but doesn't synthesize them into coherent response
+  * "lacks_specificity": Answer too vague or generic, missing concrete details from context
+  * "missing_details": Key details from question not addressed in answer
+  * "unsupported_claims": Contains statements not grounded in retrieved documents
+  * "partial_answer": Only addresses some aspects of multi-part question
+  * "wrong_focus": Emphasizes less relevant information while missing key points
+  * "retrieval_limited": Poor answer quality directly caused by insufficient retrieval
+  * "contextual_gaps": Missing information due to incomplete retrieved context
+
+Note: Consider retrieval quality when evaluating. Low retrieval quality ({retrieval_quality:.0%}) or issues like "{', '.join(retrieval_quality_issues[:2])}" may limit answer completeness."""
+
+    # Invoke structured LLM with error handling
     try:
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
-        evaluation = json.loads(json_match.group()) if json_match else {}
-    except:
-        evaluation = {"confidence_score": 70}
+        evaluation = structured_answer_llm.invoke(evaluation_prompt)
+        confidence = evaluation["confidence_score"] / 100
+        reasoning = evaluation["reasoning"]
+        issues = evaluation["issues"]
+    except Exception as e:
+        print(f"Warning: Answer evaluation failed: {e}. Using conservative fallback.")
+        # Conservative fallback that will trigger retry if attempts remain
+        evaluation = {
+            "is_relevant": True,
+            "is_complete": False,
+            "is_accurate": True,
+            "confidence_score": 50,
+            "reasoning": f"Evaluation failed: {e}",
+            "issues": ["evaluation_error"]
+        }
+        confidence = 0.5
+        reasoning = evaluation["reasoning"]
+        issues = evaluation["issues"]
 
-    confidence = evaluation.get("confidence_score", 70) / 100
+    # Determine if answer is sufficient
     is_sufficient = (
-        evaluation.get("is_relevant", True) and
-        evaluation.get("is_complete", True) and
+        evaluation["is_relevant"] and
+        evaluation["is_complete"] and
+        evaluation["is_accurate"] and
         confidence >= quality_threshold
     )
 
     return {
-        # Answer evaluation fields (context completeness now in retrieval_quality_issues)
+        # Answer evaluation fields
         "is_answer_sufficient": is_sufficient,
         "confidence_score": confidence,
+        "answer_quality_reasoning": reasoning,
+        "answer_quality_issues": issues,
         "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}")],
     }

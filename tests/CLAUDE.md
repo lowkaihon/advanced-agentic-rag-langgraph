@@ -67,6 +67,30 @@ from src.orchestration import ...
 3. Run with `uv run python <file>` (no PYTHONPATH needed)
 4. If errors: check package name spelling, verify uv sync completed
 
+**LangSmith Warning Suppression:**
+```python
+import os
+import warnings
+import logging
+
+# Suppress LangSmith warnings - MUST be set BEFORE importing LangChain modules
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+warnings.filterwarnings("ignore", message=".*Failed to.*LangSmith.*")
+warnings.filterwarnings("ignore", message=".*langsmith.*")
+
+# Suppress LangSmith logger (key fix for 403 warnings)
+logging.getLogger("langsmith").setLevel(logging.CRITICAL)
+logging.getLogger("langchain").setLevel(logging.WARNING)
+
+# NOW import LangChain modules
+from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+```
+
+**Why this order matters:**
+- Environment variables must be set before LangChain imports
+- Logging configuration prevents 403 Forbidden warnings from appearing in stderr
+- All integration tests use this pattern for clean output
+
 ---
 
 ## Test Selection Matrix
@@ -192,7 +216,7 @@ Quick verification that RAGAS evaluation executes correctly.
 - Add `OPENAI_API_KEY=sk-...` to `.env`
 
 **"403 Forbidden LangSmith warnings"**
-- **Status:** Tests automatically disable tracing (no action needed)
+- **Status:** Suppressed automatically (see "Import Patterns for New Tests" for implementation)
 - **Note:** To enable for demos, set `LANGSMITH_TRACING=true` in `.env`
 
 **Test fails: test_pdf_pipeline.py**

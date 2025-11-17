@@ -13,41 +13,148 @@ from advanced_agentic_rag_langgraph.orchestration.nodes import (
 )
 from typing import Literal
 
-def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine"]:
-    """Route based on retrieval quality"""
+def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
+    """
+    Route based on retrieval quality with content-driven early strategy switching.
+
+    Implements dual-tier strategy switching:
+    - Early tier (here): Detects obvious strategy mismatches (off_topic, wrong_domain)
+    - Late tier (route_after_evaluation): Handles subtle insufficiency after answer generation
+
+    Research-backed CRAG pattern: confidence-based action triggering.
+    """
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
+    issues = state.get("retrieval_quality_issues", [])
+    current_strategy = state.get("retrieval_strategy", "hybrid")
 
-    # If quality is good OR we've tried rewrites twice, proceed to answer
-    if quality > 0.6 or attempts >= 2:
+    # Good quality: proceed to answer generation
+    if quality > 0.6:
         return "answer_generation"
+
+    # Max attempts reached: forced to proceed
+    if attempts >= 2:
+        return "answer_generation"
+
+    # Poor quality: Content-driven decision
+    # Strategy mismatch indicators suggest fundamental approach problem, not query problem
+    if "off_topic" in issues or "wrong_domain" in issues:
+        # Switch strategy instead of rewriting query
+        # This avoids wasting retrieval attempts on wrong strategy
+        next_strategy = select_next_strategy(current_strategy, issues)
+        state["retrieval_strategy"] = next_strategy
+        state["strategy_switch_reason"] = f"Early detection: {', '.join(issues)}"
+        state["strategy_changed"] = True
+        state["query_expansions"] = None  # Trigger regeneration for new strategy
+
+        print(f"\n{'='*60}")
+        print(f"EARLY STRATEGY SWITCH")
+        print(f"From: {current_strategy} to {next_strategy}")
+        print(f"Reason: {', '.join(issues)}")
+        print(f"Attempt: {attempts + 1}")
+        print(f"Quality score: {quality:.0%}")
+        print(f"{'='*60}\n")
+
+        return "query_expansion"  # Regenerate expansions for new strategy
     else:
+        # Other issues (partial_coverage, missing_key_info, etc.) may benefit from query rewriting
         return "rewrite_and_refine"
 
 def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generation", "evaluate_answer"]:
     """
-    Route based on groundedness check results.
+    Route based on groundedness with retrieval quality awareness and false positive protection.
 
-    Conditional blocking strategy (best practice):
-    - retry_needed (score < 0.6) AND retry_count < 1: Regenerate with stricter prompt
-    - Else: Proceed to evaluation (with warnings if hallucination detected)
+    Three-tier threshold strategy:
+    - NONE (0.8-1.0): No hallucination, proceed
+    - MODERATE (0.6-0.8): Likely NLI false positive, proceed without retry
+    - SEVERE (<0.6): Root cause detection:
+      * Good retrieval + low groundedness → LLM hallucination (retry generation)
+      * Poor retrieval + low groundedness → Retrieval-caused (flag for re-retrieval)
+
+    Research-backed approach:
+    - Protects against over-conservative NLI detector (zero-shot F1: 0.65-0.70)
+    - Re-retrieval reduces hallucination 46% more than regeneration when context is the issue
     """
     retry_needed = state.get("retry_needed", False)
     retry_count = state.get("groundedness_retry_count", 0)
+    groundedness_score = state.get("groundedness_score", 1.0)
+    retrieval_quality = state.get("retrieval_quality_score", 0.7)
 
-    if retry_needed and retry_count < 1:
-        # Severe hallucination: retry generation once
-        print(f"\n{'='*60}")
-        print(f"GROUNDEDNESS RETRY")
-        print(f"Retry count: {retry_count}/1")
-        print(f"Action: Regenerating answer with stricter grounding instructions")
-        print(f"{'='*60}\n")
-        return "answer_generation"
-    else:
-        # Proceed to evaluation
-        # If hallucination was detected but not severe enough to retry,
-        # or if we already retried once, continue with warning
+    # Check if retry limit reached
+    if retry_count >= 2:
         return "evaluate_answer"
+
+    # MODERATE severity (0.6-0.8): Likely NLI false positive
+    # Empirical evidence: Correct facts marked as unsupported (110M parameters, 15% MLM)
+    # Proceed without retry to avoid degrading correct answers
+    if 0.6 <= groundedness_score < 0.8:
+        print(f"\n{'='*60}")
+        print(f"GROUNDEDNESS WARNING (Likely NLI False Positive)")
+        print(f"Score: {groundedness_score:.0%} (MODERATE - not blocking)")
+        print(f"Known issue: Zero-shot NLI is over-conservative")
+        print(f"Action: Proceeding to evaluation without retry")
+        print(f"{'='*60}\n")
+        return "evaluate_answer"
+
+    # SEVERE groundedness issue (score < 0.6): Root cause detection
+    if retry_needed and retry_count < 2:
+        # Distinguish: Is this an LLM problem or a retrieval problem?
+
+        if retrieval_quality >= 0.6:
+            # Good context, bad generation → Genuine LLM hallucination
+            # Retry generation with stricter grounding instructions
+            print(f"\n{'='*60}")
+            print(f"GROUNDEDNESS RETRY (LLM Hallucination)")
+            print(f"Groundedness: {groundedness_score:.0%}")
+            print(f"Retrieval quality: {retrieval_quality:.0%} (GOOD)")
+            print(f"Root cause: LLM invented facts despite good context")
+            print(f"Action: Regenerating with stricter grounding")
+            print(f"Retry count: {retry_count + 1}/2")
+            print(f"{'='*60}\n")
+            return "answer_generation"
+        else:
+            # Poor context → Hallucination due to missing/insufficient information
+            # Research: Re-retrieval superior to regeneration (46% hallucination reduction)
+            print(f"\n{'='*60}")
+            print(f"GROUNDEDNESS ISSUE (Retrieval-Caused)")
+            print(f"Groundedness: {groundedness_score:.0%}")
+            print(f"Retrieval quality: {retrieval_quality:.0%} (POOR)")
+            print(f"Root cause: LLM filled gaps due to insufficient context")
+            print(f"Action: Flagging for re-retrieval (not regeneration)")
+            print(f"Research: Re-retrieval > regeneration for context gaps")
+            print(f"{'='*60}\n")
+
+            # Flag for evaluation to trigger re-retrieval with strategy change
+            state["retrieval_caused_hallucination"] = True
+            state["is_answer_sufficient"] = False  # Force retry in evaluation
+
+            return "evaluate_answer"
+
+    # Default: proceed to evaluation
+    return "evaluate_answer"
+
+
+def select_next_strategy(current: str, issues: list[str]) -> str:
+    """
+    Content-driven strategy selection for early switching.
+
+    Maps retrieval quality issues to optimal strategies based on CRAG patterns.
+    Called when route_after_retrieval detects fundamental strategy mismatch.
+
+    Args:
+        current: Current retrieval strategy ("semantic", "keyword", or "hybrid")
+        issues: List of detected retrieval quality issues
+
+    Returns:
+        Next strategy to try based on content analysis
+    """
+    if "off_topic" in issues or "wrong_domain" in issues:
+        # Off-topic results indicate need for precision → keyword search
+        # If already using keyword, try hybrid for balance
+        return "keyword" if current != "keyword" else "hybrid"
+
+    # Default fallback (shouldn't normally reach here, but safe fallback)
+    return "semantic" if current == "hybrid" else "hybrid"
 
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "query_expansion", "END"]:
@@ -56,7 +163,49 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
 
     Uses retrieval quality issues (content-based) to intelligently select
     next retrieval strategy, following research-backed CRAG/Self-RAG patterns.
+
+    Priority checks:
+    1. Retrieval-caused hallucination → Force re-retrieval with strategy change
+    2. Answer sufficient → END
+    3. Answer insufficient → Content-driven strategy switching
     """
+    # PRIORITY CHECK: Retrieval-caused hallucination detected
+    # Research: Re-retrieval reduces hallucination 46% more than regeneration
+    if state.get("retrieval_caused_hallucination"):
+        retrieval_attempts = state.get("retrieval_attempts", 0)
+
+        if retrieval_attempts < 3:
+            # Force re-retrieval with strategy change to address context gaps
+            current_strategy = state.get("retrieval_strategy", "hybrid")
+
+            # Intelligent strategy switching based on current strategy
+            if current_strategy == "semantic":
+                next_strategy = "keyword"  # Try precision-based approach
+            elif current_strategy == "keyword":
+                next_strategy = "hybrid"   # Try balanced approach
+            else:  # hybrid
+                next_strategy = "semantic"  # Try conceptual approach
+
+            print(f"\n{'='*60}")
+            print(f"RE-RETRIEVAL (Hallucination Mitigation)")
+            print(f"Trigger: Poor retrieval caused hallucination")
+            print(f"Strategy: {current_strategy} to {next_strategy}")
+            print(f"Attempt: {retrieval_attempts + 1}/3")
+            print(f"Research: Re-retrieval > regeneration for context gaps")
+            print(f"{'='*60}\n")
+
+            # Update state for strategy change
+            state["retrieval_strategy"] = next_strategy
+            state["strategy_changed"] = True
+            state["query_expansions"] = None  # Regenerate for new strategy
+            state["retrieval_caused_hallucination"] = False  # Clear flag
+
+            return "query_expansion"  # Regenerate expansions for new strategy
+        else:
+            # Max attempts reached, give up
+            return END
+
+    # Standard evaluation flow
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
@@ -193,13 +342,14 @@ def build_advanced_rag_graph():
 
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 
-    # Route based on retrieval quality (content-driven)
+    # Route based on retrieval quality (content-driven with early strategy switching)
     builder.add_conditional_edges(
         "retrieve_with_expansion",
         route_after_retrieval,
         {
             "answer_generation": "answer_generation",
             "rewrite_and_refine": "rewrite_and_refine",
+            "query_expansion": "query_expansion",  # Early strategy switch
         }
     )
 

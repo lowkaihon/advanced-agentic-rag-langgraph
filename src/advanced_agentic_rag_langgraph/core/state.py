@@ -43,6 +43,7 @@ class AdvancedRAGState(TypedDict):
     retry_needed: bool  # Whether severe hallucination requires regeneration
     groundedness_severity: str  # "NONE", "MODERATE", "SEVERE"
     groundedness_retry_count: int  # Number of regeneration attempts due to hallucination
+    retrieval_caused_hallucination: bool  # Flag when poor retrieval causes hallucination (triggers re-retrieval)
 
     # Metadata-driven adaptive retrieval
     doc_metadata_analysis: Dict  # Analysis of retrieved document characteristics
@@ -54,6 +55,10 @@ class AdvancedRAGState(TypedDict):
     # Retrieval Quality Issues (replaces context sufficiency - streamlined to single source)
     retrieval_quality_reasoning: str  # LLM explanation of retrieval quality score
     retrieval_quality_issues: list[str]  # Specific problems: partial_coverage, missing_key_info, etc.
+
+    # Answer Quality Evaluation (mirrors retrieval quality pattern)
+    answer_quality_reasoning: str  # LLM explanation of answer evaluation
+    answer_quality_issues: list[str]  # Specific problems: incomplete_synthesis, lacks_specificity, etc.
 
     # Output
     final_answer: str

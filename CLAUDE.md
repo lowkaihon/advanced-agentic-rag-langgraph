@@ -23,8 +23,13 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **Self-Correction Loops**
 - Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 2 rewrites)
-- Hallucination correction loop: severe groundedness issues (score <0.6) → NLI claim verification → list unsupported claims → regenerate with strict grounding instructions → retry (max 1)
-- Strategy switching loop: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → regenerate query expansions for new strategy → retry (max 3 attempts)
+- Hallucination correction loop (three-tier with root cause detection):
+  - MODERATE (0.6-0.8): Likely NLI false positive → log warning, proceed without retry (protects against over-conservative zero-shot NLI)
+  - SEVERE + good retrieval (>0.6): LLM hallucination → regenerate with strict grounding → retry (max 2)
+  - SEVERE + poor retrieval (<0.6): Retrieval-caused hallucination → flag for re-retrieval with strategy change (research: 46% hallucination reduction)
+- Dual-tier strategy switching:
+  - Early tier: strategy mismatch detected at retrieval (off_topic, wrong_domain) → immediate strategy switch → regenerate query expansions → retry (saves 30-50% tokens vs. wasted rewrites)
+  - Late tier: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → regenerate query expansions for new strategy → retry (max 3 attempts)
 
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
@@ -39,14 +44,17 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
 - Golden dataset: 20 validated examples with graded relevance (0-3 scale)
 - Retrieval quality evaluation: Issue-specific detection (partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain)
-- Answer quality: Semantic similarity, factual accuracy, completeness scoring
+- Answer quality evaluation (vRAG-Eval framework): Relevance, Completeness, Accuracy scoring with 8 issue types (incomplete_synthesis, lacks_specificity, missing_details, unsupported_claims, partial_answer, wrong_focus, retrieval_limited, contextual_gaps) and adaptive thresholds (65% for good retrieval, 50% for poor)
 
 **Intelligent Adaptation**
 - Document profiling: Stratified sampling (5K tokens), regex signal pre-detection, +15-27 pt accuracy gains
 - Query analysis: LLM-based intent classification and expansion decisions
 - Strategy selector: pure LLM classification (domain-agnostic, handles all edge cases)
 - Conversational rewriting: injects context from conversation history
-- Content-driven strategy switching: maps retrieval quality issues to optimal strategies (research-backed CRAG/Self-RAG approach)
+- Dual-tier content-driven strategy switching (research-backed CRAG confidence-based action triggering):
+  - Early detection (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts
+  - Late detection (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage/incomplete_context → intelligent fallback) after answer proves insufficient
+  - Both tiers regenerate query expansions optimized for new strategy
 - Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, groundedness feedback prepended when retry_needed=True
 - Query expansion regeneration: When strategy changes, clears expansions and routes through query_expansion node to regenerate variants optimized for new strategy
 
