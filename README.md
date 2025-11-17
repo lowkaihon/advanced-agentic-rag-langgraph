@@ -26,6 +26,7 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 
 ### 3. Query Optimization
 - Generates query variations and rewrites unclear queries to improve retrieval coverage
+- RAG-Fusion architecture: Strategy-agnostic expansions → select optimal strategy → apply to all variants (differs from PreQRAG parallel multi-strategy retrieval)
 - RRF (Reciprocal Rank Fusion) merges results across query variants BEFORE reranking using ranking scores instead of naive deduplication
 
 ### 4. Intelligent Strategy Selection
@@ -320,9 +321,10 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 1: Conversational Rewriting                                │
+│ Node 1: Conversational Rewriting (single-use)                   │
 │ • Checks conversation history                                   │
 │ • Makes query self-contained (resolves pronouns, references)    │
+│ • Used only once per user query at entry point                  │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -331,10 +333,11 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 3: Strategy Selection                                      │
+│ Node 3: Strategy Selection (single-use)                        │
 │ • Analyzes query features + corpus characteristics             │
 │ • Pure LLM classification (domain-agnostic)                    │
 │ • Selects: SEMANTIC, KEYWORD, or HYBRID                        │
+│ • Used only on initial flow; retry paths skip via flag         │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐

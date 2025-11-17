@@ -201,7 +201,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
         "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
 
-# ============ HYBRID RETRIEVAL STAGE ============
+# ============ ADAPTIVE RETRIEVAL STAGE ============
 
 def retrieve_with_expansion_node(state: dict) -> dict:
     """
@@ -493,7 +493,7 @@ def rewrite_and_refine_node(state: dict) -> dict:
     return {
         "current_query": rewritten,
         "rewritten_query": rewritten,
-        "query_expansions": None,  # Clear to trigger regeneration for rewritten query
+        "query_expansions": [],  # Clear to trigger regeneration for rewritten query
         "messages": [AIMessage(content=f"Query rewritten: {query} → {rewritten}")],
     }
 

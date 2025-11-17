@@ -12,12 +12,14 @@ class AdvancedRAGState(TypedDict):
     conversation_history: List[Dict[str, str]]  # Past conversation turns
 
     # Query optimization
-    query_expansions: Annotated[list[str], operator.add]  # Multiple query variants
+    query_expansions: list[str]  # Multiple query variants (regenerated per iteration, not accumulated)
     rewritten_query: str  # Rewritten for clarity or with context
     current_query: str  # Query being used for retrieval
 
     # Retrieval strategy
     retrieval_strategy: str  # "semantic", "keyword", or "hybrid"
+    strategy_changed: bool  # Flag to skip decide_strategy node on retry (routing signal)
+    strategy_switch_reason: str  # Explanation of why strategy was switched
     corpus_stats: Dict  # Corpus-level statistics for strategy selection
 
     # Processing

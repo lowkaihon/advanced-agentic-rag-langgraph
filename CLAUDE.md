@@ -18,8 +18,12 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **LangGraph Workflow Pattern**
 - 9 nodes with conditional edges (not linear pipeline)
 - Integrated metadata analysis within retrieval evaluation
-- State accumulation using TypedDict with `Annotated[list, operator.add]`
+- State accumulation for messages/documents/history using `Annotated[list, operator.add]`; query_expansions regenerated fresh per iteration (ensures expansion-query alignment)
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
+- Single-use nodes: conversational_rewrite and decide_strategy used only on initial flow; retry paths skip them
+- conversational_rewrite: Makes query self-contained using conversation history (once per user query)
+- decide_strategy: Selects optimal strategy; retry paths use strategy_changed flag to bypass re-selection
+- Conditional routing: route_after_query_expansion distinguishes initial vs retry paths for proper expansion regeneration
 
 **Self-Correction Loops**
 - Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 2 rewrites)
@@ -35,6 +39,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
 - Strategy selection based on corpus characteristics + query analysis
+- RAG-Fusion pattern: Strategy-agnostic expansions → select best strategy → use for ALL variants (differs from PreQRAG parallel multi-strategy approach)
 - RRF-based multi-query fusion: Reciprocal Rank Fusion aggregates rankings across query variants BEFORE reranking (3-5% MRR improvement)
 - Two-stage reranking applied to RRF-fused results for final relevance scoring
 

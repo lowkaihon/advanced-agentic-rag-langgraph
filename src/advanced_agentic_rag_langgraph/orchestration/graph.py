@@ -14,6 +14,54 @@ from advanced_agentic_rag_langgraph.orchestration.nodes import (
 from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
 from typing import Literal
 
+
+# ========== HELPER FUNCTIONS ==========
+
+def select_next_strategy(current: str, issues: list[str]) -> str:
+    """
+    Content-driven strategy selection for early switching.
+
+    Maps retrieval quality issues to optimal strategies based on CRAG patterns.
+    Called when route_after_retrieval detects fundamental strategy mismatch.
+
+    Args:
+        current: Current retrieval strategy ("semantic", "keyword", or "hybrid")
+        issues: List of detected retrieval quality issues
+
+    Returns:
+        Next strategy to try based on content analysis
+    """
+    if "off_topic" in issues or "wrong_domain" in issues:
+        # Off-topic results indicate need for precision → keyword search
+        # If already using keyword, try hybrid for balance
+        return "keyword" if current != "keyword" else "hybrid"
+
+    # Default fallback (shouldn't normally reach here, but safe fallback)
+    return "semantic" if current == "hybrid" else "hybrid"
+
+
+# ========== QUERY OPTIMIZATION ROUTING ==========
+
+def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
+    """
+    Route based on whether this is initial expansion or retry with strategy change.
+
+    RAG-Fusion pattern: Strategy-agnostic expansions generated first, then decide optimal strategy.
+
+    Routing logic:
+    - Initial flow: No strategy yet → route to decide_strategy
+    - Retry flow: Strategy already changed upstream → bypass decide_strategy, go straight to retrieve
+    """
+    if state.get("strategy_changed", False):
+        # Strategy changed, skip decide_strategy (already set in route_after_evaluation)
+        return "retrieve_with_expansion"
+    else:
+        # Initial flow, proceed to strategy selection
+        return "decide_strategy"
+
+
+# ========== RETRIEVAL ROUTING ==========
+
 def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
     """
     Route based on retrieval quality with content-driven early strategy switching.
@@ -56,7 +104,7 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         state["retrieval_strategy"] = next_strategy
         state["strategy_switch_reason"] = f"Early detection: {', '.join(issues)}"
         state["strategy_changed"] = True
-        state["query_expansions"] = None  # Trigger regeneration for optimized query
+        state["query_expansions"] = []  # Trigger regeneration for optimized query
 
         print(f"\n{'='*60}")
         print(f"EARLY STRATEGY SWITCH")
@@ -71,6 +119,9 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     else:
         # Other issues (partial_coverage, missing_key_info, etc.) may benefit from query rewriting
         return "rewrite_and_refine"
+
+
+# ========== ANSWER GENERATION ROUTING ==========
 
 def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generation", "evaluate_answer"]:
     """
@@ -146,52 +197,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
     return "evaluate_answer"
 
 
-def select_next_strategy(current: str, issues: list[str]) -> str:
-    """
-    Content-driven strategy selection for early switching.
-
-    Maps retrieval quality issues to optimal strategies based on CRAG patterns.
-    Called when route_after_retrieval detects fundamental strategy mismatch.
-
-    Args:
-        current: Current retrieval strategy ("semantic", "keyword", or "hybrid")
-        issues: List of detected retrieval quality issues
-
-    Returns:
-        Next strategy to try based on content analysis
-    """
-    if "off_topic" in issues or "wrong_domain" in issues:
-        # Off-topic results indicate need for precision → keyword search
-        # If already using keyword, try hybrid for balance
-        return "keyword" if current != "keyword" else "hybrid"
-
-    # Default fallback (shouldn't normally reach here, but safe fallback)
-    return "semantic" if current == "hybrid" else "hybrid"
-
-
-def route_after_rewrite(state: AdvancedRAGState) -> Literal["query_expansion"]:
-    """
-    Always route to query expansion after rewrite to regenerate expansions.
-
-    After query rewriting, expansions must be regenerated to match the new query.
-    This ensures retrieval uses expansions optimized for the rewritten query, not stale
-    expansions from the original query.
-
-    Critical for query rewriting effectiveness: Without regeneration, retrieval pool
-    would still use old expansions, making the rewrite mostly ineffective.
-
-    PRE-CONDITIONS (guaranteed by rewrite_and_refine_node):
-    - query_expansions = None (always cleared by rewrite_and_refine_node)
-    """
-    # Expansions always cleared by rewrite_and_refine, always need regeneration
-    print(f"\n{'='*60}")
-    print(f"QUERY EXPANSION REGENERATION")
-    print(f"Trigger: Query rewriting cleared expansions")
-    print(f"Action: Regenerating expansions for rewritten query")
-    print(f"Current query: {state.get('current_query', 'N/A')}")
-    print(f"{'='*60}\n")
-    return "query_expansion"
-
+# ========== EVALUATION ROUTING ==========
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion", "END"]:
     """
@@ -243,7 +249,7 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
             state["current_query"] = optimized_query
             state["retrieval_strategy"] = next_strategy
             state["strategy_changed"] = True
-            state["query_expansions"] = None  # Regenerate for optimized query
+            state["query_expansions"] = []  # Regenerate for optimized query
             state["retrieval_caused_hallucination"] = False  # Clear flag
 
             return "query_expansion"  # Regenerate expansions for optimized query
@@ -345,11 +351,14 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion"
 
         # Strategy always changes in retry logic (content-driven or fallback guarantees this)
         # Clear expansions and route through query_expansion for optimized query
-        state["query_expansions"] = None  # Signal regeneration needed
+        state["query_expansions"] = []  # Signal regeneration needed
         state["strategy_changed"] = True  # Flag for logging
         return "query_expansion"  # Regenerate expansions for optimized query
     else:
         return END
+
+
+# ========== GRAPH BUILDER ==========
 
 def build_advanced_rag_graph():
     """Build complete advanced RAG graph with all techniques"""
@@ -376,18 +385,9 @@ def build_advanced_rag_graph():
     builder.add_edge(START, "conversational_rewrite")
     builder.add_edge("conversational_rewrite", "query_expansion")
 
-    # Conditional routing from query_expansion:
-    # - If called from initial flow: go to decide_strategy
-    # - If called from retry loop (strategy_changed): go directly to retrieve_with_expansion
-    def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
-        """Route based on whether this is initial expansion or retry with strategy change"""
-        if state.get("strategy_changed", False):
-            # Strategy changed, skip decide_strategy (already set in route_after_evaluation)
-            return "retrieve_with_expansion"
-        else:
-            # Initial flow, proceed to strategy selection
-            return "decide_strategy"
-
+    # Conditional routing from query_expansion (RAG-Fusion pattern):
+    # - Initial flow: generate strategy-agnostic expansions → decide best strategy
+    # - Retry flow: strategy already changed → skip decide_strategy, go straight to retrieve
     builder.add_conditional_edges(
         "query_expansion",
         route_after_query_expansion,
