@@ -138,3 +138,6 @@ Desktop.ini
 notes.ipynb
 docs
 references
+Best Practices for LLM Prompts in RAG Pipelines.md
+Low-Complexity Prompt Engineering Techniques for Post-Detection RAG Hallucination Correction.md
+Research-Backed Best Practices for Self-Correction and Retry Mechanisms in RAG Systems.md

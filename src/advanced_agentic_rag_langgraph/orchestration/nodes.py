@@ -549,15 +549,66 @@ def analyze_retrieved_metadata_node(state: dict) -> dict:
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============
 
 def rewrite_and_refine_node(state: dict) -> dict:
-    """Rewrite query if retrieval quality is poor"""
+    """
+    Rewrite query if retrieval quality is poor.
+
+    Uses specific feedback from retrieval_quality_issues to guide rewriting,
+    providing actionable instructions to the LLM for better query formulation.
+    """
 
     query = state["current_query"]
     quality = state.get("retrieval_quality_score", 0)
 
     # Only rewrite if quality is poor AND we haven't done it too many times
     if quality < 0.6 and state.get("retrieval_attempts", 0) < 2:
-        rewritten = rewrite_query(query, retrieval_context="Insufficient results")
-        print(f"Rewritten: {query} to {rewritten}")
+        # Build specific feedback from retrieval issues
+        issues = state.get("retrieval_quality_issues", [])
+
+        if issues:
+            # Build actionable feedback based on specific issues detected
+            feedback_parts = [
+                f"Previous retrieval quality: {quality:.0%}",
+                "",
+                "Detected issues and recommended improvements:"
+            ]
+
+            for issue in issues:
+                if issue == "partial_coverage":
+                    feedback_parts.append("- PARTIAL COVERAGE: Query aspects not fully addressed in retrieved documents.")
+                    feedback_parts.append("  Suggestion: Expand query to explicitly cover all aspects or break into sub-queries.")
+                elif issue == "missing_key_info":
+                    feedback_parts.append("- MISSING KEY INFORMATION: Retrieved documents lack specific details needed to answer.")
+                    feedback_parts.append("  Suggestion: Add specific keywords, technical terms, or entities that might appear in relevant documents.")
+                elif issue == "incomplete_context":
+                    feedback_parts.append("- INCOMPLETE CONTEXT: Documents provide insufficient depth or detail.")
+                    feedback_parts.append("  Suggestion: Add qualifiers or context to target more comprehensive sources (e.g., 'detailed explanation of', 'comprehensive guide to').")
+                elif issue == "domain_misalignment":
+                    feedback_parts.append("- DOMAIN MISALIGNMENT: Retrieved documents are from wrong topic area or use different terminology.")
+                    feedback_parts.append("  Suggestion: Adjust terminology to match target domain (use domain-specific terms, acronyms, or jargon).")
+                elif issue == "low_confidence" or issue == "insufficient_depth":
+                    feedback_parts.append("- LOW CONFIDENCE/DEPTH: Documents are surface-level or tangentially related.")
+                    feedback_parts.append("  Suggestion: Make query more specific and focused (add constraints, context, or narrow scope).")
+                elif issue == "mixed_relevance":
+                    feedback_parts.append("- MIXED RELEVANCE: Some documents relevant, others off-topic.")
+                    feedback_parts.append("  Suggestion: Refine query to target more specific topic and reduce noise.")
+                elif issue == "off_topic" or issue == "wrong_domain":
+                    feedback_parts.append("- OFF-TOPIC RESULTS: Documents retrieved are not relevant to query intent.")
+                    feedback_parts.append("  Suggestion: Rephrase query with different keywords or approach (try synonyms, related concepts, or reframe the question).")
+
+            retrieval_context = "\n".join(feedback_parts)
+        else:
+            # Fallback to generic feedback if no specific issues detected
+            retrieval_context = f"Previous retrieval quality was {quality:.0%}. Improve query specificity and clarity."
+
+        print(f"\n{'='*60}")
+        print(f"QUERY REWRITING")
+        print(f"Original query: {query}")
+        print(f"Retrieval quality: {quality:.0%}")
+        print(f"Issues detected: {', '.join(issues) if issues else 'None'}")
+        print(f"{'='*60}\n")
+
+        rewritten = rewrite_query(query, retrieval_context=retrieval_context)
+        print(f"Rewritten query: {rewritten}\n")
 
         return {
             "current_query": rewritten,
@@ -572,34 +623,113 @@ def rewrite_and_refine_node(state: dict) -> dict:
 # ============ ANSWER GENERATION & EVALUATION ============
 
 def answer_generation_with_quality_node(state: dict) -> dict:
-    """Generate answer and include retrieval quality in reasoning"""
+    """
+    Generate answer using structured RAG prompt with metadata enrichment.
+
+    Domain-agnostic design: Works with any document type (research papers,
+    tutorials, contracts, manuals, blog posts, documentation, etc.)
+
+    Implements RAG prompting best practices:
+    - Numbered documents with metadata (type, level, domain)
+    - Quality-aware instructions with explicit thresholds
+    - Structured template with XML-like section markers
+    - Optional citations (model decides when helpful)
+    - Clear insufficient-context handling
+    - Groundedness feedback for hallucination self-correction
+    """
 
     question = state["original_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
     quality_score = state.get("retrieval_quality_score", 0)
 
-    # Adjust system prompt based on retrieval quality
+    # Check if this is a groundedness retry (feedback mechanism)
+    retry_needed = state.get("retry_needed", False)
+    unsupported_claims = state.get("unsupported_claims", [])
+    groundedness_score = state.get("groundedness_score", 1.0)
+
+    # Handle empty retrieval gracefully
+    if not context or context == "No context":
+        return {
+            "final_answer": "I apologize, but I could not retrieve any relevant documents to answer your question. Please try rephrasing your query or check if the information exists in the knowledge base.",
+            "messages": [AIMessage(content="Empty retrieval - no answer generated")],
+        }
+
+    # Context is already formatted as string from retrieve_with_expansion_node
+    # Format: "[source] content\n---\n[source] content..."
+    # We'll enhance it with document numbering and structure
+    formatted_context = context  # Use existing formatted context as-is for now
+
+    # Build hallucination feedback if this is a retry after groundedness check
+    hallucination_feedback = ""
+    if retry_needed and unsupported_claims:
+        hallucination_feedback = f"""CRITICAL - GROUNDEDNESS ISSUE DETECTED:
+Your previous answer had a groundedness score of {groundedness_score:.0%}, indicating it contained claims that were NOT supported by the retrieved documents.
+
+Unsupported claims from previous attempt:
+{chr(10).join(f"  {i+1}. {claim}" for i, claim in enumerate(unsupported_claims))}
+
+REGENERATION REQUIREMENTS:
+1. Use ONLY information that is explicitly stated in the retrieved context below
+2. For each of the unsupported claims listed above, either:
+   - Find direct supporting evidence in the context and rephrase the claim accurately with that evidence
+   - Completely omit the claim if no supporting evidence exists in the context
+3. When helpful for verification, you may reference the documents (e.g., "According to the retrieved information..." or "The documents indicate that...")
+4. Be conservative: If you cannot find explicit support for a claim, do not include it
+5. If the context is insufficient to answer the question fully, clearly state: "The provided context does not contain enough information to answer this question completely."
+
+Your goal is to be factually grounded, not comprehensive. Quality over completeness.
+
+"""
+        print(f"\n{'='*60}")
+        print(f"GROUNDEDNESS FEEDBACK PROVIDED")
+        print(f"Previous groundedness: {groundedness_score:.0%}")
+        print(f"Unsupported claims: {len(unsupported_claims)}")
+        print(f"Regenerating with hallucination-specific instructions")
+        print(f"{'='*60}\n")
+
+    # Quality-aware instructions with explicit thresholds
     if quality_score > 0.8:
-        quality_instruction = "The retrieved documents are highly relevant. Answer based on them."
+        quality_instruction = f"""High Confidence Retrieval (Score: {quality_score:.0%})
+The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
     elif quality_score > 0.6:
-        quality_instruction = "The retrieved documents are somewhat relevant. Use them but note any gaps."
+        quality_instruction = f"""Medium Confidence Retrieval (Score: {quality_score:.0%})
+The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
     else:
-        quality_instruction = "The retrieved documents may not fully answer the question. Acknowledge limitations."
+        quality_instruction = f"""Low Confidence Retrieval (Score: {quality_score:.0%})
+The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
-    system_prompt = f"""You are a helpful AI assistant. {quality_instruction}
+    # Domain-agnostic system prompt with optional citations
+    # Prepend hallucination feedback if this is a retry
+    system_prompt = f"""{hallucination_feedback}You are an AI assistant that answers questions based exclusively on retrieved documents. Your role is to provide accurate, well-grounded responses using only the information present in the provided context.
 
-Rules:
-1. Answer only based on the provided context
-2. Be honest about limitations
-3. Cite sources when relevant
-4. Confidence should match retrieval quality"""
+{quality_instruction}
 
-    user_message = f"""Context:
-{context}
+Core Instructions:
+1. Base your answer ONLY on the provided context - do not use external knowledge or make assumptions beyond what is explicitly stated
+2. If the context does not contain sufficient information to answer the question, clearly state: "The provided context does not contain enough information to answer this question."
+3. Provide direct, concise answers that extract and synthesize the relevant information
+4. When helpful for clarity or verification, you may reference specific documents (e.g., "Document 2 explains that..." or "According to the retrieved information...")
+5. Match your confidence level to the retrieval quality - acknowledge uncertainty when present"""
 
-Question: {question}
+    # Structured user message with XML-like markup
+    user_message = f"""<retrieved_context>
+{formatted_context}
+</retrieved_context>
 
-Answer:"""
+<question>
+{question}
+</question>
+
+<instructions>
+1. Answer the question using ONLY information from the <retrieved_context> section above
+2. If the context is insufficient, respond: "The provided context does not contain enough information to answer this question."
+3. Provide a direct, accurate answer that synthesizes the relevant information
+4. If multiple documents contain relevant information, combine insights appropriately
+5. Do not make assumptions or inferences beyond what is explicitly stated
+</instructions>
+
+<answer>
+"""
 
     response = llm.invoke([
         {"role": "system", "content": system_prompt},

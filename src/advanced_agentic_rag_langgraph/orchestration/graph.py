@@ -51,7 +51,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
         return "evaluate_answer"
 
 
-def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "END"]:
+def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "query_expansion", "END"]:
     """
     Route based on answer evaluation with metadata-driven strategy switching.
 
@@ -114,6 +114,9 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             "retrieval_quality_score": retrieval_quality_score,  # Track retrieval quality score
         }
 
+        # Check if strategy changed - if yes, need to regenerate query expansions
+        strategy_changed = (next_strategy != current)
+
         print(f"\n{'='*60}")
         print(f"STRATEGY REFINEMENT")
         print(f"Iteration: {refinement['iteration']}")
@@ -122,13 +125,22 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"Metadata issues: {refinement['metadata_issues']}")
         print(f"Retrieval quality: {retrieval_quality_score:.0%}")
         print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
+        if strategy_changed:
+            print(f"Strategy changed: Will regenerate query expansions for new strategy")
         print(f"{'='*60}\n")
 
         # Update state with new strategy and log refinement
         state["retrieval_strategy"] = next_strategy
         state.setdefault("refinement_history", []).append(refinement)
 
-        return "retrieve_with_expansion"
+        # If strategy changed, clear expansions and route through query_expansion
+        if strategy_changed:
+            state["query_expansions"] = None  # Signal regeneration needed
+            state["strategy_changed"] = True  # Flag for logging
+            return "query_expansion"  # Regenerate expansions for new strategy
+        else:
+            # Same strategy, can reuse existing expansions
+            return "retrieve_with_expansion"
     else:
         return END
 
@@ -157,7 +169,28 @@ def build_advanced_rag_graph():
     # Start with conversational rewrite, then query optimization
     builder.add_edge(START, "conversational_rewrite")
     builder.add_edge("conversational_rewrite", "query_expansion")
-    builder.add_edge("query_expansion", "decide_strategy")
+
+    # Conditional routing from query_expansion:
+    # - If called from initial flow: go to decide_strategy
+    # - If called from retry loop (strategy_changed): go directly to retrieve_with_expansion
+    def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
+        """Route based on whether this is initial expansion or retry with strategy change"""
+        if state.get("strategy_changed", False):
+            # Strategy changed, skip decide_strategy (already set in route_after_evaluation)
+            return "retrieve_with_expansion"
+        else:
+            # Initial flow, proceed to strategy selection
+            return "decide_strategy"
+
+    builder.add_conditional_edges(
+        "query_expansion",
+        route_after_query_expansion,
+        {
+            "decide_strategy": "decide_strategy",
+            "retrieve_with_expansion": "retrieve_with_expansion",
+        }
+    )
+
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 
     # After retrieval, analyze metadata before routing
@@ -190,11 +223,13 @@ def build_advanced_rag_graph():
     )
 
     # Self-correction: try different strategy if answer insufficient
+    # Now supports routing to query_expansion when strategy changes (for regeneration)
     builder.add_conditional_edges(
         "evaluate_answer",
         route_after_evaluation,
         {
             "retrieve_with_expansion": "retrieve_with_expansion",
+            "query_expansion": "query_expansion",  # When strategy changes, regenerate expansions
             END: END,
         }
     )
