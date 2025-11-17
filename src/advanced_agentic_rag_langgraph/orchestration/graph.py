@@ -6,7 +6,6 @@ from advanced_agentic_rag_langgraph.orchestration.nodes import (
     query_expansion_node,
     decide_retrieval_strategy_node,
     retrieve_with_expansion_node,
-    analyze_retrieved_metadata_node,
     rewrite_and_refine_node,
     answer_generation_with_quality_node,
     groundedness_check_node,
@@ -53,47 +52,51 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "query_expansion", "END"]:
     """
-    Route based on answer evaluation with metadata-driven strategy switching.
+    Route based on answer evaluation with content-driven strategy switching.
 
-    Streamlined: Uses retrieval_quality_issues to detect missing information,
-    eliminating redundant context sufficiency check.
+    Uses retrieval quality issues (content-based) to intelligently select
+    next retrieval strategy, following research-backed CRAG/Self-RAG patterns.
     """
     if state.get("is_answer_sufficient"):
         return END
     elif state.get("retrieval_attempts", 0) < 3:  # Max 3 attempts
-        # Check for missing information from retrieval quality issues
+        # Content-driven strategy selection based on retrieval quality issues
         retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-        has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
         retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
-
-        # Metadata-driven strategy switching
         current = state.get("retrieval_strategy", "hybrid")
-        metadata_analysis = state.get("doc_metadata_analysis", {})
-        quality_issues = metadata_analysis.get("quality_issues", [])
 
-        # Check if metadata analysis suggests a specific strategy
-        suggested_strategy = None
-        for issue in quality_issues:
-            if "suggested_strategy" in issue:
-                suggested_strategy = issue["suggested_strategy"]
-                break
-
-        # If retrieval detected missing information, prioritize semantic search
-        # (semantic may capture conceptual completeness better than keyword)
-        if has_missing_info and retrieval_quality_score < 0.6:
+        # Map content issues to optimal strategies (research-backed)
+        if "missing_key_info" in retrieval_quality_issues and retrieval_quality_score < 0.6:
+            # Missing information suggests need for semantic/conceptual search
             if current != "semantic":
                 next_strategy = "semantic"
-                reasoning = f"Quality-driven: Missing information detected ({', '.join([i for i in retrieval_quality_issues if i in ['partial_coverage', 'missing_key_info', 'incomplete_context']])}), switching to semantic search"
+                reasoning = f"Content-driven: Missing key information detected, switching to semantic search for better conceptual coverage"
             else:
-                # Already semantic, try hybrid as fallback
+                # Already semantic, try hybrid for balanced approach
                 next_strategy = "hybrid"
-                reasoning = f"Quality-driven: Semantic failed to provide complete information, trying hybrid"
-        # Use metadata suggestion if available and no context issues
-        elif suggested_strategy and suggested_strategy != current:
-            next_strategy = suggested_strategy
-            reasoning = f"Metadata-driven: switching to {suggested_strategy} (current: {current})"
+                reasoning = f"Content-driven: Semantic failed to find key information, trying hybrid for broader coverage"
+        elif "off_topic" in retrieval_quality_issues or "wrong_domain" in retrieval_quality_issues:
+            # Off-topic results suggest need for precise keyword matching
+            if current != "keyword":
+                next_strategy = "keyword"
+                reasoning = f"Content-driven: Off-topic results detected, switching to keyword search for precision"
+            else:
+                # Already keyword, try hybrid
+                next_strategy = "hybrid"
+                reasoning = f"Content-driven: Keyword search not precise enough, trying hybrid"
+        elif "partial_coverage" in retrieval_quality_issues or "incomplete_context" in retrieval_quality_issues:
+            # Partial coverage suggests need for different search approach
+            if current == "hybrid":
+                next_strategy = "semantic"
+                reasoning = "Content-driven: Partial coverage with hybrid, trying semantic for depth"
+            elif current == "semantic":
+                next_strategy = "keyword"
+                reasoning = "Content-driven: Semantic incomplete, trying keyword for specificity"
+            else:
+                next_strategy = "hybrid"
+                reasoning = "Content-driven: Keyword insufficient, trying hybrid for balance"
         else:
-            # Fallback to traditional order: hybrid to semantic to keyword
+            # Fallback: traditional progression (hybrid → semantic → keyword)
             if current == "hybrid":
                 next_strategy = "semantic"
                 reasoning = "Fallback: hybrid to semantic"
@@ -101,7 +104,7 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
                 next_strategy = "keyword"
                 reasoning = "Fallback: semantic to keyword"
             else:
-                return END  # Give up
+                return END  # Exhausted all strategies
 
         # Log refinement
         refinement = {
@@ -109,9 +112,8 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             "from_strategy": current,
             "to_strategy": next_strategy,
             "reasoning": reasoning,
-            "metadata_issues": [issue.get("issue") for issue in quality_issues],
-            "retrieval_quality_issues": retrieval_quality_issues,  # Track retrieval quality issues
-            "retrieval_quality_score": retrieval_quality_score,  # Track retrieval quality score
+            "retrieval_quality_issues": retrieval_quality_issues,
+            "retrieval_quality_score": retrieval_quality_score,
         }
 
         # Check if strategy changed - if yes, need to regenerate query expansions
@@ -122,7 +124,6 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"Iteration: {refinement['iteration']}")
         print(f"Switch: {current} to {next_strategy}")
         print(f"Reasoning: {reasoning}")
-        print(f"Metadata issues: {refinement['metadata_issues']}")
         print(f"Retrieval quality: {retrieval_quality_score:.0%}")
         print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
         if strategy_changed:
@@ -157,7 +158,6 @@ def build_advanced_rag_graph():
 
     # ========== RETRIEVAL STAGE ==========
     builder.add_node("retrieve_with_expansion", retrieve_with_expansion_node)
-    builder.add_node("analyze_metadata", analyze_retrieved_metadata_node)
     builder.add_node("rewrite_and_refine", rewrite_and_refine_node)
 
     # ========== ANSWER STAGE ==========
@@ -193,12 +193,9 @@ def build_advanced_rag_graph():
 
     builder.add_edge("decide_strategy", "retrieve_with_expansion")
 
-    # After retrieval, analyze metadata before routing
-    builder.add_edge("retrieve_with_expansion", "analyze_metadata")
-
-    # Route based on retrieval quality (now from metadata analysis)
+    # Route based on retrieval quality (content-driven)
     builder.add_conditional_edges(
-        "analyze_metadata",
+        "retrieve_with_expansion",
         route_after_retrieval,
         {
             "answer_generation": "answer_generation",

@@ -38,9 +38,13 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 ### 6. Quality Gates
 - Conditional routing at retrieval and answer generation stages with adaptive thresholds
 
-### 7. Self-Correction Loops
-- **Query Rewriting Loop**: Poor retrieval → rewrite query → retry (max 2 rewrites)
-- **Strategy Switching Loop**: Insufficient answer → metadata-driven switch (if mismatch >60%) OR fallback (hybrid → semantic → keyword) → retry (max 3 attempts)
+### 7. Three-Tier Self-Correction Loops
+- **Query Rewriting Loop**: Poor retrieval (score <0.6) → issue-specific rewriting guidance (8 issue types) → retry (max 2 rewrites)
+  - Example: `missing_key_info` → "Add specific keywords, technical terms, or entities that might appear in relevant documents"
+- **Hallucination Correction Loop**: Severe groundedness issues (score <0.6) → NLI verification → list unsupported claims → regenerate with strict grounding → retry (max 1)
+  - Provides explicit feedback: "Your previous answer contained these unsupported claims: [list]"
+- **Strategy Switching Loop**: Insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword) → regenerate query expansions for new strategy → retry (max 3 attempts)
+  - Regenerates query expansions when strategy changes (not reused from previous strategy)
 
 ### 8. Multi-turn Conversations
 - Preserves conversation context across queries with state persistence and thread management
@@ -123,9 +127,12 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 
 **5. LangGraph Orchestration** (`orchestration/graph.py`, `orchestration/nodes.py`)
 - 9 nodes with conditional routing based on quality scores
-- Metadata analysis node examines retrieved documents for strategy alignment
+- Integrated metadata analysis within retrieval evaluation (not separate node)
 - Quality gates at retrieval and answer generation stages
-- Self-correction loops for query rewriting and metadata-driven strategy switching
+- Three feedback loops with issue-specific guidance:
+  1. Query rewriting: 8 issue types → actionable rewriting instructions
+  2. Hallucination correction: Lists unsupported claims → strict grounding prompt
+  3. Strategy switching: Maps issues to strategies + regenerates query expansions
 - Streams execution progress in real-time
 
 **6. Evaluation & Validation** (`evaluation/`, `validation/`)
@@ -335,15 +342,7 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 │ • Hybrid: combines both                                        │
 │ • RRF fusion FIRST: Ranks docs by cross-query consensus (3-5% MRR gain) │
 │ • Two-stage reranking AFTER RRF: CrossEncoder filters to top-15, LLM selects top-4 │
-└────────────────────────────┬────────────────────────────────────┘
-                             ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ Node 5: Metadata Analysis (NEW)                                │
-│ • Analyzes retrieved document metadata                         │
-│ • LLM evaluates retrieval quality (0-100 score)                │
-│ • Calculates strategy mismatch rate (% docs prefer different)  │
-│ • Detects quality issues: strategy_mismatch, low_confidence    │
-│ • Determines if refinement needed based on metadata signals    │
+│ • Integrated metadata analysis: evaluates retrieval quality (0-100 score) and detects issues │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
                     ┌────────┴────────┐
@@ -356,8 +355,9 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
               ┌──────────┘        └──────────────┐
               │                                   │
               │            ┌──────────────────────┴──────────────────┐
-              │            │ Node 6: Rewrite and Refine              │
-              │            │ • Rewrites query for clarity            │
+              │            │ Node 5: Rewrite and Refine              │
+              │            │ • Maps 8 issue types to specific rewriting guidance │
+              │            │ • Example: missing_key_info → add keywords │
               │            │ • Increments attempt counter            │
               │            └──────────┬──────────────────────────────┘
               │                       │
@@ -367,14 +367,15 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
               │
               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 7: Answer Generation with Quality Context                 │
-│ • Adjusts system prompt based on retrieval quality             │
-│ • High quality: confident answer                               │
-│ • Low quality: notes gaps and uncertainty                      │
+│ Node 6: Answer Generation with Quality Context                 │
+│ • Structured RAG prompting with XML markup                     │
+│ • Quality-aware instructions (>0.8, >0.6, ≤0.6 thresholds)     │
+│ • Prepends hallucination feedback when retry_needed=True       │
+│ • Lists specific unsupported claims for targeted regeneration  │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 8: Groundedness Check                                      │
+│ Node 7: Groundedness Check                                      │
 │ • NLI-based hallucination detection                            │
 │ • Claim decomposition → NLI verification                       │
 │ • Severity classification (NONE/MODERATE/SEVERE)               │
@@ -382,7 +383,7 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│ Node 9: Evaluate Answer                                         │
+│ Node 8: Evaluate Answer                                         │
 │ • Context sufficiency check (evaluates completeness for answer quality) │
 │ • Checks: relevance, completeness, accuracy                    │
 │ • Adaptive threshold (lower if retrieval was poor)             │
@@ -400,30 +401,36 @@ The system uses a 9-node LangGraph workflow with conditional routing and self-co
                          │        └────────────────────────────┐
                          │                                     │
                          ↓                          ┌──────────┴──────────────────┐
-              ┌──────────────────────┐              │ Metadata-Driven Switching:  │
-              │ END: Return Answer   │              │ Uses doc preferences if     │
-              │ • Final answer       │              │ detected, else:             │
-              │ • Confidence score   │              │ hybrid → semantic →keyword  │
-              │ • Strategy used      │              └──────────┬──────────────────┘
-              │ • Attempts made      │                         │
-              └──────────────────────┘                         └─────────┐
+              ┌──────────────────────┐              │ Content-Driven Switching:   │
+              │ END: Return Answer   │              │ Maps issues to strategies:  │
+              │ • Final answer       │              │ missing_key_info → semantic │
+              │ • Confidence score   │              │ off_topic → keyword         │
+              │ • Strategy used      │              │ Regenerates query expansions│
+              │ • Attempts made      │              └──────────┬──────────────────┘
+              └──────────────────────┘                         │
+                                                               └─────────┐
                                                                          ↓
-                                                               (back to Node 4)
+                                                               (back to Node 2: regenerate expansions)
 
 Self-Correction Loops:
-• Loop 1 (Query Rewriting): Quality < 0.6 AND attempts < 3 → rewrite query → retry
-• Loop 2 (Metadata-Driven Strategy Switching):
+• Loop 1 (Query Rewriting): Quality < 0.6 AND attempts < 2 → issue-specific feedback (8 types) → rewrite query → retry
+• Loop 2 (Hallucination Correction): Groundedness < 0.6 AND retry_count < 1 → NLI verification → list unsupported claims → regenerate with strict grounding → retry
+• Loop 3 (Strategy Switching):
   - Answer insufficient AND attempts < 3
-  - Uses metadata analysis to suggest next strategy (if mismatch detected)
-  - Fallback progression: hybrid → semantic → keyword
+  - Content-driven mapping: missing_key_info → semantic, off_topic → keyword
+  - Regenerates query expansions when strategy changes (routes to Node 2)
 ```
 
 **Key Points**:
-- Not a linear pipeline - uses conditional routing based on quality scores
-- Metadata analysis enables intelligent adaptation based on document characteristics
-- Two self-correction loops with quality gates (see diagram above for thresholds and attempts)
-- Strategy switching is metadata-driven when mismatches detected, otherwise uses fallback progression
+- Not a linear pipeline - uses conditional routing based on quality scores and content analysis
+- Integrated metadata analysis within retrieval evaluation (not separate node)
+- Three self-correction loops with issue-specific feedback:
+  1. Query rewriting: 8 issue types → actionable guidance
+  2. Hallucination correction: NLI verification → unsupported claims list → strict regeneration
+  3. Strategy switching: Content-driven mapping + query expansion regeneration
+- Strategy switching uses retrieval_quality_issues for intelligent adaptation (missing_key_info → semantic, off_topic → keyword)
 - Groundedness check uses NLI-based claim verification (zero-shot F1: 0.65-0.70)
+- Query expansions regenerated when strategy changes (not reused)
 - 9 nodes total
 
 ## Future Improvements

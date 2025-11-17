@@ -17,14 +17,14 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **LangGraph Workflow Pattern**
 - 9 nodes with conditional edges (not linear pipeline)
-- Metadata analysis node examines retrieved documents for strategy alignment
+- Integrated metadata analysis within retrieval evaluation
 - State accumulation using TypedDict with `Annotated[list, operator.add]`
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
 
 **Self-Correction Loops**
-- Query rewriting loop: poor retrieval quality → rewrite query → retry (max 2 rewrites)
-- Strategy switching loop: insufficient answer → switch strategy → retry (max 3 attempts)
-- Metadata-driven switching: uses document preferences when detected, fallback: hybrid → semantic → keyword
+- Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 2 rewrites)
+- Hallucination correction loop: severe groundedness issues (score <0.6) → NLI claim verification → list unsupported claims → regenerate with strict grounding instructions → retry (max 1)
+- Strategy switching loop: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → regenerate query expansions for new strategy → retry (max 3 attempts)
 
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
@@ -34,11 +34,11 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **Evaluation & Quality Assurance**
 - Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-15) → LLM-as-judge (stage 2, top-4)
-- NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification
+- NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification → hallucination feedback lists specific unsupported claims for targeted regeneration
 - Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 - RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
 - Golden dataset: 20 validated examples with graded relevance (0-3 scale)
-- Retrieval quality evaluation: Streamlined single-source assessment with issue detection (partial_coverage, missing_key_info)
+- Retrieval quality evaluation: Issue-specific detection (partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain)
 - Answer quality: Semantic similarity, factual accuracy, completeness scoring
 
 **Intelligent Adaptation**
@@ -46,12 +46,9 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Query analysis: LLM-based intent classification and expansion decisions
 - Strategy selector: pure LLM classification (domain-agnostic, handles all edge cases)
 - Conversational rewriting: injects context from conversation history
-
-**Metadata-Driven Adaptation**
-- Post-retrieval metadata analysis: examines retrieved document characteristics
-- Strategy mismatch detection: identifies when docs prefer different strategy (>60% threshold)
-- Intelligent refinement: switches to document-preferred strategy with logged reasoning
-- Quality issue tracking: detects low confidence, complexity mismatches, domain misalignment
+- Content-driven strategy switching: maps retrieval quality issues to optimal strategies (research-backed CRAG/Self-RAG approach)
+- Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, groundedness feedback prepended when retry_needed=True
+- Query expansion regeneration: When strategy changes, clears expansions and routes through query_expansion node to regenerate variants optimized for new strategy
 
 **State Management**
 - Uses TypedDict (best performance) not Pydantic
