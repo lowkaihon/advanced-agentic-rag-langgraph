@@ -140,8 +140,11 @@ def query_expansion_node(state: dict) -> dict:
 
     Aligns with best practices: 'Apply selective expansion using confidence thresholds'
     Domain-agnostic - works for any query type.
+
+    Uses current_query if available (e.g., after query rewriting), otherwise original_query.
+    This ensures expansions match the most recent query formulation.
     """
-    query = state["original_query"]
+    query = state.get("current_query", state["original_query"])
 
     # Use LLM to decide if expansion is beneficial
     if _should_skip_expansion_llm(query):
@@ -428,71 +431,71 @@ def rewrite_and_refine_node(state: dict) -> dict:
 
     Uses specific feedback from retrieval_quality_issues to guide rewriting,
     providing actionable instructions to the LLM for better query formulation.
+
+    PRE-CONDITIONS (guaranteed by route_after_retrieval):
+    - retrieval_quality_score <= 0.6
+    - retrieval_attempts < 2
+    - No early strategy switching triggered (off_topic/wrong_domain handled upstream)
     """
 
     query = state["current_query"]
     quality = state.get("retrieval_quality_score", 0)
+    issues = state.get("retrieval_quality_issues", [])
 
-    # Only rewrite if quality is poor AND we haven't done it too many times
-    if quality < 0.6 and state.get("retrieval_attempts", 0) < 2:
-        # Build specific feedback from retrieval issues
-        issues = state.get("retrieval_quality_issues", [])
+    # Build specific feedback from retrieval issues
+    if issues:
+        # Build actionable feedback based on specific issues detected
+        feedback_parts = [
+            f"Previous retrieval quality: {quality:.0%}",
+            "",
+            "Detected issues and recommended improvements:"
+        ]
 
-        if issues:
-            # Build actionable feedback based on specific issues detected
-            feedback_parts = [
-                f"Previous retrieval quality: {quality:.0%}",
-                "",
-                "Detected issues and recommended improvements:"
-            ]
+        for issue in issues:
+            if issue == "partial_coverage":
+                feedback_parts.append("- PARTIAL COVERAGE: Query aspects not fully addressed in retrieved documents.")
+                feedback_parts.append("  Suggestion: Expand query to explicitly cover all aspects or break into sub-queries.")
+            elif issue == "missing_key_info":
+                feedback_parts.append("- MISSING KEY INFORMATION: Retrieved documents lack specific details needed to answer.")
+                feedback_parts.append("  Suggestion: Add specific keywords, technical terms, or entities that might appear in relevant documents.")
+            elif issue == "incomplete_context":
+                feedback_parts.append("- INCOMPLETE CONTEXT: Documents provide insufficient depth or detail.")
+                feedback_parts.append("  Suggestion: Add qualifiers or context to target more comprehensive sources (e.g., 'detailed explanation of', 'comprehensive guide to').")
+            elif issue == "domain_misalignment":
+                feedback_parts.append("- DOMAIN MISALIGNMENT: Retrieved documents are from wrong topic area or use different terminology.")
+                feedback_parts.append("  Suggestion: Adjust terminology to match target domain (use domain-specific terms, acronyms, or jargon).")
+            elif issue == "low_confidence" or issue == "insufficient_depth":
+                feedback_parts.append("- LOW CONFIDENCE/DEPTH: Documents are surface-level or tangentially related.")
+                feedback_parts.append("  Suggestion: Make query more specific and focused (add constraints, context, or narrow scope).")
+            elif issue == "mixed_relevance":
+                feedback_parts.append("- MIXED RELEVANCE: Some documents relevant, others off-topic.")
+                feedback_parts.append("  Suggestion: Refine query to target more specific topic and reduce noise.")
+            elif issue == "off_topic" or issue == "wrong_domain":
+                feedback_parts.append("- OFF-TOPIC RESULTS: Documents retrieved are not relevant to query intent.")
+                feedback_parts.append("  Suggestion: Rephrase query with different keywords or approach (try synonyms, related concepts, or reframe the question).")
 
-            for issue in issues:
-                if issue == "partial_coverage":
-                    feedback_parts.append("- PARTIAL COVERAGE: Query aspects not fully addressed in retrieved documents.")
-                    feedback_parts.append("  Suggestion: Expand query to explicitly cover all aspects or break into sub-queries.")
-                elif issue == "missing_key_info":
-                    feedback_parts.append("- MISSING KEY INFORMATION: Retrieved documents lack specific details needed to answer.")
-                    feedback_parts.append("  Suggestion: Add specific keywords, technical terms, or entities that might appear in relevant documents.")
-                elif issue == "incomplete_context":
-                    feedback_parts.append("- INCOMPLETE CONTEXT: Documents provide insufficient depth or detail.")
-                    feedback_parts.append("  Suggestion: Add qualifiers or context to target more comprehensive sources (e.g., 'detailed explanation of', 'comprehensive guide to').")
-                elif issue == "domain_misalignment":
-                    feedback_parts.append("- DOMAIN MISALIGNMENT: Retrieved documents are from wrong topic area or use different terminology.")
-                    feedback_parts.append("  Suggestion: Adjust terminology to match target domain (use domain-specific terms, acronyms, or jargon).")
-                elif issue == "low_confidence" or issue == "insufficient_depth":
-                    feedback_parts.append("- LOW CONFIDENCE/DEPTH: Documents are surface-level or tangentially related.")
-                    feedback_parts.append("  Suggestion: Make query more specific and focused (add constraints, context, or narrow scope).")
-                elif issue == "mixed_relevance":
-                    feedback_parts.append("- MIXED RELEVANCE: Some documents relevant, others off-topic.")
-                    feedback_parts.append("  Suggestion: Refine query to target more specific topic and reduce noise.")
-                elif issue == "off_topic" or issue == "wrong_domain":
-                    feedback_parts.append("- OFF-TOPIC RESULTS: Documents retrieved are not relevant to query intent.")
-                    feedback_parts.append("  Suggestion: Rephrase query with different keywords or approach (try synonyms, related concepts, or reframe the question).")
-
-            retrieval_context = "\n".join(feedback_parts)
-        else:
-            # Fallback to generic feedback if no specific issues detected
-            retrieval_context = f"Previous retrieval quality was {quality:.0%}. Improve query specificity and clarity."
-
-        print(f"\n{'='*60}")
-        print(f"QUERY REWRITING")
-        print(f"Original query: {query}")
-        print(f"Retrieval quality: {quality:.0%}")
-        print(f"Issues detected: {', '.join(issues) if issues else 'None'}")
-        print(f"{'='*60}\n")
-
-        rewritten = rewrite_query(query, retrieval_context=retrieval_context)
-        print(f"Rewritten query: {rewritten}\n")
-
-        return {
-            "current_query": rewritten,
-            "rewritten_query": rewritten,
-            "messages": [AIMessage(content=f"Query rewritten for better retrieval")],
-        }
+        retrieval_context = "\n".join(feedback_parts)
     else:
-        return {
-            "rewritten_query": query,
-        }
+        # Fallback to generic feedback if no specific issues detected
+        retrieval_context = f"Previous retrieval quality was {quality:.0%}. Improve query specificity and clarity."
+
+    print(f"\n{'='*60}")
+    print(f"QUERY REWRITING")
+    print(f"Original query: {query}")
+    print(f"Retrieval quality: {quality:.0%}")
+    print(f"Issues detected: {', '.join(issues) if issues else 'None'}")
+    print(f"{'='*60}\n")
+
+    rewritten = rewrite_query(query, retrieval_context=retrieval_context)
+    print(f"Rewritten query: {rewritten}")
+    print(f"Note: Query expansions cleared - will regenerate for rewritten query\n")
+
+    return {
+        "current_query": rewritten,
+        "rewritten_query": rewritten,
+        "query_expansions": None,  # Clear to trigger regeneration for rewritten query
+        "messages": [AIMessage(content=f"Query rewritten: {query} → {rewritten}")],
+    }
 
 # ============ ANSWER GENERATION & EVALUATION ============
 

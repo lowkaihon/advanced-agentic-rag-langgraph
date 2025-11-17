@@ -27,9 +27,10 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
   - MODERATE (0.6-0.8): Likely NLI false positive → log warning, proceed without retry (protects against over-conservative zero-shot NLI)
   - SEVERE + good retrieval (>0.6): LLM hallucination → regenerate with strict grounding → retry (max 2)
   - SEVERE + poor retrieval (<0.6): Retrieval-caused hallucination → flag for re-retrieval with strategy change (research: 46% hallucination reduction)
-- Dual-tier strategy switching:
-  - Early tier: strategy mismatch detected at retrieval (off_topic, wrong_domain) → immediate strategy switch → regenerate query expansions → retry (saves 30-50% tokens vs. wasted rewrites)
-  - Late tier: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → regenerate query expansions for new strategy → retry (max 3 attempts)
+- Dual-tier strategy switching (with strategy-specific query optimization):
+  - Early tier: strategy mismatch detected at retrieval (off_topic, wrong_domain) → immediate strategy switch → optimize query for new strategy → regenerate query expansions → retry (saves 30-50% tokens vs. wasted rewrites)
+  - Late tier: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → optimize query for new strategy → regenerate query expansions → retry (max 3 attempts)
+  - Query optimization: Rewrites query to match new strategy characteristics (keyword = specific terms/identifiers, semantic = conceptual phrasing, hybrid = balanced) following CRAG/PreQRAG research pattern (13-14% MRR improvement)
 
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
@@ -56,7 +57,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
   - Late detection (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage/incomplete_context → intelligent fallback) after answer proves insufficient
   - Both tiers regenerate query expansions optimized for new strategy
 - Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, groundedness feedback prepended when retry_needed=True
-- Query expansion regeneration: When strategy changes, clears expansions and routes through query_expansion node to regenerate variants optimized for new strategy
+- Query expansion regeneration: Expansions regenerated when strategy changes OR query rewritten, ensuring retrieval pool always matches current query context (both strategy switching and query rewriting trigger expansion regeneration via conditional routing)
 
 **State Management**
 - Uses TypedDict (best performance) not Pydantic

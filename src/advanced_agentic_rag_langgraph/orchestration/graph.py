@@ -11,6 +11,7 @@ from advanced_agentic_rag_langgraph.orchestration.nodes import (
     groundedness_check_node,
     evaluate_answer_with_retrieval_node,
 )
+from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
 from typing import Literal
 
 def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
@@ -39,13 +40,23 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     # Poor quality: Content-driven decision
     # Strategy mismatch indicators suggest fundamental approach problem, not query problem
     if "off_topic" in issues or "wrong_domain" in issues:
-        # Switch strategy instead of rewriting query
+        # Switch strategy and optimize query for new strategy
         # This avoids wasting retrieval attempts on wrong strategy
         next_strategy = select_next_strategy(current_strategy, issues)
+
+        # Optimize query for new strategy (CRAG/PreQRAG pattern)
+        optimized_query = optimize_query_for_strategy(
+            query=state["current_query"],
+            new_strategy=next_strategy,
+            old_strategy=current_strategy,
+            issues=issues
+        )
+
+        state["current_query"] = optimized_query
         state["retrieval_strategy"] = next_strategy
         state["strategy_switch_reason"] = f"Early detection: {', '.join(issues)}"
         state["strategy_changed"] = True
-        state["query_expansions"] = None  # Trigger regeneration for new strategy
+        state["query_expansions"] = None  # Trigger regeneration for optimized query
 
         print(f"\n{'='*60}")
         print(f"EARLY STRATEGY SWITCH")
@@ -53,9 +64,10 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         print(f"Reason: {', '.join(issues)}")
         print(f"Attempt: {attempts + 1}")
         print(f"Quality score: {quality:.0%}")
+        print(f"Note: Query optimized for {next_strategy} strategy")
         print(f"{'='*60}\n")
 
-        return "query_expansion"  # Regenerate expansions for new strategy
+        return "query_expansion"  # Regenerate expansions for optimized query
     else:
         # Other issues (partial_coverage, missing_key_info, etc.) may benefit from query rewriting
         return "rewrite_and_refine"
@@ -157,7 +169,31 @@ def select_next_strategy(current: str, issues: list[str]) -> str:
     return "semantic" if current == "hybrid" else "hybrid"
 
 
-def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_expansion", "query_expansion", "END"]:
+def route_after_rewrite(state: AdvancedRAGState) -> Literal["query_expansion"]:
+    """
+    Always route to query expansion after rewrite to regenerate expansions.
+
+    After query rewriting, expansions must be regenerated to match the new query.
+    This ensures retrieval uses expansions optimized for the rewritten query, not stale
+    expansions from the original query.
+
+    Critical for query rewriting effectiveness: Without regeneration, retrieval pool
+    would still use old expansions, making the rewrite mostly ineffective.
+
+    PRE-CONDITIONS (guaranteed by rewrite_and_refine_node):
+    - query_expansions = None (always cleared by rewrite_and_refine_node)
+    """
+    # Expansions always cleared by rewrite_and_refine, always need regeneration
+    print(f"\n{'='*60}")
+    print(f"QUERY EXPANSION REGENERATION")
+    print(f"Trigger: Query rewriting cleared expansions")
+    print(f"Action: Regenerating expansions for rewritten query")
+    print(f"Current query: {state.get('current_query', 'N/A')}")
+    print(f"{'='*60}\n")
+    return "query_expansion"
+
+
+def route_after_evaluation(state: AdvancedRAGState) -> Literal["query_expansion", "END"]:
     """
     Route based on answer evaluation with content-driven strategy switching.
 
@@ -186,21 +222,31 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             else:  # hybrid
                 next_strategy = "semantic"  # Try conceptual approach
 
+            # Optimize query for new strategy (CRAG/PreQRAG pattern)
+            optimized_query = optimize_query_for_strategy(
+                query=state["current_query"],
+                new_strategy=next_strategy,
+                old_strategy=current_strategy,
+                issues=["retrieval_caused_hallucination"]
+            )
+
             print(f"\n{'='*60}")
             print(f"RE-RETRIEVAL (Hallucination Mitigation)")
             print(f"Trigger: Poor retrieval caused hallucination")
             print(f"Strategy: {current_strategy} to {next_strategy}")
             print(f"Attempt: {retrieval_attempts + 1}/3")
             print(f"Research: Re-retrieval > regeneration for context gaps")
+            print(f"Note: Query optimized for {next_strategy} strategy")
             print(f"{'='*60}\n")
 
             # Update state for strategy change
+            state["current_query"] = optimized_query
             state["retrieval_strategy"] = next_strategy
             state["strategy_changed"] = True
-            state["query_expansions"] = None  # Regenerate for new strategy
+            state["query_expansions"] = None  # Regenerate for optimized query
             state["retrieval_caused_hallucination"] = False  # Clear flag
 
-            return "query_expansion"  # Regenerate expansions for new strategy
+            return "query_expansion"  # Regenerate expansions for optimized query
         else:
             # Max attempts reached, give up
             return END
@@ -265,8 +311,22 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
             "retrieval_quality_score": retrieval_quality_score,
         }
 
-        # Check if strategy changed - if yes, need to regenerate query expansions
+        # Check if strategy changed - if yes, optimize query and regenerate expansions
         strategy_changed = (next_strategy != current)
+
+        # Optimize query for new strategy if switching (CRAG/PreQRAG pattern)
+        if strategy_changed:
+            # Combine retrieval and answer quality issues for comprehensive feedback
+            answer_quality_issues = state.get("answer_quality_issues", [])
+            combined_issues = list(set(retrieval_quality_issues + answer_quality_issues))
+
+            optimized_query = optimize_query_for_strategy(
+                query=state["current_query"],
+                new_strategy=next_strategy,
+                old_strategy=current,
+                issues=combined_issues  # Use both retrieval AND answer feedback
+            )
+            state["current_query"] = optimized_query
 
         print(f"\n{'='*60}")
         print(f"STRATEGY REFINEMENT")
@@ -276,21 +336,18 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["retrieve_with_ex
         print(f"Retrieval quality: {retrieval_quality_score:.0%}")
         print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
         if strategy_changed:
-            print(f"Strategy changed: Will regenerate query expansions for new strategy")
+            print(f"Strategy changed: Query optimized and will regenerate expansions")
         print(f"{'='*60}\n")
 
         # Update state with new strategy and log refinement
         state["retrieval_strategy"] = next_strategy
         state.setdefault("refinement_history", []).append(refinement)
 
-        # If strategy changed, clear expansions and route through query_expansion
-        if strategy_changed:
-            state["query_expansions"] = None  # Signal regeneration needed
-            state["strategy_changed"] = True  # Flag for logging
-            return "query_expansion"  # Regenerate expansions for new strategy
-        else:
-            # Same strategy, can reuse existing expansions
-            return "retrieve_with_expansion"
+        # Strategy always changes in retry logic (content-driven or fallback guarantees this)
+        # Clear expansions and route through query_expansion for optimized query
+        state["query_expansions"] = None  # Signal regeneration needed
+        state["strategy_changed"] = True  # Flag for logging
+        return "query_expansion"  # Regenerate expansions for optimized query
     else:
         return END
 
@@ -353,8 +410,9 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Rewrite loops back to retrieval with new query
-    builder.add_edge("rewrite_and_refine", "retrieve_with_expansion")
+    # Rewrite always routes to query expansion (expansions always cleared by rewrite_and_refine_node)
+    # Critical: Query rewriting clears expansions, requiring regeneration for effectiveness
+    builder.add_edge("rewrite_and_refine", "query_expansion")
 
     # Answer generation leads to groundedness check
     builder.add_edge("answer_generation", "groundedness_check")
@@ -369,14 +427,12 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Self-correction: try different strategy if answer insufficient
-    # Now supports routing to query_expansion when strategy changes (for regeneration)
+    # Self-correction: routes to query_expansion (strategy always changes in retry logic)
     builder.add_conditional_edges(
         "evaluate_answer",
         route_after_evaluation,
         {
-            "retrieve_with_expansion": "retrieve_with_expansion",
-            "query_expansion": "query_expansion",  # When strategy changes, regenerate expansions
+            "query_expansion": "query_expansion",  # Regenerate expansions for new strategy
             END: END,
         }
     )

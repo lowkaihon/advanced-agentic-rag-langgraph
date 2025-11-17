@@ -46,7 +46,7 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
   - SEVERE + good retrieval (≥0.6): LLM hallucination → NLI verification → list unsupported claims → regenerate with strict grounding → retry (max 2)
   - SEVERE + poor retrieval (<0.6): Retrieval-caused hallucination → flag for re-retrieval with strategy change (46% hallucination reduction vs regeneration)
 - **Strategy Switching Loop**: Insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword) → regenerate query expansions for new strategy → retry (max 3 attempts)
-  - Regenerates query expansions when strategy changes (not reused from previous strategy)
+  - Regenerates query expansions when strategy changes OR query is rewritten (not reused from previous strategy)
 
 ### 8. Multi-turn Conversations
 - Preserves conversation context across queries with state persistence and thread management
@@ -59,7 +59,7 @@ This Advanced Agentic RAG uses LangGraph to implement features including multi-s
 ### 10. Dual-Tier Content-Driven Strategy Switching
 - **Early detection** (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts (saves 30-50% tokens)
 - **Late detection** (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage → intelligent fallback) after answer proves insufficient
-- Both tiers regenerate query expansions optimized for new strategy
+- Both tiers optimize queries using strategy-specific guidance (keyword=specific terms/identifiers, semantic=conceptual phrasing, hybrid=balanced approach) and regenerate query expansions for new strategy (13-14% MRR improvement from CRAG/PreQRAG research)
 - Tracks refinement history with reasoning and detected issues
 
 ### 11. Two-Stage Reranking
@@ -425,7 +425,7 @@ Self-Correction Loops:
 • Loop 3 (Dual-Tier Strategy Switching):
   - Early tier (after retrieval): Detects off_topic/wrong_domain → immediate switch → saves 30-50% tokens
   - Late tier (after evaluation): Answer insufficient AND attempts < 3 → content-driven mapping (missing_key_info → semantic, off_topic → keyword)
-  - Both tiers regenerate query expansions when strategy changes (routes to Node 2)
+  - Both tiers regenerate query expansions when strategy changes or query rewritten (routes to Node 2)
 ```
 
 **Key Points**:
