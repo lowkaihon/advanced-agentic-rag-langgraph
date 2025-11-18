@@ -1,10 +1,7 @@
 """
 Strategy selection using pure LLM classification.
 
-Aligns with best practices: 'Dynamic Strategy Selection using lightweight classifiers'
-Domain-agnostic design - works for any document type (technical docs, legal, medical, etc.)
-
-Previous implementation used 10 heuristic rules with 9 regex-based metrics.
+Previous implementation: 10 heuristic rules with 9 regex-based metrics.
 Simplified to pure LLM for better accuracy and maintainability.
 """
 
@@ -20,23 +17,9 @@ class StrategyDecision(TypedDict):
 
 
 class StrategySelector:
-    """
-    Pure LLM-based retrieval strategy selection.
-
-    Domain-agnostic - adapts to any corpus type through corpus_stats.
-    Zero heuristics - LLM handles all edge cases and classification.
-
-    Replaces previous 10-rule heuristic system with simpler, more accurate LLM approach.
-    """
+    """Pure LLM-based retrieval strategy selection. Domain-agnostic, zero heuristics."""
 
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0):
-        """
-        Initialize strategy selector.
-
-        Args:
-            model: OpenAI model for LLM classification
-            temperature: Temperature for LLM (0 for deterministic)
-        """
         self.llm = ChatOpenAI(model=model, temperature=temperature)
         self.structured_llm = self.llm.with_structured_output(StrategyDecision)
 
@@ -45,16 +28,6 @@ class StrategySelector:
         query: str,
         corpus_stats: Dict = None
     ) -> Tuple[Literal["semantic", "keyword", "hybrid"], float, str]:
-        """
-        Select optimal retrieval strategy using LLM classification.
-
-        Args:
-            query: User query
-            corpus_stats: Corpus characteristics (document types, technical density, etc.)
-
-        Returns:
-            Tuple of (strategy, confidence, reasoning)
-        """
         corpus_context = self._build_corpus_context(corpus_stats or {})
 
         system_prompt = f"""You are a retrieval strategy selector for a RAG system.
@@ -136,7 +109,6 @@ Analyze this query and select the optimal retrieval strategy considering:
             return "hybrid", 0.5, f"LLM failed, defaulting to hybrid: {e}"
 
     def _build_corpus_context(self, corpus_stats: Dict) -> str:
-        """Build domain-agnostic corpus context for system prompt"""
         if not corpus_stats:
             return "CORPUS PROFILE: No statistics available (assume general-purpose corpus)"
 
@@ -144,7 +116,6 @@ Analyze this query and select the optimal retrieval strategy considering:
         domains = corpus_stats.get('domain_distribution', {})
         avg_tech_density = corpus_stats.get('avg_technical_density', 0)
 
-        # Domain-agnostic classification
         corpus_type = "technical" if avg_tech_density > 0.6 else "general"
         primary_domain = list(domains.keys())[0] if domains else "general"
 
@@ -159,18 +130,6 @@ Analyze this query and select the optimal retrieval strategy considering:
 This is a {corpus_type} corpus focused on {primary_domain} topics."""
 
     def explain_decision(self, query: str, corpus_stats: Dict = None) -> str:
-        """
-        Get detailed explanation of strategy decision.
-
-        Useful for debugging and demonstration.
-
-        Args:
-            query: User query
-            corpus_stats: Corpus statistics
-
-        Returns:
-            Formatted explanation string
-        """
         strategy, confidence, reasoning = self.select_strategy(query, corpus_stats)
 
         return f"""

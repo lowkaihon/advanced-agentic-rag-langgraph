@@ -10,19 +10,9 @@ from advanced_agentic_rag_langgraph.preprocessing.document_profiler import Docum
 
 
 class DocumentLoader:
-    """
-    Loads and profiles documents, enriching them with metadata for intelligent retrieval.
-
-    Workflow:
-    1. Load documents from various sources
-    2. Profile each document using DocumentProfiler
-    3. Enrich with metadata tags
-    4. Prepare for vector store ingestion
-    5. Calculate corpus-level statistics
-    """
+    """Loads and profiles documents, enriching them with metadata for intelligent retrieval."""
 
     def __init__(self):
-        """Initialize the document loader with a profiler."""
         self.profiler = DocumentProfiler()
         self.documents_with_metadata: List[Document] = []
         self.corpus_stats: Dict = {}
@@ -33,16 +23,6 @@ class DocumentLoader:
         documents: List[Document],
         verbose: bool = True
     ) -> Tuple[List[Document], Dict, Dict[str, Dict]]:
-        """
-        Load and profile documents, enriching them with metadata.
-
-        Args:
-            documents: List of LangChain Document objects
-            verbose: Whether to print profiling progress
-
-        Returns:
-            Tuple of (enriched_documents, corpus_stats, document_profiles)
-        """
         if verbose:
             print(f"\n{'='*60}")
             print(f"DOCUMENT PROFILING")
@@ -53,20 +33,11 @@ class DocumentLoader:
         all_profiles = []
 
         for i, doc in enumerate(documents):
-            # Get existing doc_id or generate one
             doc_id = doc.metadata.get("id", f"doc_{i}")
-
-            # Profile the document
-            profile = self.profiler.profile_document(
-                doc.page_content,
-                doc_id=doc_id
-            )
-
-            # Store profile
+            profile = self.profiler.profile_document(doc.page_content, doc_id=doc_id)
             self.document_profiles[doc_id] = profile
             all_profiles.append(profile)
 
-            # Extract metadata from profile for chunk attachment
             metadata = {
                 "content_type": profile['doc_type'],
                 "technical_level": profile['reading_level'],
@@ -77,21 +48,13 @@ class DocumentLoader:
                 "has_code": profile['has_code'],
             }
 
-            # Merge existing metadata with new profiling metadata
             enriched_metadata = {**doc.metadata, **metadata, "profile": profile}
-
-            # Create enriched document
-            enriched_doc = Document(
-                page_content=doc.page_content,
-                metadata=enriched_metadata
-            )
+            enriched_doc = Document(page_content=doc.page_content, metadata=enriched_metadata)
             enriched_docs.append(enriched_doc)
 
-            # Print profile summary
             if verbose:
                 self._print_document_summary(i + 1, doc_id, profile, metadata)
 
-        # Calculate corpus statistics from collected profiles
         self.corpus_stats = self._calculate_corpus_stats(all_profiles)
 
         if verbose:
@@ -107,18 +70,6 @@ class DocumentLoader:
         metadatas: List[Dict] = None,
         verbose: bool = True
     ) -> Tuple[List[Document], Dict, Dict[str, Dict]]:
-        """
-        Load documents from raw text strings.
-
-        Args:
-            texts: List of document texts
-            metadatas: Optional list of metadata dicts for each text
-            verbose: Whether to print profiling progress
-
-        Returns:
-            Tuple of (enriched_documents, corpus_stats, document_profiles)
-        """
-        # Convert to Document objects
         if metadatas is None:
             metadatas = [{} for _ in texts]
 
@@ -130,38 +81,31 @@ class DocumentLoader:
         return self.load_documents(documents, verbose=verbose)
 
     def get_corpus_stats(self) -> Dict:
-        """Get corpus-level statistics."""
         return self.corpus_stats
 
     def get_document_profile(self, doc_id: str) -> Dict:
-        """Get profile for a specific document."""
         return self.document_profiles.get(doc_id, {})
 
     def get_all_profiles(self) -> Dict[str, Dict]:
-        """Get all document profiles."""
         return self.document_profiles
 
     def _calculate_corpus_stats(self, profiles: List[Dict]) -> Dict:
-        """Calculate aggregate statistics from document profiles."""
         if not profiles:
             return {}
 
         total_docs = len(profiles)
         avg_technical_density = sum(p['technical_density'] for p in profiles) / total_docs
 
-        # Count document types
         doc_types = {}
         for p in profiles:
             doc_type = p['doc_type']
             doc_types[doc_type] = doc_types.get(doc_type, 0) + 1
 
-        # Count domain distribution
         domain_distribution = {}
         for p in profiles:
             for domain in p['domain_tags']:
                 domain_distribution[domain] = domain_distribution.get(domain, 0) + 1
 
-        # Calculate percentages
         pct_with_code = sum(1 for p in profiles if p['has_code']) / total_docs * 100
         pct_with_math = sum(1 for p in profiles if p['has_math']) / total_docs * 100
 
@@ -203,60 +147,24 @@ class DocumentLoader:
         print(f"{'='*60}\n")
 
     def filter_by_content_type(self, content_type: str) -> List[Document]:
-        """
-        Filter documents by content type.
-
-        Args:
-            content_type: The content type to filter by (e.g., 'tutorial', 'api_reference')
-
-        Returns:
-            List of documents matching the content type
-        """
         return [
             doc for doc in self.documents_with_metadata
             if doc.metadata.get('content_type') == content_type
         ]
 
     def filter_by_domain(self, domain: str) -> List[Document]:
-        """
-        Filter documents by domain.
-
-        Args:
-            domain: The domain to filter by (e.g., 'machine_learning', 'rag')
-
-        Returns:
-            List of documents matching the domain
-        """
         return [
             doc for doc in self.documents_with_metadata
             if doc.metadata.get('domain') == domain
         ]
 
     def filter_by_technical_level(self, level: str) -> List[Document]:
-        """
-        Filter documents by technical level.
-
-        Args:
-            level: The technical level (e.g., 'beginner', 'intermediate', 'advanced')
-
-        Returns:
-            List of documents matching the technical level
-        """
         return [
             doc for doc in self.documents_with_metadata
             if doc.metadata.get('technical_level') == level
         ]
 
     def get_documents_for_strategy(self, strategy: str) -> List[Document]:
-        """
-        Get documents best suited for a specific retrieval strategy.
-
-        Args:
-            strategy: The retrieval strategy ('semantic', 'keyword', or 'hybrid')
-
-        Returns:
-            List of documents recommended for this strategy
-        """
         return [
             doc for doc in self.documents_with_metadata
             if doc.metadata.get('best_retrieval_strategy') == strategy

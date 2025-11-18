@@ -11,12 +11,7 @@ class RankingResult(TypedDict):
 
 
 class LLMMetadataReRanker:
-    """
-    Rerank documents using LLM-as-Judge pattern with metadata awareness.
-
-    Uses structured output and considers document metadata (type, technical level,
-    domain) to make context-aware relevance judgments.
-    """
+    """Rerank documents using LLM-as-Judge with metadata-aware relevance scoring."""
 
     def __init__(self, top_k: int = 4):
         self.top_k = top_k
@@ -24,45 +19,26 @@ class LLMMetadataReRanker:
         self.structured_llm = self.llm.with_structured_output(RankingResult)
 
     def rank(self, query: str, documents: list[Document]) -> list[tuple[Document, float]]:
-        """
-        Rerank documents using metadata-aware relevance scoring.
-
-        Args:
-            query: User query
-            documents: List of documents to rerank
-
-        Returns:
-            List of (document, score) tuples, sorted by relevance, limited to top_k
-        """
         if not documents:
             return []
 
-        # Build metadata-enriched document list
         doc_list = []
         for i, doc in enumerate(documents):
             meta = doc.metadata
-
-            # Extract metadata context
             doc_context = f"{i+1}. "
 
-            # Add type and level
             content_type = meta.get('content_type', 'unknown')
             tech_level = meta.get('technical_level', 'unknown')
             domain = meta.get('domain', 'general')
-
             doc_context += f"[Type: {content_type} | Level: {tech_level} | Domain: {domain}"
 
-            # Add special features
             if meta.get('has_math'):
                 doc_context += " | Has math"
             if meta.get('has_code'):
                 doc_context += " | Has code"
 
-            # Add source
             source = meta.get('source', 'unknown')
             doc_context += f" | Source: {source}]"
-
-            # Add content preview
             doc_context += f"\n   Content: {doc.page_content[:200]}..."
 
             doc_list.append(doc_context)
@@ -137,21 +113,17 @@ Provide:
 """
 
         try:
-            # Use structured output for reliable parsing
             result = self.structured_llm.invoke([HumanMessage(content=ranking_prompt)])
             scores = result["scores"]
 
-            # Ensure we have a score for each document
             if len(scores) != len(documents):
                 print(f"Warning: LLM returned {len(scores)} scores for {len(documents)} documents. Using fallback.")
                 scores = [50] * len(documents)
 
         except Exception as e:
-            # Fallback to neutral scores if LLM fails
             print(f"Warning: Reranking failed: {e}. Using neutral scores.")
             scores = [50] * len(documents)
 
-        # Pair documents with scores and sort
         ranked = sorted(
             zip(documents, scores),
             key=lambda x: x[1],

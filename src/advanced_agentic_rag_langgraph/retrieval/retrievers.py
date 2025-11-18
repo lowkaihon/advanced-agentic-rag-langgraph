@@ -22,19 +22,7 @@ class AdaptiveRetriever:
         k_keyword: int = 10,
         k_total: int = 15
     ) -> list[Document]:
-        """
-        Retrieve using specified strategy with configurable k-values.
-
-        Args:
-            query: Search query
-            strategy: "semantic", "keyword", or "hybrid"
-            k_semantic: Number of docs for semantic search (default: 10)
-            k_keyword: Number of docs for keyword search (default: 10)
-            k_total: Total docs for single-strategy retrieval (default: 15)
-
-        Returns:
-            List of reranked documents
-        """
+        """Retrieve using specified strategy (semantic/keyword/hybrid) with two-stage reranking."""
 
         if strategy == "semantic":
             docs = self.semantic_retriever.retrieve(query, k=k_total)
@@ -44,7 +32,6 @@ class AdaptiveRetriever:
             semantic_docs = self.semantic_retriever.retrieve(query, k=k_semantic)
             keyword_docs = self.keyword_retriever.invoke(query)[:k_keyword]
 
-            # Deduplicate
             seen = set()
             docs = []
             for doc in semantic_docs + keyword_docs:
@@ -53,7 +40,6 @@ class AdaptiveRetriever:
                     docs.append(doc)
                     seen.add(doc_id)
 
-        # Rerank the results
         ranked_docs = self.reranker.rank(query, docs)
         return [doc for doc, score in ranked_docs]
 
@@ -65,20 +51,7 @@ class AdaptiveRetriever:
         k_keyword: int = 10,
         k_total: int = 15
     ) -> list[Document]:
-        """
-        Retrieve using specified strategy WITHOUT reranking.
-        Used for multi-query retrieval before RRF fusion.
-
-        Args:
-            query: Search query
-            strategy: "semantic", "keyword", or "hybrid"
-            k_semantic: Number of docs for semantic search (default: 10)
-            k_keyword: Number of docs for keyword search (default: 10)
-            k_total: Total docs for single-strategy retrieval (default: 15)
-
-        Returns:
-            List of documents (NOT reranked)
-        """
+        """Retrieve WITHOUT reranking. Used for multi-query retrieval before RRF fusion."""
 
         if strategy == "semantic":
             docs = self.semantic_retriever.retrieve(query, k=k_total)
@@ -88,7 +61,6 @@ class AdaptiveRetriever:
             semantic_docs = self.semantic_retriever.retrieve(query, k=k_semantic)
             keyword_docs = self.keyword_retriever.invoke(query)[:k_keyword]
 
-            # Deduplicate
             seen = set()
             docs = []
             for doc in semantic_docs + keyword_docs:
@@ -97,7 +69,6 @@ class AdaptiveRetriever:
                     docs.append(doc)
                     seen.add(doc_id)
 
-        # Return WITHOUT reranking
         return docs
 
 
