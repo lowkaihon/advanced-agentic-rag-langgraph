@@ -230,7 +230,7 @@ def retrieve_with_expansion_node(state: IntermediateRAGState) -> dict:
     global adaptive_retriever
 
     if adaptive_retriever is None:
-        adaptive_retriever = setup_retriever(force_new=False)
+        adaptive_retriever = setup_retriever()
 
     query = state.get("active_query", state["baseline_query"])
     expansions = state.get("query_expansions", [])

@@ -77,7 +77,7 @@ def retrieve_node(state: BasicRAGState) -> dict:
     global adaptive_retriever
 
     if adaptive_retriever is None:
-        adaptive_retriever = setup_retriever(force_new=False)
+        adaptive_retriever = setup_retriever()
 
     query = state["user_question"]
     expansions = state.get("query_expansions", [])
