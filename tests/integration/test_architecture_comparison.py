@@ -50,6 +50,11 @@ from advanced_agentic_rag_langgraph.variants import (
     intermediate_rag_graph,
     advanced_rag_graph,
 )
+# Import modules to access global adaptive_retriever variables
+import advanced_agentic_rag_langgraph.variants.basic_rag_graph as basic_module
+import advanced_agentic_rag_langgraph.variants.intermediate_rag_graph as intermediate_module
+import advanced_agentic_rag_langgraph.orchestration.nodes as advanced_module
+from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
     calculate_retrieval_metrics,
@@ -525,6 +530,19 @@ def test_architecture_comparison():
     if not dataset:
         print("[ERROR] No examples in golden dataset")
         return
+
+    # PRE-BUILD RETRIEVER ONCE (optimization to avoid redundant PDF re-ingestion)
+    print(f"\n{'='*80}")
+    print("PRE-BUILD: Initializing retriever once for all tiers")
+    print(f"{'='*80}")
+    shared_retriever = setup_retriever()
+
+    # Inject into all three variant modules
+    basic_module.adaptive_retriever = shared_retriever
+    intermediate_module.adaptive_retriever = shared_retriever
+    advanced_module.adaptive_retriever = shared_retriever
+    print(f"[OK] Retriever pre-built and injected into all tiers")
+    print(f"{'='*80}\n")
 
     # Run Basic Tier
     print(f"\n{'='*80}")
