@@ -373,15 +373,22 @@ See `evaluation/tier_comparison_report.md` for detailed results.
 
 ## Architecture Tier Comparison
 
-Showcase the value of advanced RAG architecture through 3-tier A/B testing. All tiers use the same **BUDGET model tier** (gpt-4o-mini) to isolate architectural improvements from model quality differences.
+Showcase the value of advanced RAG architecture through 4-tier A/B testing. All tiers use the same **BUDGET model tier** (gpt-4o-mini) to isolate architectural improvements from model quality differences.
 
 | Tier | Features | Graph Structure | Description |
 |------|----------|-----------------|-------------|
-| **Basic** | 8 features | Linear (4 nodes, no routing) | Hybrid retrieval, CrossEncoder reranking, simple generation |
+| **Pure Semantic** | 4 features | Simplest (2 nodes, no routing) | Pure vector search, top-4 chunks, no reranking |
+| **Basic** | 8 features (+4) | Linear (4 nodes, no routing) | + Query expansion, hybrid retrieval, CrossEncoder reranking, RRF fusion |
 | **Intermediate** | 18 features (+10) | Conditional routing (7 nodes, 2 routers) | + Strategy selection, two-stage reranking, quality gates, limited retry |
 | **Advanced** | 31 features (+13) | Full agentic (9 nodes, 4 routers) | + NLI hallucination detection, dual-tier strategy switching, adaptive loops |
 
 ### Key Differentiators
+
+**Pure Semantic → Basic (+4 features):**
+- Query expansion (3 variants with RRF fusion)
+- Hybrid retrieval (semantic + BM25 keyword)
+- CrossEncoder reranking (top-5)
+- Enhanced answer generation prompting
 
 **Basic → Intermediate (+10 features):**
 - Conversational query rewriting
@@ -420,9 +427,10 @@ uv run python tests/integration/test_architecture_comparison.py
 - **Portfolio Narrative**: Architecture value independent of model quality
 
 **Expected Progression:**
+- Pure Semantic → Basic: +10-15% improvement (hybrid search, query expansion, reranking)
 - Basic → Intermediate: +15-25% improvement (quality gates, two-stage reranking)
 - Intermediate → Advanced: +20-35% improvement (NLI, strategy switching, adaptive loops)
-- Basic → Advanced: +35-60% overall improvement
+- Pure Semantic → Advanced: +45-75% overall improvement
 
 ### Example Usage
 
