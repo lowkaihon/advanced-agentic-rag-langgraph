@@ -37,7 +37,8 @@ All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
 
 import operator
 from typing import TypedDict, Annotated, Optional, Literal
-from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, add_messages
+from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
+from langgraph.graph.message import add_messages
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -45,9 +46,9 @@ from langgraph.checkpoint.memory import MemorySaver
 from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
-from advanced_agentic_rag_langgraph.retrieval import expand_query, rewrite_query, AdaptiveRetriever
+from advanced_agentic_rag_langgraph.retrieval import expand_query, rewrite_query
 from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
-from advanced_agentic_rag_langgraph.retrieval.reranking import CrossEncoderReRanker
+from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import CrossEncoderReRanker
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics
 
 
@@ -184,12 +185,14 @@ def decide_strategy_node(state: IntermediateRAGState) -> dict:
     query = state.get("baseline_query", "")
     corpus_stats = state.get("corpus_stats", {})
 
-    strategy = strategy_selector.select_strategy(query, corpus_stats)
+    # Unpack all 3 return values from strategy selector
+    strategy, confidence, reasoning = strategy_selector.select_strategy(query, corpus_stats)
 
     print(f"\n{'='*60}")
     print(f"STRATEGY SELECTION")
     print(f"Query: {query}")
-    print(f"Selected: {strategy}")
+    print(f"Selected: {strategy} (confidence: {confidence:.0%})")
+    print(f"Reasoning: {reasoning}")
     print(f"{'='*60}\n")
 
     return {"retrieval_strategy": strategy}
@@ -200,7 +203,8 @@ def query_expansion_node(state: IntermediateRAGState) -> dict:
     query = state.get("baseline_query", "")
 
     if _should_expand_query_llm(query):
-        expansions = expand_query(query, num_variations=3)
+        # expand_query doesn't accept num_variations parameter
+        expansions = expand_query(query)
         print(f"\n{'='*60}")
         print(f"QUERY EXPANSION")
         print(f"Original: {query}")
@@ -209,7 +213,7 @@ def query_expansion_node(state: IntermediateRAGState) -> dict:
             print(f"  {i}. {exp}")
         print(f"{'='*60}\n")
     else:
-        expansions = []
+        expansions = [query]  # Include original query
         print(f"\n{'='*60}")
         print(f"QUERY EXPANSION SKIPPED")
         print(f"Reason: Query is clear and specific")
@@ -226,29 +230,50 @@ def retrieve_with_expansion_node(state: IntermediateRAGState) -> dict:
     global adaptive_retriever
 
     if adaptive_retriever is None:
-        adaptive_retriever = AdaptiveRetriever(
-            vectorstore=setup_retriever(force_new=False),
-            top_k=15
-        )
+        adaptive_retriever = setup_retriever(force_new=False)
 
     query = state.get("active_query", state["baseline_query"])
     expansions = state.get("query_expansions", [])
     strategy = state.get("retrieval_strategy", "hybrid")
     attempts = state.get("retrieval_attempts", 0)
 
-    # Retrieve using selected strategy
-    if expansions:
-        all_docs = []
-        for q in [query] + expansions:
-            docs = adaptive_retriever.retrieve(q, strategy=strategy)
-            all_docs.extend(docs)
+    # Retrieve using selected strategy with RRF fusion
+    if expansions and len(expansions) > 1:
+        # RRF fusion implementation (inline, as in nodes.py)
+        doc_ranks = {}
+        doc_objects = {}
 
-        # RRF fusion
-        from advanced_agentic_rag_langgraph.retrieval.fusion import fuse_rankings
-        fused_docs = fuse_rankings(all_docs, k=60)
-        top_docs = fused_docs[:15]
+        for q in expansions:
+            docs = adaptive_retriever.retrieve_without_reranking(q, strategy=strategy)
+
+            for rank, doc in enumerate(docs):
+                doc_id = doc.metadata.get("id", doc.page_content[:50])
+                if doc_id not in doc_ranks:
+                    doc_ranks[doc_id] = []
+                    doc_objects[doc_id] = doc
+                doc_ranks[doc_id].append(rank)
+
+        # RRF scoring
+        k = 60
+        rrf_scores = {}
+        for doc_id, ranks in doc_ranks.items():
+            rrf_score = sum(1.0 / (rank + k) for rank in ranks)
+            rrf_scores[doc_id] = rrf_score
+
+        # Sort by RRF score
+        sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+        top_docs = [doc_objects[doc_id] for doc_id in sorted_doc_ids[:15]]
+
+        print(f"\n{'='*60}")
+        print(f"RRF MULTI-QUERY RETRIEVAL")
+        print(f"Strategy: {strategy}")
+        print(f"Query variants: {len(expansions)}")
+        print(f"Unique docs after RRF: {len(top_docs)}")
+        if sorted_doc_ids[:3]:
+            print(f"Top 3 RRF scores: {[f'{rrf_scores[doc_id]:.4f}' for doc_id in sorted_doc_ids[:3]]}")
+        print(f"{'='*60}\n")
     else:
-        top_docs = adaptive_retriever.retrieve(query, strategy=strategy)
+        top_docs = adaptive_retriever.retrieve_without_reranking(query, strategy=strategy)
 
     print(f"\n{'='*60}")
     print(f"RETRIEVAL")
@@ -272,7 +297,8 @@ def rerank_node(state: IntermediateRAGState) -> dict:
     docs = state.get("unique_docs_list", [])
 
     # Stage 1: CrossEncoder (top-15)
-    stage1_docs = cross_encoder.rerank(query, docs, top_k=15)
+    stage1_results = cross_encoder.rank(query, docs[:15])
+    stage1_docs = [doc for doc, score in stage1_results]
 
     # Stage 2: LLM-as-judge (top-4)
     spec = get_model_for_task("reranking")
@@ -436,7 +462,8 @@ def rewrite_query_node(state: IntermediateRAGState) -> dict:
     # Generic feedback
     feedback = f"Previous retrieval quality was {quality_score:.0%}. Try rephrasing to improve results."
 
-    rewritten = rewrite_query(query, feedback)
+    # Use correct parameter name: retrieval_context
+    rewritten = rewrite_query(query, retrieval_context=feedback)
 
     print(f"\n{'='*60}")
     print(f"QUERY REWRITE")

@@ -32,8 +32,8 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-from advanced_agentic_rag_langgraph.retrieval import expand_query, AdaptiveRetriever
-from advanced_agentic_rag_langgraph.retrieval.reranking import CrossEncoderReRanker
+from advanced_agentic_rag_langgraph.retrieval import expand_query
+from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import CrossEncoderReRanker
 
 
 # ========== STATE SCHEMA ==========
@@ -60,8 +60,8 @@ def query_expansion_node(state: BasicRAGState) -> dict:
     """Always expand query into 3 variants."""
     query = state["user_question"]
 
-    # Always expand (no LLM decision)
-    expansions = expand_query(query, num_variations=3)
+    # Always expand (no LLM decision) - expand_query returns [original] + variations
+    expansions = expand_query(query)
 
     print(f"\n{'='*60}")
     print(f"QUERY EXPANSION")
@@ -77,32 +77,44 @@ def retrieve_node(state: BasicRAGState) -> dict:
     global adaptive_retriever
 
     if adaptive_retriever is None:
-        adaptive_retriever = AdaptiveRetriever(
-            vectorstore=setup_retriever(force_new=False),
-            top_k=15
-        )
+        adaptive_retriever = setup_retriever(force_new=False)
 
     query = state["user_question"]
     expansions = state.get("query_expansions", [])
 
-    # Retrieve using hybrid strategy for all queries
-    all_docs = []
-    for q in [query] + expansions:
-        docs = adaptive_retriever.retrieve(q, strategy="hybrid")
-        all_docs.extend(docs)
+    # RRF fusion implementation (inline, as in nodes.py)
+    doc_ranks = {}
+    doc_objects = {}
 
-    # RRF fusion
-    from advanced_agentic_rag_langgraph.retrieval.fusion import fuse_rankings
-    fused_docs = fuse_rankings(all_docs, k=60)
+    for q in expansions:
+        docs = adaptive_retriever.retrieve_without_reranking(q, strategy="hybrid")
+
+        for rank, doc in enumerate(docs):
+            doc_id = doc.metadata.get("id", doc.page_content[:50])
+            if doc_id not in doc_ranks:
+                doc_ranks[doc_id] = []
+                doc_objects[doc_id] = doc
+            doc_ranks[doc_id].append(rank)
+
+    # RRF scoring
+    k = 60
+    rrf_scores = {}
+    for doc_id, ranks in doc_ranks.items():
+        rrf_score = sum(1.0 / (rank + k) for rank in ranks)
+        rrf_scores[doc_id] = rrf_score
+
+    # Sort by RRF score
+    sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
+    unique_docs = [doc_objects[doc_id] for doc_id in sorted_doc_ids]
 
     print(f"\n{'='*60}")
-    print(f"HYBRID RETRIEVAL")
+    print(f"HYBRID RETRIEVAL WITH RRF FUSION")
     print(f"Strategy: hybrid (always)")
-    print(f"Queries: {len([query] + expansions)}")
-    print(f"Retrieved: {len(fused_docs)} documents (after RRF fusion)")
+    print(f"Query variants: {len(expansions)}")
+    print(f"Unique docs after RRF: {len(unique_docs)}")
+    if sorted_doc_ids[:3]:
+        print(f"Top 3 RRF scores: {[f'{rrf_scores[doc_id]:.4f}' for doc_id in sorted_doc_ids[:3]]}")
     print(f"{'='*60}\n")
-
-    unique_docs = list({doc.page_content: doc for doc in fused_docs}.values())
 
     return {
         "retrieved_docs": [doc.page_content for doc in unique_docs],
@@ -116,7 +128,8 @@ def rerank_node(state: BasicRAGState) -> dict:
     docs = state.get("unique_docs_list", [])
 
     # Single-stage reranking with CrossEncoder
-    reranked_docs = cross_encoder.rerank(query, docs, top_k=5)
+    ranked_results = cross_encoder.rank(query, docs[:15])
+    reranked_docs = [doc for doc, score in ranked_results[:5]]
 
     print(f"\n{'='*60}")
     print(f"CROSSENCODER RERANKING")

@@ -114,7 +114,7 @@ def run_tier_on_golden_dataset(
     nli_detector = NLIHallucinationDetector()
 
     for i, example in enumerate(dataset, 1):
-        query = example["query"]
+        query = example["question"]  # Fixed: golden dataset uses "question" not "query"
         ground_truth_docs = example["relevant_doc_ids"]
 
         if verbose:
@@ -123,15 +123,24 @@ def run_tier_on_golden_dataset(
         try:
             # Different graphs have different state schemas
             if tier_name == "basic":
-                initial_state = {"user_question": query}
+                initial_state = {
+                    "user_question": query,
+                }
             elif tier_name == "intermediate":
                 initial_state = {
                     "user_question": query,
                     "baseline_query": query,
+                    "messages": [],
+                    "retrieved_docs": [],
+                    "retrieval_attempts": 0,
                 }
             else:  # advanced
                 initial_state = {
                     "user_question": query,
+                    "messages": [],
+                    "retrieved_docs": [],
+                    "retrieval_attempts": 0,
+                    "query_expansions": [],
                 }
 
             # Run graph
@@ -149,9 +158,9 @@ def run_tier_on_golden_dataset(
             # Calculate retrieval metrics
             retrieved_doc_ids = []
             for doc in retrieved_docs:
-                # Extract chunk ID from metadata
-                if hasattr(doc, 'metadata') and 'chunk_id' in doc.metadata:
-                    retrieved_doc_ids.append(doc.metadata['chunk_id'])
+                # Extract chunk ID from metadata - fixed: use 'id' not 'chunk_id'
+                if hasattr(doc, 'metadata') and 'id' in doc.metadata:
+                    retrieved_doc_ids.append(doc.metadata['id'])
 
             # Calculate F1@5
             relevant_retrieved = set(ground_truth_docs[:5]) & set(retrieved_doc_ids[:5])
