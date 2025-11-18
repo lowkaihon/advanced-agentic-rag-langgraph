@@ -122,9 +122,12 @@ def run_tier_on_golden_dataset(
 
         try:
             # Different graphs have different state schemas
+            # Initialize with required/accumulated fields per reference code pattern
             if tier_name == "basic":
                 initial_state = {
                     "user_question": query,
+                    "query_expansions": [],  # Will be set by first node
+                    "retrieved_docs": [],  # Accumulated field
                 }
             elif tier_name == "intermediate":
                 initial_state = {
@@ -137,6 +140,7 @@ def run_tier_on_golden_dataset(
             else:  # advanced
                 initial_state = {
                     "user_question": query,
+                    "baseline_query": query,  # Required field for advanced tier
                     "messages": [],
                     "retrieved_docs": [],
                     "retrieval_attempts": 0,
