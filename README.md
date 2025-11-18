@@ -62,7 +62,7 @@ The system evaluates quality at each step and adapts its approach when encounter
 **This System**: Persistent state across conversation turns
 
 - `conversational_rewrite_node`: Transforms follow-up queries into self-contained questions using conversation history
-- `conversation_history` field in state (state.py:12): Tracks past turns for context injection
+- `messages` field with add_messages reducer: Tracks conversation history (LangGraph best practice)
 - MemorySaver checkpointer (graph.py:441): Persists state across multi-turn conversations with thread management
 
 ### 4. Intelligent Tool Use and Source Selection
@@ -299,6 +299,10 @@ This system follows the **Dynamic Planning and Execution Agents** pattern, where
 - TypedDict schema (AdvancedRAGState) for performance
 - MemorySaver checkpointer for conversation persistence
 - Tracks: queries, documents, quality scores, attempts, conversation history
+- **State Management Patterns:**
+  - `add_messages`: Message history (idempotent, deduplicates by ID) - LangGraph best practice
+  - `operator.add`: Documents and refinement_history (accumulate across iterations)
+  - Direct replacement: query_expansions (regenerated per iteration for expansion-query alignment)
 
 ## Quick Start
 
@@ -311,6 +315,11 @@ uv sync  # Installs project in editable mode + all dependencies
 # 2. Configure environment
 cp .env.example .env
 # Add your OPENAI_API_KEY to .env
+# Set MODEL_TIER (budget|balanced|premium) - defaults to budget
+
+# Example .env:
+OPENAI_API_KEY=sk-your-key-here
+MODEL_TIER=budget  # Options: budget, balanced, premium
 
 # 3. Run tests (10 integration tests available - no PYTHONPATH needed)
 # Quick smoke tests (~30s each)
@@ -331,6 +340,36 @@ uv run python tests/integration/test_ragas_evaluation.py            # RAGAS comp
 # 4. Run interactive demo
 uv run python main.py
 ```
+
+## Model Tier Configuration
+
+Control cost-quality tradeoffs via `MODEL_TIER` environment variable:
+
+| Tier | Models | Use Case |
+|------|--------|----------|
+| **budget** | All GPT-4o-mini | Development, demos, architecture showcase |
+| **balanced** | GPT-4o-mini + GPT-5-mini | Production (cost-conscious) |
+| **premium** | GPT-5.1 + GPT-5-mini + GPT-5-nano | Production (quality-critical) |
+
+**Portfolio Strategy:** "Architecture baseline + model upgrades"
+1. **Budget tier** showcases RAG architecture value using only GPT-4o-mini
+2. **Balanced tier** adds selective GPT-5-mini upgrades for improved quality
+3. **Premium tier** uses best models for all tasks for maximum quality
+
+**Configuration:**
+```bash
+# Set in .env
+MODEL_TIER=budget    # Default - best cost-efficiency
+MODEL_TIER=balanced  # Best cost-quality tradeoff
+MODEL_TIER=premium   # Maximum quality
+```
+
+**Validation:** Run tier comparison test to measure performance on your dataset:
+```bash
+uv run python tests/integration/test_tier_comparison.py
+```
+
+See `evaluation/tier_comparison_report.md` for detailed results.
 
 ### Example Usage
 
@@ -641,7 +680,7 @@ Self-Correction Loops:
 - **Orchestration**: LangGraph 1.0 (state-based workflows)
 - **Vector Store**: FAISS (semantic search)
 - **Lexical Search**: BM25 (keyword matching)
-- **LLM**: OpenAI GPT-4o-mini (strategy selection, reranking, generation)
+- **LLMs**: OpenAI GPT-4o-mini/GPT-5-mini/GPT-5.1/GPT-5-nano (configurable via MODEL_TIER)
 - **PDF Processing**: PyMuPDF
 - **Package Manager**: uv (faster than pip)
 - **Reranking**: sentence-transformers (CrossEncoder models)

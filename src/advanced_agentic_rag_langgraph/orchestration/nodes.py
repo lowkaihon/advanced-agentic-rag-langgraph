@@ -1,6 +1,6 @@
 from typing import TypedDict
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
 from advanced_agentic_rag_langgraph.retrieval import (
     expand_query,
     rewrite_query,
@@ -10,13 +10,25 @@ from advanced_agentic_rag_langgraph.retrieval import (
 )
 from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
 from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
 from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
 import re
 import json
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+def _get_answer_generation_llm():
+    """Get LLM for answer generation with tier-based configuration."""
+    spec = get_model_for_task("answer_generation")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    return ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
@@ -50,14 +62,66 @@ class AnswerQualityEvaluation(TypedDict):
 
 # ============ CONVERSATIONAL QUERY REWRITING ============
 
+def extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
+    """
+    Extract conversation history from messages list (LangGraph best practice).
+
+    Pairs HumanMessage/AIMessage to create conversation turns in the format
+    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
+
+    Only includes complete pairs (ignores trailing unpaired messages).
+
+    Args:
+        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
+
+    Returns:
+        List of conversation turns in format: [{"user": str, "assistant": str}]
+
+    Example:
+        >>> messages = [
+        ...     HumanMessage(content="What is RAG?"),
+        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
+        ...     HumanMessage(content="How does it work?"),
+        ...     AIMessage(content="It works by...")
+        ... ]
+        >>> extract_conversation_history(messages)
+        [
+            {"user": "What is RAG?", "assistant": "RAG is..."},
+            {"user": "How does it work?", "assistant": "It works by..."}
+        ]
+    """
+    if not messages or len(messages) < 2:
+        return []
+
+    conversation = []
+    i = 0
+
+    while i < len(messages) - 1:
+        # Look for HumanMessage followed by AIMessage
+        if isinstance(messages[i], HumanMessage) and isinstance(messages[i+1], AIMessage):
+            conversation.append({
+                "user": messages[i].content,
+                "assistant": messages[i+1].content
+            })
+            i += 2
+        else:
+            i += 1
+
+    return conversation
+
+
 def conversational_rewrite_node(state: dict) -> dict:
     """
     Rewrite query using conversation history to make it self-contained.
 
     This node runs before query expansion to ensure queries have proper context.
+    Extracts conversation from messages field (LangGraph best practice).
     """
     question = state.get("user_question", state.get("baseline_query", ""))
-    conversation_history = state.get("conversation_history", [])
+
+    # Extract conversation from messages (LangGraph best practice)
+    messages = state.get("messages", [])
+    conversation_history = extract_conversation_history(messages)
 
     rewritten_query, reasoning = conversational_rewriter.rewrite(
         question,
@@ -70,6 +134,7 @@ def conversational_rewrite_node(state: dict) -> dict:
         print(f"Original: {question}")
         print(f"Rewritten: {rewritten_query}")
         print(f"Reasoning: {reasoning}")
+        print(f"Conversation turns used: {len(conversation_history)}")
         print(f"{'='*60}\n")
 
     return {
@@ -88,7 +153,15 @@ def _should_skip_expansion_llm(query: str) -> bool:
     Domain-agnostic - works for any query type and corpus.
     More accurate than heuristics - handles context and intent.
     """
-    expansion_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    spec = get_model_for_task("expansion_decision")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    expansion_llm = ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
 
     prompt = f"""Should this query be expanded into multiple variations for better retrieval?
 
@@ -293,14 +366,11 @@ def query_expansion_node(state: dict) -> dict:
             print(f"Strategy changed: Query optimized and will regenerate expansions")
         print(f"{'='*60}\n")
 
-        current_history = state.get("refinement_history", [])
-        new_history = current_history + [refinement]
-
         query = optimized_query
         updates = {
             "active_query": optimized_query,
             "retrieval_strategy": next_strategy,
-            "refinement_history": new_history,
+            "refinement_history": [refinement],
             "query_expansions": [],
             "strategy_changed": True,
         }
@@ -327,7 +397,7 @@ def query_expansion_node(state: dict) -> dict:
         result.update({
             "active_query": state["active_query"],
             "retrieval_strategy": state["retrieval_strategy"],
-            "refinement_history": state["refinement_history"],
+            "refinement_history": [state["refinement_history"][-1]] if state.get("refinement_history") else [],
             "strategy_changed": state["strategy_changed"],
         })
 
@@ -456,77 +526,20 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         for doc in unique_docs[:5]
     ])
 
-    quality_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    spec = get_model_for_task("retrieval_quality_eval")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    quality_llm = ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
     structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
-    quality_prompt = f"""Query: {state['baseline_query']}
+    from advanced_agentic_rag_langgraph.prompts import get_prompt
 
-Retrieved documents (top 5 after reranking):
-{docs_text}
-
-Evaluate retrieval quality to determine if these documents are sufficient for answer generation.
-
-EVALUATION CRITERIA:
-
-1. Coverage: How many aspects of the query are addressed?
-   - Multi-aspect query (e.g., "advantages AND disadvantages"): Both aspects needed
-   - Single-aspect query: Core information must be present
-   - Consider: Are all parts of the question answered by the documents?
-
-2. Completeness: Can the query be fully answered with these documents?
-   - Complete information present: Documents contain everything needed
-   - Partial information: Some details present but gaps exist
-   - Insufficient: Cannot answer without additional sources
-
-3. Relevance: Are documents on-topic and directly useful?
-   - High relevance: Documents directly address query topic
-   - Mixed relevance: Some docs relevant, others tangential
-   - Low relevance: Documents off-topic or only peripherally related
-
-SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
-
-- 80-100: EXCELLENT - Proceed to answer generation immediately
-  * All/most query aspects directly addressed
-  * Complete information for full answer
-  * All documents highly relevant to query
-
-- 60-79: GOOD - Acceptable for answer generation [THRESHOLD: Will proceed]
-  * Key query aspects covered (may have minor gaps)
-  * Sufficient information for complete answer
-  * Most documents relevant, minimal noise
-
-- 40-59: FAIR - Requires query rewriting [THRESHOLD: Will retry if attempts < 2]
-  * Partial coverage, key information missing
-  * Incomplete information, gaps in answer
-  * Documents tangential or only partially relevant
-
-- 0-39: POOR - Inadequate retrieval, needs strategy change
-  * Wrong domain or off-topic documents
-  * Cannot answer query with current results
-  * Most/all documents irrelevant
-
-STRUCTURED OUTPUT:
-
-- quality_score (0-100): Aggregate score following guidelines above
-
-- reasoning: 2-3 sentences explaining:
-  * Which aspects are covered vs missing
-  * Whether information is complete for answering
-  * Relevance quality of documents
-
-- issues: List specific problems (empty list if none):
-  * "missing_key_info": Required information not in documents (specify what is missing)
-  * "partial_coverage": Some query aspects covered, others missing (list missing aspects)
-  * "incomplete_context": Context lacks necessary details to fully answer query
-  * "wrong_domain": Documents from unrelated topic area
-  * "insufficient_depth": Surface-level info only, lacks detail
-  * "off_topic": Documents irrelevant to query
-  * "mixed_relevance": Combination of relevant and irrelevant docs
-
-IMPORTANT: If key information or query aspects are missing, explicitly include "partial_coverage"
-or "missing_key_info" in the issues list. This assessment is critical for routing decisions.
-
-Return your evaluation as structured data."""
+    quality_prompt = get_prompt("retrieval_quality_eval", query=state['baseline_query'], docs_text=docs_text)
 
     try:
         evaluation = structured_quality_llm.invoke(quality_prompt)
@@ -713,36 +726,21 @@ The retrieved documents are somewhat relevant but may have gaps in coverage. Use
         quality_instruction = f"""Low Confidence Retrieval (Score: {quality_score:.0%})
 The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
-    system_prompt = f"""{hallucination_feedback}You are an AI assistant that answers questions based exclusively on retrieved documents. Your role is to provide accurate, well-grounded responses using only the information present in the provided context.
+    from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
+    from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
-{quality_instruction}
+    spec = get_model_for_task("answer_generation")
+    is_gpt5 = spec.name.lower().startswith("gpt-5")
 
-Core Instructions:
-1. Base your answer ONLY on the provided context - do not use external knowledge or make assumptions beyond what is explicitly stated
-2. If the context does not contain sufficient information to answer the question, clearly state: "The provided context does not contain enough information to answer this question."
-3. Provide direct, concise answers that extract and synthesize the relevant information
-4. When helpful for clarity or verification, you may reference specific documents (e.g., "Document 2 explains that..." or "According to the retrieved information...")
-5. Match your confidence level to the retrieval quality - acknowledge uncertainty when present"""
+    system_prompt, user_message = get_answer_generation_prompts(
+        hallucination_feedback=hallucination_feedback,
+        quality_instruction=quality_instruction,
+        formatted_context=formatted_context,
+        question=question,
+        is_gpt5=is_gpt5
+    )
 
-    user_message = f"""<retrieved_context>
-{formatted_context}
-</retrieved_context>
-
-<question>
-{question}
-</question>
-
-<instructions>
-1. Answer the question using ONLY information from the <retrieved_context> section above
-2. If the context is insufficient, respond: "The provided context does not contain enough information to answer this question."
-3. Provide a direct, accurate answer that synthesizes the relevant information
-4. If multiple documents contain relevant information, combine insights appropriately
-5. Do not make assumptions or inferences beyond what is explicitly stated
-</instructions>
-
-<answer>
-"""
-
+    llm = _get_answer_generation_llm()
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message}
@@ -836,86 +834,30 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
     quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
-    quality_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+    spec = get_model_for_task("answer_quality_eval")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    quality_llm = ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
     structured_answer_llm = quality_llm.with_structured_output(AnswerQualityEvaluation)
 
-    evaluation_prompt = f"""Question: {question}
+    from advanced_agentic_rag_langgraph.prompts import get_prompt
 
-Answer: {answer}
-
-Retrieval Context:
-- Retrieval quality: {retrieval_quality:.0%}
-- Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}
-
-Evaluate this answer using the vRAG-Eval framework (Correctness, Completeness, Honesty).
-
-EVALUATION CRITERIA:
-
-1. Relevance: Does the answer address the question asked?
-   - Relevant: Answer directly addresses the question topic and intent
-   - Partially relevant: Answer touches on the topic but misses key aspects
-   - Irrelevant: Answer discusses unrelated topics or misunderstands the question
-
-2. Completeness: Does the answer fully address all aspects of the question?
-   - Complete: All question aspects covered with sufficient detail
-   - Partial: Some aspects covered, but missing important details or perspectives
-   - Incomplete: Major gaps in coverage, leaves question largely unanswered
-
-3. Accuracy: Is the answer factually correct based on the retrieved context?
-   - Accurate: All statements supported by retrieved documents
-   - Mostly accurate: Minor inaccuracies or unsupported details
-   - Inaccurate: Contains significant errors or unsupported claims
-
-SCORING GUIDELINES (0-100 confidence scale, aligned with threshold of {quality_threshold*100:.0f}):
-
-- 80-100: EXCELLENT - High confidence answer
-  * Directly relevant to question
-  * Fully addresses all aspects with comprehensive detail
-  * Factually accurate, well-grounded in retrieved context
-  * Clear synthesis of information
-
-- {quality_threshold*100:.0f}-79: GOOD - Acceptable answer [THRESHOLD: Will accept]
-  * Relevant to question with minor gaps
-  * Covers key aspects sufficiently
-  * Generally accurate with solid grounding
-  * Adequate synthesis
-
-- {(quality_threshold-0.15)*100:.0f}-{quality_threshold*100-1:.0f}: FAIR - Needs improvement [THRESHOLD: Will retry if attempts remain]
-  * Partially relevant or missing key aspects
-  * Incomplete coverage of question
-  * Some unsupported statements or weak grounding
-  * Poor synthesis or lacks specificity
-
-- 0-{(quality_threshold-0.15)*100-1:.0f}: POOR - Inadequate answer
-  * Not relevant to question
-  * Major gaps in completeness
-  * Significant factual errors or hallucinations
-  * Fails to synthesize information effectively
-
-STRUCTURED OUTPUT:
-
-- is_relevant (boolean): Answer addresses the question
-- is_complete (boolean): Answer fully addresses all aspects
-- is_accurate (boolean): Answer is factually correct
-- confidence_score (0-100): Overall confidence in answer quality
-
-- reasoning: 2-3 sentences explaining:
-  * How well the answer addresses the question
-  * What aspects are complete vs incomplete
-  * Accuracy and grounding assessment
-  * How retrieval quality affected answer quality
-
-- issues: List specific problems (empty list if none):
-  * "incomplete_synthesis": Answer lists facts but doesn't synthesize them into coherent response
-  * "lacks_specificity": Answer too vague or generic, missing concrete details from context
-  * "missing_details": Key details from question not addressed in answer
-  * "unsupported_claims": Contains statements not grounded in retrieved documents
-  * "partial_answer": Only addresses some aspects of multi-part question
-  * "wrong_focus": Emphasizes less relevant information while missing key points
-  * "retrieval_limited": Poor answer quality directly caused by insufficient retrieval
-  * "contextual_gaps": Missing information due to incomplete retrieved context
-
-Note: Consider retrieval quality when evaluating. Low retrieval quality ({retrieval_quality:.0%}) or issues like "{', '.join(retrieval_quality_issues[:2])}" may limit answer completeness."""
+    evaluation_prompt = get_prompt(
+        "answer_quality_eval",
+        question=question,
+        answer=answer,
+        retrieval_quality=f"{retrieval_quality:.0%}",
+        retrieval_issues=', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None',
+        quality_threshold_pct=quality_threshold*100,
+        quality_threshold_low_pct=(quality_threshold-0.15)*100,
+        quality_threshold_minus_1_pct=quality_threshold*100-1,
+        quality_threshold_low_minus_1_pct=(quality_threshold-0.15)*100-1
+    )
 
     try:
         evaluation = structured_answer_llm.invoke(evaluation_prompt)

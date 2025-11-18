@@ -99,7 +99,7 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 |-------------|-----------|---------|-------------|
 | Verify imports/basic pipeline | test_pdf_pipeline.py | 30-45s | End-to-end validation, strategy selection, conversational rewriting |
 | After profiling changes | test_document_profiling.py | 40-60s | Document profiling, corpus stats, metadata-aware retrieval |
-| After retrieval logic changes | test_adaptive_retrieval.py | 30-45s | Metadata-driven retrieval, strategy switching, self-correction |
+| After retrieval logic changes | test_adaptive_retrieval.py | 30-45s | Quality-issue-based retrieval, strategy switching, self-correction |
 | Before deployment/releases | test_golden_dataset_evaluation.py | 10-15min | Comprehensive metrics, regression detection, baseline validation |
 | Quick smoke test (reranking) | test_cross_encoder.py | 5-10s | CrossEncoder reranking verification |
 | Quick smoke test (groundedness) | test_groundedness.py | 10-15s | Hallucination detection verification |
@@ -132,12 +132,12 @@ Validates LLM-based document profiling and corpus statistics.
 ---
 
 ### 3. test_adaptive_retrieval.py (~30-45s)
-Tests self-correcting retrieval with metadata-driven strategy switching.
+Tests self-correcting retrieval with quality-issue-based strategy switching.
 
-**Tests:** Metadata analysis, strategy mismatch detection (>60% threshold), automatic switching with reasoning
+**Tests:** Retrieval quality evaluation (8 issue types), strategy switching with reasoning, query rewriting feedback loops
 **Run after:** Changes to adaptive retrieval, strategy switching, or quality gates
 **Command:** `uv run python tests/integration/test_adaptive_retrieval.py`
-**Note:** Newest feature (Nov 14) - metadata-driven adaptive retrieval
+**Note:** Displays retrieval_quality_issues, strategy_switch_reason, and refinement_history
 
 ---
 

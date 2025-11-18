@@ -18,7 +18,6 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 result = advanced_rag_graph.invoke({
     "question": "What is attention?",
     "original_query": "What is attention?",
-    "conversation_history": [],
     "retrieval_attempts": 0,
     "query_expansions": [],
     "messages": [],

@@ -29,7 +29,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - 9 nodes with conditional edges (not linear pipeline)
 - Integrated metadata analysis within retrieval evaluation
 - **State management pattern**:
-  - `Annotated[list, operator.add]` for: messages, retrieved_docs, refinement_history (accumulate across turns/iterations)
+  - `add_messages` for messages (conversation history), `operator.add` for: retrieved_docs, refinement_history
   - Direct replacement (no operator.add) for: query_expansions (regenerated fresh per iteration to ensure expansion-query alignment)
   - Rationale: Expansions must match current query context; accumulation would mix variants for different queries/strategies
 - Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
@@ -100,7 +100,7 @@ This project uses **uv** for dependency management. Do not use pip or conda.
 ### Setup
 ```bash
 uv sync                              # Install/sync all dependencies
-cp .env.example .env                 # Create environment file (add your OPENAI_API_KEY)
+cp .env.example .env                 # Create environment file (add OPENAI_API_KEY + MODEL_TIER)
 ```
 
 ### Python Cache Management
@@ -335,14 +335,13 @@ class AdvancedRAGState(TypedDict):
     # Always set (no Optional)
     user_question: str
     baseline_query: str
-    conversation_history: list[dict[str, str]]
 
     # Conditionally set (Optional)
     active_query: Optional[str]
     query_expansions: Optional[list[str]]  # Regenerated per iteration (not accumulated)
 
     # Accumulated with reducers
-    messages: Annotated[list[BaseMessage], add_messages]  # Idempotent
+    messages: Annotated[list[BaseMessage], add_messages]  # Conversation history (LangGraph best practice)
     retrieved_docs: Annotated[list[str], operator.add]
 ```
 

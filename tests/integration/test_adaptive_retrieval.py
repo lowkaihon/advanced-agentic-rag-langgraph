@@ -1,10 +1,10 @@
 """
-Test script for metadata-driven adaptive retrieval workflow.
+Test script for quality-issue-based adaptive retrieval workflow.
 
 This demonstrates:
-1. Document metadata analysis after retrieval
-2. Strategy mismatch detection
-3. Intelligent strategy switching based on metadata
+1. Retrieval quality evaluation with issue detection
+2. Strategy switching based on quality issues
+3. Query rewriting with actionable feedback
 4. Self-correcting retrieval loops
 """
 
@@ -18,9 +18,9 @@ from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
 
 
 def test_adaptive_retrieval_workflow():
-    """Test complete adaptive retrieval workflow with metadata analysis"""
+    """Test complete adaptive retrieval workflow with quality-based adaptation"""
     print("\n" + "="*80)
-    print("TEST: METADATA-DRIVEN ADAPTIVE RETRIEVAL WORKFLOW")
+    print("TEST: QUALITY-ISSUE-BASED ADAPTIVE RETRIEVAL WORKFLOW")
     print("="*80)
 
     # Reset and initialize
@@ -33,14 +33,19 @@ def test_adaptive_retrieval_workflow():
     # Test queries that should trigger different behaviors
     test_cases = [
         {
-            "name": "Conceptual Query (Should Trigger Metadata Analysis)",
+            "name": "Conceptual Query (Basic Retrieval)",
             "query": "What is the attention mechanism?",
-            "expected_behavior": "Initial semantic retrieval, analyze metadata, potentially switch strategy if mismatch detected"
+            "expected_behavior": "Initial semantic retrieval, evaluate quality, may trigger rewriting if insufficient"
         },
         {
-            "name": "Technical Query (Should Test Strategy Switching)",
+            "name": "Technical Query (Strategy Evaluation)",
             "query": "multi-head attention implementation details",
-            "expected_behavior": "May switch from keyword to hybrid based on document preferences"
+            "expected_behavior": "May switch strategy based on retrieval quality issues"
+        },
+        {
+            "name": "Cross-Document Query (Should Trigger Quality Issues)",
+            "query": "Compare transformer architecture advantages versus RNN and CNN approaches",
+            "expected_behavior": "May trigger partial_coverage or incomplete_context issues, leading to query rewriting"
         },
     ]
 
@@ -56,7 +61,6 @@ def test_adaptive_retrieval_workflow():
         initial_state = {
             "user_question": test_case["query"],
             "baseline_query": test_case["query"],
-            "conversation_history": [],
             "retrieval_attempts": 0,
             "query_expansions": [],
             "messages": [],
@@ -76,18 +80,25 @@ def test_adaptive_retrieval_workflow():
             print(f"Initial Strategy: {result.get('retrieval_strategy', 'N/A')}")
             print(f"Retrieval Attempts: {result.get('retrieval_attempts', 0)}")
 
-            # Metadata analysis results
-            metadata_analysis = result.get("doc_metadata_analysis", {})
-            if metadata_analysis:
-                print(f"\nMetadata Analysis:")
-                print(f"  - Total docs analyzed: {metadata_analysis.get('total_docs', 0)}")
-                print(f"  - Dominant strategy: {metadata_analysis.get('dominant_strategy', 'N/A')}")
-                print(f"  - Strategy mismatch rate: {result.get('strategy_mismatch_rate', 0):.0%}")
-                print(f"  - Avg doc confidence: {result.get('avg_doc_confidence', 0):.0%}")
-                print(f"  - Quality issues: {len(metadata_analysis.get('quality_issues', []))}")
+            # Retrieval quality analysis
+            print(f"\nRetrieval Quality Analysis:")
+            print(f"  - Score: {result.get('retrieval_quality_score', 0):.0%}")
 
-                for issue in metadata_analysis.get('quality_issues', []):
-                    print(f"    * {issue.get('issue')}: {issue.get('description')}")
+            quality_issues = result.get('retrieval_quality_issues', [])
+            if quality_issues:
+                print(f"  - Issues detected: {', '.join(quality_issues)}")
+            else:
+                print(f"  - No issues detected")
+
+            quality_reasoning = result.get('retrieval_quality_reasoning', '')
+            if quality_reasoning:
+                print(f"  - LLM reasoning: {quality_reasoning[:150]}...")
+
+            # Strategy switching analysis
+            strategy_switch_reason = result.get('strategy_switch_reason', '')
+            if strategy_switch_reason:
+                print(f"\nStrategy Switch:")
+                print(f"  - Reason: {strategy_switch_reason}")
 
             # Refinement history
             refinement_history = result.get("refinement_history", [])
@@ -117,21 +128,23 @@ def test_adaptive_retrieval_workflow():
             traceback.print_exc()
 
 
-def test_metadata_analysis_details():
-    """Test detailed metadata analysis functionality"""
+def test_quality_evaluation_details():
+    """Test detailed quality evaluation functionality"""
     print("\n\n" + "="*80)
-    print("TEST: DETAILED METADATA ANALYSIS")
+    print("TEST: QUALITY EVALUATION DETAILS")
     print("="*80)
 
     # Initialize retriever if not already done
     setup_retriever(pdfs="Attention Is All You Need.pdf", verbose=False)
 
     print("\nThis test demonstrates:")
-    print("1. Document profiling creates metadata BEFORE chunking")
-    print("2. Metadata flows to chunks (content_type, technical_level, domain, etc.)")
-    print("3. Retrieval returns chunks with metadata")
-    print("4. Metadata analysis examines retrieved docs to detect mismatches")
-    print("5. System adapts strategy based on metadata signals")
+    print("1. Document profiling creates metadata during PDF loading")
+    print("2. Retrieval quality evaluation with 8 issue types:")
+    print("   - partial_coverage, missing_key_info, incomplete_context, domain_misalignment")
+    print("   - low_confidence, mixed_relevance, off_topic, wrong_domain")
+    print("3. Strategy switching triggered by quality issues")
+    print("4. Query rewriting with actionable feedback")
+    print("5. Self-correcting loops that improve retrieval")
 
     print("\n[INFO] Run the main test above to see this in action!")
 
@@ -140,22 +153,22 @@ def main():
     """Run all adaptive retrieval tests"""
     print("\n" + "="*80)
     print("ADAPTIVE RETRIEVAL TEST SUITE")
-    print("Demonstrating: Metadata-Driven Intelligence & Self-Correction")
+    print("Demonstrating: Quality-Issue-Based Intelligence & Self-Correction")
     print("="*80)
 
     # Test 1: Full workflow
     test_adaptive_retrieval_workflow()
 
-    # Test 2: Metadata details
-    test_metadata_analysis_details()
+    # Test 2: Quality evaluation details
+    test_quality_evaluation_details()
 
     print("\n" + "="*80)
     print("ALL ADAPTIVE RETRIEVAL TESTS COMPLETED")
     print("="*80)
     print("\nKey Achievements:")
-    print("[SUCCESS] Document metadata flows from profiling -> chunks -> retrieval")
-    print("[SUCCESS] Metadata analysis detects strategy mismatches")
-    print("[SUCCESS] System intelligently switches strategies based on evidence")
+    print("[SUCCESS] Retrieval quality evaluation with 8 issue types")
+    print("[SUCCESS] Quality issues drive query rewriting decisions")
+    print("[SUCCESS] Strategy switching based on retrieval quality analysis")
     print("[SUCCESS] Refinement history logs all adaptive decisions")
     print("[SUCCESS] Self-correcting loops improve retrieval quality")
     print("\nThis showcases production-ready adaptive AI patterns!\n")

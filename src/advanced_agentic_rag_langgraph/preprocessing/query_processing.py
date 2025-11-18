@@ -3,13 +3,33 @@
 from typing import List, Dict, Tuple
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 
 class ConversationalRewriter:
     """Rewrites queries using conversation history to make them self-contained."""
 
-    def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0):
-        self.llm = ChatOpenAI(model=model, temperature=temperature)
+    def __init__(self, model: str = None, temperature: float = None):
+        """
+        Initialize conversational rewriter with tier-based model configuration.
+
+        Args:
+            model: Override model name (None = use tier config)
+            temperature: Override temperature (None = use tier config)
+        """
+        spec = get_model_for_task("conversational_rewrite")
+        model = model or spec.name
+        temperature = temperature if temperature is not None else spec.temperature
+
+        model_kwargs = {}
+        if spec.reasoning_effort:
+            model_kwargs["reasoning_effort"] = spec.reasoning_effort
+
+        self.llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            model_kwargs=model_kwargs
+        )
 
     def rewrite(
         self,

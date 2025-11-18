@@ -300,9 +300,8 @@ def evaluate_on_golden_dataset(
             print(f"  Question: {question[:80]}...")
 
         state = {
-            "question": question,
-            "original_query": question,
-            "conversation_history": [],
+            "user_question": question,
+            "baseline_query": question,
             "retrieval_attempts": 0,
             "query_expansions": [],
             "messages": [],

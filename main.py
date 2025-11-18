@@ -22,7 +22,6 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
         "messages": [],
         "retrieved_docs": [],
         "retrieval_quality_score": 0.0,
-        "needs_retrieval": False,
         "is_answer_sufficient": False,
         "retrieval_attempts": 0,
         "final_answer": "",

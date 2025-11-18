@@ -1,67 +1,65 @@
 from typing_extensions import TypedDict, Annotated
-from typing import Literal, Optional
+from typing import Literal, Optional, Any
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
 import operator
 
 class AdvancedRAGState(TypedDict):
-    """Enhanced state with query optimization and conversational support"""
+    """
+    State schema for advanced agentic RAG workflow with distributed decision-making.
 
-    # Input
-    user_question: str  # Raw user input (immutable)
-    baseline_query: str  # Post-conversational-rewrite baseline (immutable after conversational_rewrite)
-    conversation_history: list[dict[str, str]]  # Past conversation turns
+    State Management Patterns:
+    - add_messages: Message history (idempotent, deduplicates by ID)
+    - operator.add: Documents and refinement history (accumulate across iterations)
+    - Direct replacement: Query expansions (regenerated per iteration for expansion-query alignment)
+    """
 
-    # Query optimization
-    query_expansions: Optional[list[str]]  # Multiple query variants (regenerated per iteration, not accumulated)
-    active_query: Optional[str]  # Current working query for retrieval (mutable through optimization/rewriting)
+    # === INPUT & INITIALIZATION ===
+    user_question: str  # Raw user input
+    baseline_query: str  # Conversationally-rewritten query (set once by conversational_rewrite node)
+    messages: Annotated[list[BaseMessage], add_messages]  # Conversation history with automatic deduplication
 
-    # Retrieval strategy
+    # === QUERY LIFECYCLE ===
+    active_query: Optional[str]  # Current working query (evolves through rewrites)
+    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (regenerated, not accumulated)
+
+    # === STRATEGY SELECTION & ADAPTATION ===
     retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]
-    strategy_changed: Optional[bool]  # Flag to skip decide_strategy node on retry (routing signal)
-    strategy_switch_reason: Optional[str]  # Explanation of why strategy was switched
-    corpus_stats: Optional[dict[str, any]]  # Corpus-level statistics for strategy selection
+    corpus_stats: Optional[dict[str, Any]]  # Document profiling: technical_density, domain_distribution, has_code/math
+    strategy_changed: Optional[bool]  # Signals retry path should skip decide_strategy node
+    strategy_switch_reason: Optional[str]  # Content-driven explanation (e.g., "off_topic detected -> keyword")
+    refinement_history: Annotated[list[dict[str, Any]], operator.add]  # Accumulated log of strategy switches with reasoning
 
-    # Processing
-    messages: Annotated[list[BaseMessage], add_messages]
-    retrieved_docs: Annotated[list[str], operator.add]
-    unique_docs_list: Optional[list]  # Document objects for metadata analysis
-    retrieval_quality_score: Optional[float]  # How good are the retrieved docs?
+    # === RETRIEVAL EXECUTION ===
+    retrieved_docs: Annotated[list[str], operator.add]  # Accumulated document content across retrieval attempts
+    unique_docs_list: Optional[list]  # Deduplicated Document objects with metadata (for reranking/analysis)
+    retrieval_attempts: Optional[int]  # Retry counter (max 2 rewrites before strategy switch)
 
-    # Retrieval Evaluation (Golden Dataset Support)
-    ground_truth_doc_ids: Optional[set]  # Relevant document IDs from golden dataset
-    relevance_grades: Optional[dict[str, int]]  # Optional graded relevance (doc_id -> 0-3 scale)
-    retrieval_metrics: Optional[dict[str, float]]  # Recall@K, Precision@K, F1@K, nDCG@K
+    # === QUALITY ASSESSMENT ===
+    # Retrieval Quality (LLM-as-judge evaluation)
+    retrieval_quality_score: Optional[float]  # 0.0-1.0 score from structured LLM evaluation
+    retrieval_quality_reasoning: Optional[str]  # LLM explanation of quality score
+    retrieval_quality_issues: Optional[list[str]]  # Issues: partial_coverage, missing_key_info, off_topic, wrong_domain, etc.
 
-    # Decision making
-    needs_retrieval: Optional[bool]
-    is_answer_sufficient: Optional[bool]
-    retrieval_attempts: Optional[int]
+    # Answer Quality (vRAG-Eval framework with adaptive thresholds)
+    answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation
+    answer_quality_issues: Optional[list[str]]  # Issues: incomplete_synthesis, lacks_specificity, missing_details, etc.
+    is_answer_sufficient: Optional[bool]  # Quality gate: proceed to output or retry
 
-    # Groundedness & Hallucination Detection (RAG Triad framework)
+    # === GROUNDEDNESS & HALLUCINATION (NLI-based detection) ===
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)
-    has_hallucination: Optional[bool]  # Whether unsupported claims detected
-    unsupported_claims: Optional[list[str]]  # List of claims not supported by context
-    retry_needed: Optional[bool]  # Whether severe hallucination requires regeneration
-    groundedness_severity: Optional[Literal["NONE", "MODERATE", "SEVERE"]]
-    groundedness_retry_count: Optional[int]  # Number of regeneration attempts due to hallucination
-    retrieval_caused_hallucination: Optional[bool]  # Flag when poor retrieval causes hallucination (triggers re-retrieval)
+    has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder NLI
+    unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
+    groundedness_severity: Optional[Literal["NONE", "MODERATE", "SEVERE"]]  # Routing severity: <0.6 SEVERE, 0.6-0.8 MODERATE, >=0.8 NONE
+    retry_needed: Optional[bool]  # SEVERE hallucination triggers regeneration with strict grounding instructions
+    groundedness_retry_count: Optional[int]  # Regeneration attempt counter (max 2)
+    retrieval_caused_hallucination: Optional[bool]  # Poor retrieval + SEVERE -> re-retrieval with strategy switch
 
-    # Metadata-driven adaptive retrieval
-    doc_metadata_analysis: Optional[dict[str, any]]  # Analysis of retrieved document characteristics
-    strategy_mismatch_rate: Optional[float]  # Percentage of docs preferring different strategy
-    avg_doc_confidence: Optional[float]  # Average strategy confidence from retrieved docs
-    domain_alignment_score: Optional[float]  # How well docs match query domain
-    refinement_history: Optional[Annotated[list[dict[str, any]], operator.add]]  # Log of all refinements
+    # === EVALUATION METRICS (Golden Dataset Support) ===
+    ground_truth_doc_ids: Optional[set]  # Relevant document IDs from test set
+    relevance_grades: Optional[dict[str, int]]  # Graded relevance per doc (0-3 scale for nDCG)
+    retrieval_metrics: Optional[dict[str, float]]  # Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 
-    # Retrieval Quality Issues (replaces context sufficiency - streamlined to single source)
-    retrieval_quality_reasoning: Optional[str]  # LLM explanation of retrieval quality score
-    retrieval_quality_issues: Optional[list[str]]  # Specific problems: partial_coverage, missing_key_info, etc.
-
-    # Answer Quality Evaluation (mirrors retrieval quality pattern)
-    answer_quality_reasoning: Optional[str]  # LLM explanation of answer evaluation
-    answer_quality_issues: Optional[list[str]]  # Specific problems: incomplete_synthesis, lacks_specificity, etc.
-
-    # Output
+    # === OUTPUT ===
     final_answer: Optional[str]
     confidence_score: Optional[float]

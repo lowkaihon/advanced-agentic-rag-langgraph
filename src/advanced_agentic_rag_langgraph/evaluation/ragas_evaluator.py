@@ -14,6 +14,7 @@ RAGAS Metrics:
 import asyncio
 from typing import List, Dict, Optional, Any
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.metrics import (
@@ -37,11 +38,31 @@ class RAGASEvaluator:
 
     def __init__(
         self,
-        llm_model: str = "gpt-4o-mini",
-        temperature: float = 0.0,
+        llm_model: str = None,
+        temperature: float = None,
         embedding_model: Optional[str] = None
     ):
-        self.evaluator_llm = ChatOpenAI(model=llm_model, temperature=temperature)
+        """
+        Initialize RAGAS evaluator with tier-based model configuration.
+
+        Args:
+            llm_model: LLM for evaluation (None = use tier config)
+            temperature: Sampling temperature (None = use tier config)
+            embedding_model: Embedding model (None = use default text-embedding-3-small)
+        """
+        spec = get_model_for_task("ragas_evaluation")
+        llm_model = llm_model or spec.name
+        temperature = temperature if temperature is not None else spec.temperature
+
+        model_kwargs = {}
+        if spec.reasoning_effort:
+            model_kwargs["reasoning_effort"] = spec.reasoning_effort
+
+        self.evaluator_llm = ChatOpenAI(
+            model=llm_model,
+            temperature=temperature,
+            model_kwargs=model_kwargs
+        )
         self.evaluator_embeddings = OpenAIEmbeddings(
             model=embedding_model if embedding_model else "text-embedding-3-small"
         )
@@ -208,7 +229,6 @@ def run_ragas_evaluation_on_golden(
         state = {
             "question": question,
             "original_query": question,
-            "conversation_history": [],
             "retrieval_attempts": 0,
             "query_expansions": [],
             "messages": [],

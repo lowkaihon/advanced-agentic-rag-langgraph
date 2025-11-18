@@ -1,8 +1,46 @@
 from langchain_openai import ChatOpenAI
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 import json
 import re
 
-llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.7)
+
+def _get_expansion_llm():
+    """Get LLM for query expansion with tier-based configuration."""
+    spec = get_model_for_task("query_expansion")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    return ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
+
+
+def _get_rewriting_llm():
+    """Get LLM for query rewriting with tier-based configuration."""
+    spec = get_model_for_task("query_rewriting")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    return ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
+
+
+def _get_strategy_optimization_llm():
+    """Get LLM for strategy-specific query optimization."""
+    spec = get_model_for_task("strategy_optimization")
+    model_kwargs = {}
+    if spec.reasoning_effort:
+        model_kwargs["reasoning_effort"] = spec.reasoning_effort
+    return ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        model_kwargs=model_kwargs
+    )
 
 
 def expand_query(query: str) -> list[str]:
@@ -30,6 +68,7 @@ Return as JSON:
 Return ONLY the JSON, no explanation."""
 
     try:
+        llm = _get_expansion_llm()
         response = llm.invoke(expansion_prompt)
         json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
 
@@ -66,6 +105,7 @@ Guidelines:
 
 Return ONLY the rewritten query."""
 
+    llm = _get_rewriting_llm()
     response = llm.invoke(rewrite_prompt)
     return response.content.strip().strip('"\'')
 
@@ -143,6 +183,7 @@ CRITICAL GUIDELINES:
 - Be concise but complete
 - Return ONLY the optimized query, no explanation"""
 
+    llm = _get_strategy_optimization_llm()
     response = llm.invoke(optimization_prompt)
     optimized = response.content.strip().strip('"\'')
 

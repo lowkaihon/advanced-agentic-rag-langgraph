@@ -29,6 +29,7 @@ Model: cross-encoder/nli-deberta-v3-base
 from typing import TypedDict, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 import json
 import re
 
@@ -55,19 +56,36 @@ class NLIHallucinationDetector:
     def __init__(
         self,
         nli_model_name: str = "cross-encoder/nli-deberta-v3-base",
-        llm_model: str = "gpt-4o-mini",
+        llm_model: str = None,
         entailment_threshold: float = 0.7
     ):
         """
-        Initialize NLI hallucination detector.
+        Initialize NLI hallucination detector with tier-based model configuration.
 
         Zero-shot NLI baseline achieving ~0.65-0.70 F1.
         Production systems (0.83 F1) require fine-tuning on RAGTruth dataset.
+
+        Args:
+            nli_model_name: CrossEncoder model for entailment verification
+            llm_model: LLM for claim decomposition (None = use tier config)
+            entailment_threshold: Minimum entailment score to consider claim supported
         """
         from sentence_transformers import CrossEncoder
 
         self.nli_model = CrossEncoder(nli_model_name)
-        self.llm = ChatOpenAI(model=llm_model, temperature=0)
+
+        spec = get_model_for_task("nli_claim_decomposition")
+        llm_model = llm_model or spec.name
+
+        model_kwargs = {}
+        if spec.reasoning_effort:
+            model_kwargs["reasoning_effort"] = spec.reasoning_effort
+
+        self.llm = ChatOpenAI(
+            model=llm_model,
+            temperature=spec.temperature,
+            model_kwargs=model_kwargs
+        )
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
 
@@ -77,27 +95,9 @@ class NLIHallucinationDetector:
 
         Each claim should be atomic (single fact), verifiable, and self-contained.
         """
-        decomposition_prompt = f"""Extract all factual claims from this answer.
+        from advanced_agentic_rag_langgraph.prompts import get_prompt
 
-Answer:
-{answer}
-
-Requirements:
-1. Each claim should be atomic (one fact per claim)
-2. Each claim should be self-contained and verifiable
-3. Break compound statements into separate claims
-4. Include implicit claims if they're essential to the answer
-
-Examples:
-Input: "BERT has 12 layers and uses transformers"
-Output: ["BERT has 12 layers", "BERT uses transformers"]
-
-Input: "The attention mechanism allows models to focus on relevant parts"
-Output: ["The attention mechanism allows models to focus on relevant parts of the input"]
-
-Provide:
-- claims: List of atomic factual claims
-- reasoning: Brief explanation of your decomposition approach"""
+        decomposition_prompt = get_prompt("nli_claim_decomposition", answer=answer)
 
         try:
             result = self.structured_llm.invoke([HumanMessage(content=decomposition_prompt)])

@@ -129,6 +129,84 @@ def test_conversational_rewriting():
         })
 
 
+def test_conversational_rewriting_with_messages():
+    """Test 3b: Test conversational rewriting using messages field (LangGraph best practice)"""
+    print("\n" + "="*80)
+    print("TEST 3b: CONVERSATIONAL REWRITING WITH MESSAGES (LangGraph Best Practice)")
+    print("="*80)
+
+    from langchain_core.messages import HumanMessage, AIMessage
+    from advanced_agentic_rag_langgraph.orchestration.nodes import conversational_rewrite_node
+
+    print("\nSimulating multi-turn conversation using messages field:\n")
+
+    # Turn 1: Initial query (no context)
+    print("Turn 1:")
+    print("  User: What is the transformer architecture?")
+
+    state_turn1 = {
+        "user_question": "What is the transformer architecture?",
+        "baseline_query": "What is the transformer architecture?",
+        "messages": [],  # No previous messages
+    }
+
+    result_turn1 = conversational_rewrite_node(state_turn1)
+    print(f"  -> No rewrite (no previous conversation)")
+    print()
+
+    # Simulate the answer being generated (this would normally happen in answer_generation_node)
+    simulated_answer_turn1 = "The transformer is a neural network architecture introduced in the 'Attention Is All You Need' paper that relies on self-attention mechanisms instead of recurrence..."
+
+    # Turn 2: Follow-up query with context from turn 1
+    print("Turn 2:")
+    print("  User: How does it work?")
+
+    state_turn2 = {
+        "user_question": "How does it work?",
+        "baseline_query": "How does it work?",
+        "messages": [
+            HumanMessage(content="What is the transformer architecture?"),
+            AIMessage(content=simulated_answer_turn1),
+        ],
+    }
+
+    result_turn2 = conversational_rewrite_node(state_turn2)
+    print(f"  -> Rewritten: {result_turn2['baseline_query']}")
+    assert result_turn2['baseline_query'] != "How does it work?", \
+        "Query should be rewritten to include context from turn 1"
+    assert "transformer" in result_turn2['baseline_query'].lower(), \
+        "Rewritten query should reference 'transformer' from previous turn"
+    print()
+
+    # Turn 3: Another follow-up with accumulated context
+    print("Turn 3:")
+    print("  User: What about positional encoding?")
+
+    simulated_answer_turn2 = "The transformer works by using self-attention to weigh the importance of different parts of the input sequence..."
+
+    state_turn3 = {
+        "user_question": "What about positional encoding?",
+        "baseline_query": "What about positional encoding?",
+        "messages": [
+            HumanMessage(content="What is the transformer architecture?"),
+            AIMessage(content=simulated_answer_turn1),
+            HumanMessage(content="How does it work?"),
+            AIMessage(content=simulated_answer_turn2),
+        ],
+    }
+
+    result_turn3 = conversational_rewrite_node(state_turn3)
+    print(f"  -> Rewritten: {result_turn3['baseline_query']}")
+    assert result_turn3['baseline_query'] != "What about positional encoding?", \
+        "Query should be rewritten to include context"
+    assert "transformer" in result_turn3['baseline_query'].lower() or "positional encoding" in result_turn3['baseline_query'].lower(), \
+        "Rewritten query should maintain topic context"
+    print()
+
+    print("[PASS] Conversational rewriting using messages field works correctly!")
+    print("This follows LangGraph best practices (using add_messages reducer)\n")
+
+
 def test_full_pipeline():
     """Test 4: Run complete end-to-end pipeline"""
     print("\n" + "="*80)
@@ -148,7 +226,6 @@ def test_full_pipeline():
     initial_state = {
         "user_question": test_query,
         "baseline_query": test_query,
-        "conversation_history": [],
         "retrieval_attempts": 0,
         "query_expansions": [],
         "messages": [],
@@ -195,8 +272,11 @@ def main():
     # Test 2: Strategy Selection
     test_strategy_selection()
 
-    # Test 3: Conversational Rewriting
+    # Test 3: Conversational Rewriting (legacy pattern)
     test_conversational_rewriting()
+
+    # Test 3b: Conversational Rewriting with Messages (LangGraph best practice)
+    test_conversational_rewriting_with_messages()
 
     # Test 4: Full Pipeline
     test_full_pipeline()

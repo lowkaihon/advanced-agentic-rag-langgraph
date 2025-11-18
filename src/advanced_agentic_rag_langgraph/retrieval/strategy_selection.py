@@ -7,6 +7,7 @@ Simplified to pure LLM for better accuracy and maintainability.
 
 from typing import Dict, Literal, Tuple, TypedDict
 from langchain_openai import ChatOpenAI
+from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 
 class StrategyDecision(TypedDict):
@@ -19,8 +20,27 @@ class StrategyDecision(TypedDict):
 class StrategySelector:
     """Pure LLM-based retrieval strategy selection. Domain-agnostic, zero heuristics."""
 
-    def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0):
-        self.llm = ChatOpenAI(model=model, temperature=temperature)
+    def __init__(self, model: str = None, temperature: float = None):
+        """
+        Initialize strategy selector with tier-based model configuration.
+
+        Args:
+            model: Override model name (None = use tier config)
+            temperature: Override temperature (None = use tier config)
+        """
+        spec = get_model_for_task("strategy_selection")
+        model = model or spec.name
+        temperature = temperature if temperature is not None else spec.temperature
+
+        model_kwargs = {}
+        if spec.reasoning_effort:
+            model_kwargs["reasoning_effort"] = spec.reasoning_effort
+
+        self.llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            model_kwargs=model_kwargs
+        )
         self.structured_llm = self.llm.with_structured_output(StrategyDecision)
 
     def select_strategy(

@@ -171,6 +171,6 @@ def calculate_answer_relevance(
 
     return {
         "relevance_score": float(relevance_score),
-        "is_relevant": relevance_score >= threshold,
+        "is_relevant": bool(relevance_score >= threshold),
         "relevance_category": category
     }
