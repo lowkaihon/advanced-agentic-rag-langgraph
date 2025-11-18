@@ -136,9 +136,3 @@ Desktop.ini
 # Misc
 .claude/settings.local.json
 notes.ipynb
-docs
-references
-Optimal OpenAI Model Selection.md
-Advanced Agentic RAG System - Model Selection & Tier Optimization.md
-Configurable Model Tier System - Model-Specific vs Model-Agnostic Prompts.md
-Latency-Focused Deep Dive - GPT-4o-mini vs GPT-5 mini for Budget Tier.md

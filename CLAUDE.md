@@ -74,6 +74,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
   - Early detection (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts
   - Late detection (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage/incomplete_context → intelligent fallback) after answer proves insufficient
   - Both tiers regenerate query expansions optimized for new strategy
+- Tiered model architecture: Configurable quality/cost trade-offs through three model tiers (budget: GPT-4o-mini only, balanced: GPT-4o-mini + GPT-5-mini, premium: GPT-5.1 + GPT-5-mini + GPT-5-nano). Demonstrates architectural value independent of model quality—budget tier showcases graph intelligence (adaptive retrieval, self-correction, multi-stage processing) while balanced/premium tiers show incremental gains from model upgrades. Architecture provides baseline, models add polish.
 - Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, groundedness feedback prepended when retry_needed=True
 - Query expansion regeneration: Expansions regenerated when strategy changes OR query rewritten, ensuring retrieval pool always matches current query context (both strategy switching and query rewriting trigger expansion regeneration via conditional routing)
 

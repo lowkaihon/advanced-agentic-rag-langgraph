@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-11-18T17:46:41.456272",
+  "timestamp": "2025-11-18T19:26:31.862354",
   "test_type": "tier_comparison",
   "tiers_evaluated": [
     "budget",
@@ -9,21 +9,469 @@
   "results": {
     "budget": {
       "retrieval_metrics": {
-        "recall_at_k": 0.3333333333333333,
+        "recall_at_k": 0.35,
         "precision_at_k": 0.2,
-        "f1_at_k": 0.24603174603174605,
-        "hit_rate": 0.6,
-        "mrr": 0.6,
-        "ndcg_at_5": 0.3931675190884659
+        "f1_at_k": 0.25158730158730164,
+        "hit_rate": 0.8,
+        "mrr": 0.7,
+        "ndcg_at_5": 0.36160088847904204
       },
       "generation_metrics": {
-        "avg_groundedness": 0.9,
-        "avg_confidence": 0.7100000000000001,
-        "hallucination_rate": 0.2,
-        "avg_semantic_similarity": 0.52,
-        "avg_factual_accuracy": 0.5599999999999999,
-        "avg_completeness": 0.42000000000000004,
-        "avg_answer_relevance": 0.5694402964069399
+        "avg_groundedness": 0.9875,
+        "avg_confidence": 0.8400000000000001,
+        "hallucination_rate": 0.0,
+        "avg_semantic_similarity": 0.9,
+        "avg_factual_accuracy": 0.96,
+        "avg_completeness": 0.7599999999999999,
+        "avg_answer_relevance": 0.7918247242668657
+      },
+      "per_difficulty_breakdown": {
+        "easy": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.1,
+          "f1_at_k": 0.14285714285714288,
+          "hit_rate": 0.5,
+          "mrr": 0.25,
+          "ndcg_at_5": 0.1480409554829326
+        },
+        "medium": {
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.5338753343995716
+        },
+        "hard": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.2,
+          "f1_at_k": 0.22222222222222224,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.4441718626302019
+        }
+      },
+      "per_query_type_breakdown": {
+        "factual": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.1,
+          "f1_at_k": 0.14285714285714288,
+          "hit_rate": 0.5,
+          "mrr": 0.25,
+          "ndcg_at_5": 0.1480409554829326
+        },
+        "conceptual": {
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.5338753343995716
+        },
+        "procedural": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.2,
+          "f1_at_k": 0.22222222222222224,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.4441718626302019
+        }
+      },
+      "per_example_results": [
+        {
+          "example_id": "attention_001",
+          "question": "How many attention heads are used in the base Transformer model?",
+          "difficulty": "easy",
+          "query_type": "factual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.5,
+            "precision_at_k": 0.2,
+            "f1_at_k": 0.28571428571428575,
+            "hit_rate": 1.0,
+            "mrr": 0.5,
+            "ndcg_at_5": 0.2960819109658652
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.9,
+          "has_hallucination": false,
+          "final_answer": "The base Transformer model uses 8 parallel attention heads, as stated in the provided context: \"we employ h = 8 parallel attention layers, or heads\" (Document 2).",
+          "ground_truth_answer": "The base Transformer model uses 8 attention heads (h=8). This is specified in the model configuration where the base model has dmodel=512 and uses 8 parallel attention heads, with each head operating on dk=dv=64 dimensions.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 0.8,
+          "completeness": 0.6,
+          "answer_relevance_score": 0.8206893575139173,
+          "is_answer_relevant": true,
+          "relevance_category": "medium"
+        },
+        {
+          "example_id": "attention_002",
+          "question": "What is the dimensionality of the model (dmodel) in the base Transformer?",
+          "difficulty": "easy",
+          "query_type": "factual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "f1_at_k": 0.0,
+            "hit_rate": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.9,
+          "has_hallucination": false,
+          "final_answer": "The dimensionality of the model (dmodel) in the base Transformer is 512, as stated in the provided context (Document 2).",
+          "ground_truth_answer": "The base Transformer model uses dmodel=512. This is the dimensionality of the input and output of all sub-layers in the model, including the attention layers and feed-forward networks.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.7,
+          "answer_relevance_score": 0.9207816501539029,
+          "is_answer_relevant": true,
+          "relevance_category": "high"
+        },
+        {
+          "example_id": "attention_003",
+          "question": "What is self-attention and how does it differ from traditional attention?",
+          "difficulty": "medium",
+          "query_type": "conceptual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.3333333333333333,
+            "precision_at_k": 0.2,
+            "f1_at_k": 0.25,
+            "hit_rate": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_5": 0.3393978490514598
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.65,
+          "has_hallucination": false,
+          "final_answer": "Self-attention is a mechanism used in neural networks, particularly in the Transformer architecture, where the queries, keys, and values all come from the same input. This means that each position in the input can attend to all other positions, allowing the model to capture dependencies and relationships between different parts of the input sequence effectively. According to the retrieved context, self-attention layers are present in both the encoder and decoder of the Transformer, enabling each position to attend to the previous layer's output in the encoder and to all positions up to and including the current position in the decoder.\n\nIn contrast, traditional attention (often referred to as encoder-decoder attention) typically involves queries coming from the decoder and keys and values coming from the encoder. This allows the decoder to focus on relevant parts of the encoder output while generating its sequence.\n\nThe provided context does not contain enough information to provide further distinctions or details about traditional attention mechanisms beyond this basic explanation.",
+          "ground_truth_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same source sequence, allowing the model to relate different positions within a single sequence. Unlike traditional attention mechanisms that attend from one sequence to another (like encoder-decoder attention), self-attention computes relationships between all positions in the same sequence, enabling the model to capture dependencies regardless of their distance in the sequence.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.8,
+          "answer_relevance_score": 0.6737681551984782,
+          "is_answer_relevant": false,
+          "relevance_category": "low"
+        },
+        {
+          "example_id": "attention_004",
+          "question": "How does multi-head attention work and what are its benefits?",
+          "difficulty": "medium",
+          "query_type": "conceptual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.6666666666666666,
+            "precision_at_k": 0.4,
+            "f1_at_k": 0.5,
+            "hit_rate": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_5": 0.7283528197476834
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.85,
+          "has_hallucination": false,
+          "final_answer": "Multi-head attention works by allowing the model to jointly attend to information from different representation subspaces at various positions. It operates by concatenating the outputs of multiple attention heads, each of which focuses on different aspects of the input data. The formula for multi-head attention is given as:\n\n\\[ \\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, ..., \\text{head}_h) W_O \\]\n\nwhere each head is calculated as:\n\n\\[ \\text{head}_i = \\text{Attention}(QW_{Q,i}, K W_{K,i}, V W_{V,i}) \\]\n\nThe benefits of multi-head attention include:\n\n1. **Diverse Representation**: It allows the model to capture different types of relationships and features within the data since each head can focus on different parts of the input.\n\n2. **Enhanced Performance**: By using multiple heads, the Transformer model can improve the quality of the attention mechanism, leading to better performance on tasks such as machine translation, where it has shown superior results compared to previous models.\n\n3. **Parallelization**: The architecture is designed to be more parallelizable, allowing for more efficient training processes compared to traditional recurrent neural networks.\n\nIn summary, multi-head attention enhances the model's ability to learn and represent information more effectively while decreasing training time, as noted in the context of the Transformer model's application in machine translation tasks (Document 2).",
+          "ground_truth_answer": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. Instead of performing a single attention function, multi-head attention projects the queries, keys, and values h times with different learned linear projections. Each head performs attention independently, and the outputs are concatenated and linearly transformed. This mechanism allows the model to capture different types of relationships and attend to different parts of the representation space simultaneously, improving the model's ability to focus on different aspects of the input.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.8,
+          "answer_relevance_score": 0.7780736719045304,
+          "is_answer_relevant": true,
+          "relevance_category": "medium"
+        },
+        {
+          "example_id": "attention_005",
+          "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
+          "difficulty": "hard",
+          "query_type": "procedural",
+          "retrieval_metrics": {
+            "recall_at_k": 0.25,
+            "precision_at_k": 0.2,
+            "f1_at_k": 0.22222222222222224,
+            "hit_rate": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_5": 0.4441718626302019
+          },
+          "groundedness_score": 0.9375,
+          "confidence_score": 0.9,
+          "has_hallucination": false,
+          "final_answer": "The provided context contains sufficient information to explain the complete forward pass through the Transformer encoder. \n\nThe forward pass through the Transformer encoder consists of the following steps:\n\n1. **Input Embedding**: The input tokens are first converted into embeddings. These embeddings are then supplemented with positional encodings to provide information about the relative positions of the tokens in the sequence.\n\n2. **Stack of Encoder Layers**: The encoder is composed of a stack of N = 6 identical layers, each containing two main sub-layers:\n   - **Multi-Head Self-Attention Mechanism**: In this layer, each position can attend to all positions in the input sequence. The queries, keys, and values for this layer all come from the output of the previous layer (or the input embeddings for the first layer). This allows the model to capture relationships between different tokens in the sequence.\n   - **Position-wise Fully Connected Feed-Forward Network (FFN)**: After the self-attention layer, a feed-forward network is applied to each position separately. This consists of two linear transformations with a ReLU activation in between, defined mathematically as FFN(x) = max(0, xW1 + b1)W2 + b2.\n\n3. **Residual Connections and Layer Normalization**: Each of the two sub-layers (self-attention and FFN) is wrapped with a residual connection followed by layer normalization. This is implemented as LayerNorm(x + Sublayer(x)), where Sublayer(x) is the output from either the self-attention or the feed-forward network.\n\n4. **Output of Encoder Layers**: The output from each layer serves as the input to the next layer in the stack. After passing through all six layers, the final output of the encoder can then be used for further processing, typically by the decoder in a sequence-to-sequence task.\n\nIn summary, the forward pass through the encoder involves embedding the input tokens, applying multiple layers of self-attention and feed-forward networks with residual connections and normalization, and stacking these layers to form the final output. \n\nThis explanation is based on the information provided in the retrieved documents, particularly from the sections detailing the encoder architecture and its components.",
+          "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.9,
+          "answer_relevance_score": 0.7658107865634998,
+          "is_answer_relevant": true,
+          "relevance_category": "medium"
+        }
+      ],
+      "total_examples": 5,
+      "successful_evaluations": 5,
+      "tier": "budget",
+      "tier_config": {
+        "name": "Budget",
+        "daily_cost": 1200,
+        "quality_narrative": "70-75%",
+        "models": "All GPT-4o-mini",
+        "targets": {
+          "f1_at_k": [
+            0.2,
+            0.3
+          ],
+          "groundedness": [
+            0.85,
+            0.95
+          ],
+          "confidence": [
+            0.65,
+            0.8
+          ]
+        }
+      },
+      "execution_time_seconds": 354.27841901779175,
+      "examples_evaluated": 5,
+      "avg_time_per_example": 70.85568380355835
+    },
+    "balanced": {
+      "retrieval_metrics": {
+        "recall_at_k": 0.3,
+        "precision_at_k": 0.16,
+        "f1_at_k": 0.20714285714285716,
+        "hit_rate": 0.6,
+        "mrr": 0.4,
+        "ndcg_at_5": 0.2351880216169798
+      },
+      "generation_metrics": {
+        "avg_groundedness": 1.0,
+        "avg_confidence": 0.882,
+        "hallucination_rate": 0.0,
+        "avg_semantic_similarity": 0.72,
+        "avg_factual_accuracy": 0.78,
+        "avg_completeness": 0.6,
+        "avg_answer_relevance": 0.6716612609749525
+      },
+      "per_difficulty_breakdown": {
+        "easy": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.1,
+          "f1_at_k": 0.14285714285714288,
+          "hit_rate": 0.5,
+          "mrr": 0.25,
+          "ndcg_at_5": 0.1480409554829326
+        },
+        "medium": {
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 0.75,
+          "ndcg_at_5": 0.4399290985595169
+        },
+        "hard": {
+          "recall_at_k": 0.0,
+          "precision_at_k": 0.0,
+          "f1_at_k": 0.0,
+          "hit_rate": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_5": 0.0
+        }
+      },
+      "per_query_type_breakdown": {
+        "factual": {
+          "recall_at_k": 0.25,
+          "precision_at_k": 0.1,
+          "f1_at_k": 0.14285714285714288,
+          "hit_rate": 0.5,
+          "mrr": 0.25,
+          "ndcg_at_5": 0.1480409554829326
+        },
+        "conceptual": {
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 0.75,
+          "ndcg_at_5": 0.4399290985595169
+        },
+        "procedural": {
+          "recall_at_k": 0.0,
+          "precision_at_k": 0.0,
+          "f1_at_k": 0.0,
+          "hit_rate": 0.0,
+          "mrr": 0.0,
+          "ndcg_at_5": 0.0
+        }
+      },
+      "per_example_results": [
+        {
+          "example_id": "attention_001",
+          "question": "How many attention heads are used in the base Transformer model?",
+          "difficulty": "easy",
+          "query_type": "factual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.5,
+            "precision_at_k": 0.2,
+            "f1_at_k": 0.28571428571428575,
+            "hit_rate": 1.0,
+            "mrr": 0.5,
+            "ndcg_at_5": 0.2960819109658652
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.9,
+          "has_hallucination": false,
+          "final_answer": "The base Transformer model uses 8 attention heads, as indicated in the retrieved context: \"In this work we employ h = 8 parallel attention layers, or heads.\"",
+          "ground_truth_answer": "The base Transformer model uses 8 attention heads (h=8). This is specified in the model configuration where the base model has dmodel=512 and uses 8 parallel attention heads, with each head operating on dk=dv=64 dimensions.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 0.9,
+          "completeness": 0.6,
+          "answer_relevance_score": 0.8342850593199262,
+          "is_answer_relevant": true,
+          "relevance_category": "medium"
+        },
+        {
+          "example_id": "attention_002",
+          "question": "What is the dimensionality of the model (dmodel) in the base Transformer?",
+          "difficulty": "easy",
+          "query_type": "factual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "f1_at_k": 0.0,
+            "hit_rate": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.95,
+          "has_hallucination": false,
+          "final_answer": "The dimensionality of the model (dmodel) in the base Transformer is 512, as stated in the retrieved documents.",
+          "ground_truth_answer": "The base Transformer model uses dmodel=512. This is the dimensionality of the input and output of all sub-layers in the model, including the attention layers and feed-forward networks.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.7,
+          "answer_relevance_score": 0.9081291580784143,
+          "is_answer_relevant": true,
+          "relevance_category": "high"
+        },
+        {
+          "example_id": "attention_003",
+          "question": "What is self-attention and how does it differ from traditional attention?",
+          "difficulty": "medium",
+          "query_type": "conceptual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.3333333333333333,
+            "precision_at_k": 0.2,
+            "f1_at_k": 0.25,
+            "hit_rate": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_5": 0.3393978490514598
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.9,
+          "has_hallucination": false,
+          "final_answer": "Self-attention is a mechanism used in models like the Transformer that allows each position in a sequence to attend to all other positions in the same sequence, effectively computing representations based on the entire context of the input. In a self-attention layer, the keys, values, and queries all originate from the same input, allowing for flexible interaction among all elements in the input sequence.\n\nIn contrast, traditional attention mechanisms, such as those used in encoder-decoder architectures, typically involve separate sources for queries and memory (keys and values). For instance, in encoder-decoder attention, the queries come from the decoder layer while the keys and values come from the encoder's output, enabling the decoder to attend over all positions in the input sequence. \n\nThe key difference lies in self-attention's ability to operate solely within a single sequence, allowing it to capture dependencies without relying on separate encoder or decoder structures, as highlighted in the retrieved documents.",
+          "ground_truth_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same source sequence, allowing the model to relate different positions within a single sequence. Unlike traditional attention mechanisms that attend from one sequence to another (like encoder-decoder attention), self-attention computes relationships between all positions in the same sequence, enabling the model to capture dependencies regardless of their distance in the sequence.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.9,
+          "answer_relevance_score": 0.6560789410380401,
+          "is_answer_relevant": false,
+          "relevance_category": "low"
+        },
+        {
+          "example_id": "attention_004",
+          "question": "How does multi-head attention work and what are its benefits?",
+          "difficulty": "medium",
+          "query_type": "conceptual",
+          "retrieval_metrics": {
+            "recall_at_k": 0.6666666666666666,
+            "precision_at_k": 0.4,
+            "f1_at_k": 0.5,
+            "hit_rate": 1.0,
+            "mrr": 0.5,
+            "ndcg_at_5": 0.540460348067574
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.78,
+          "has_hallucination": false,
+          "final_answer": "Multi-head attention works by allowing the model to jointly attend to information from different representation subspaces at different positions. This is achieved by concatenating outputs from multiple attention heads, where each head independently computes attention using its own set of learned projections. The formula used for multi-head attention is:\n\n\\[ \\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\ldots, \\text{head}_h) W_O \\]\n\nwhere each head is calculated as:\n\n\\[ \\text{head}_i = \\text{Attention}(Q W_Q^i, K W_K^i, V W_V^i) \\]\n\nIn this context, \\( Q \\), \\( K \\), and \\( V \\) represent the queries, keys, and values, respectively, and the projections are learned parameter matrices.\n\nThe benefits of multi-head attention include:\n1. **Enhanced Representation**: By using multiple heads, the model can capture different types of relationships and dependencies in the data simultaneously, which a single attention head might average out.\n2. **Parallelization**: Multi-head attention allows for significant parallelization, improving computation efficiency compared to sequential models.\n3. **Improved Performance**: The Transformer model, which employs multi-head attention, achieves state-of-the-art results in tasks like translation with reduced training time.\n\nThese aspects are detailed in the retrieved documents, particularly in the descriptions of the architecture and applications of attention in the Transformer model (Document 1 and Document 2).",
+          "ground_truth_answer": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. Instead of performing a single attention function, multi-head attention projects the queries, keys, and values h times with different learned linear projections. Each head performs attention independently, and the outputs are concatenated and linearly transformed. This mechanism allows the model to capture different types of relationships and attend to different parts of the representation space simultaneously, improving the model's ability to focus on different aspects of the input.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.8,
+          "answer_relevance_score": 0.7787267296281716,
+          "is_answer_relevant": true,
+          "relevance_category": "medium"
+        },
+        {
+          "example_id": "attention_005",
+          "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
+          "difficulty": "hard",
+          "query_type": "procedural",
+          "retrieval_metrics": {
+            "recall_at_k": 0.0,
+            "precision_at_k": 0.0,
+            "f1_at_k": 0.0,
+            "hit_rate": 0.0,
+            "mrr": 0.0,
+            "ndcg_at_5": 0.0
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.88,
+          "has_hallucination": false,
+          "final_answer": "The provided context does not contain enough information to answer this question.",
+          "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
+          "semantic_similarity": 0.0,
+          "factual_accuracy": 0.0,
+          "completeness": 0.0,
+          "answer_relevance_score": 0.18108641681021065,
+          "is_answer_relevant": false,
+          "relevance_category": "low"
+        }
+      ],
+      "total_examples": 5,
+      "successful_evaluations": 5,
+      "tier": "balanced",
+      "tier_config": {
+        "name": "Balanced",
+        "daily_cost": 1800,
+        "quality_narrative": "78-80%",
+        "models": "Hybrid GPT-4o-mini + GPT-5-mini",
+        "targets": {
+          "f1_at_k": [
+            0.28,
+            0.38
+          ],
+          "groundedness": [
+            0.88,
+            0.98
+          ],
+          "confidence": [
+            0.72,
+            0.87
+          ]
+        }
+      },
+      "execution_time_seconds": 1511.2895424365997,
+      "examples_evaluated": 5,
+      "avg_time_per_example": 302.2579084873199
+    },
+    "premium": {
+      "retrieval_metrics": {
+        "recall_at_k": 0.4,
+        "precision_at_k": 0.24000000000000005,
+        "f1_at_k": 0.29603174603174603,
+        "hit_rate": 0.8,
+        "mrr": 0.8,
+        "ndcg_at_5": 0.4949868738039038
+      },
+      "generation_metrics": {
+        "avg_groundedness": 1.0,
+        "avg_confidence": 0.9219999999999999,
+        "hallucination_rate": 0.0,
+        "avg_semantic_similarity": 0.8,
+        "avg_factual_accuracy": 1.0,
+        "avg_completeness": 0.66,
+        "avg_answer_relevance": 0.7503552288081053
       },
       "per_difficulty_breakdown": {
         "easy": {
@@ -35,12 +483,12 @@
           "ndcg_at_5": 0.23463936301137822
         },
         "medium": {
-          "recall_at_k": 0.3333333333333333,
-          "precision_at_k": 0.2,
-          "f1_at_k": 0.25,
-          "hit_rate": 0.5,
-          "mrr": 0.5,
-          "ndcg_at_5": 0.41515053773713506
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.6696989245257299
         },
         "hard": {
           "recall_at_k": 0.5,
@@ -61,12 +509,12 @@
           "ndcg_at_5": 0.23463936301137822
         },
         "conceptual": {
-          "recall_at_k": 0.3333333333333333,
-          "precision_at_k": 0.2,
-          "f1_at_k": 0.25,
-          "hit_rate": 0.5,
-          "mrr": 0.5,
-          "ndcg_at_5": 0.41515053773713506
+          "recall_at_k": 0.5,
+          "precision_at_k": 0.30000000000000004,
+          "f1_at_k": 0.375,
+          "hit_rate": 1.0,
+          "mrr": 1.0,
+          "ndcg_at_5": 0.6696989245257299
         },
         "procedural": {
           "recall_at_k": 0.5,
@@ -92,418 +540,14 @@
             "ndcg_at_5": 0.46927872602275644
           },
           "groundedness_score": 1.0,
-          "confidence_score": 0.9,
-          "has_hallucination": false,
-          "final_answer": "The base Transformer model uses 8 parallel attention heads, as stated in the retrieved context: \"we employ h = 8 parallel attention layers, or heads.\" (Document 2).",
-          "ground_truth_answer": "The base Transformer model uses 8 attention heads (h=8). This is specified in the model configuration where the base model has dmodel=512 and uses 8 parallel attention heads, with each head operating on dk=dv=64 dimensions.",
-          "semantic_similarity": 0.8,
-          "factual_accuracy": 0.8,
-          "completeness": 0.5,
-          "answer_relevance_score": 0.8245561187896311,
-          "is_answer_relevant": true,
-          "relevance_category": "medium"
-        },
-        {
-          "example_id": "attention_002",
-          "question": "What is the dimensionality of the model (dmodel) in the base Transformer?",
-          "difficulty": "easy",
-          "query_type": "factual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.0,
-            "precision_at_k": 0.0,
-            "f1_at_k": 0.0,
-            "hit_rate": 0.0,
-            "mrr": 0.0,
-            "ndcg_at_5": 0.0
-          },
-          "groundedness_score": 0.5,
-          "confidence_score": 0.9,
-          "has_hallucination": true,
-          "final_answer": "The dimensionality of the model (dmodel) in the base Transformer is 512, as indicated in the retrieved context (Document 2).",
-          "ground_truth_answer": "The base Transformer model uses dmodel=512. This is the dimensionality of the input and output of all sub-layers in the model, including the attention layers and feed-forward networks.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 1.0,
-          "completeness": 0.8,
-          "answer_relevance_score": 0.9096961489621747,
-          "is_answer_relevant": true,
-          "relevance_category": "high"
-        },
-        {
-          "example_id": "attention_003",
-          "question": "What is self-attention and how does it differ from traditional attention?",
-          "difficulty": "medium",
-          "query_type": "conceptual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.0,
-            "precision_at_k": 0.0,
-            "f1_at_k": 0.0,
-            "hit_rate": 0.0,
-            "mrr": 0.0,
-            "ndcg_at_5": 0.0
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.45,
-          "has_hallucination": false,
-          "final_answer": "The provided context does not contain enough information to answer this question completely.",
-          "ground_truth_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same source sequence, allowing the model to relate different positions within a single sequence. Unlike traditional attention mechanisms that attend from one sequence to another (like encoder-decoder attention), self-attention computes relationships between all positions in the same sequence, enabling the model to capture dependencies regardless of their distance in the sequence.",
-          "semantic_similarity": 0.0,
-          "factual_accuracy": 0.0,
-          "completeness": 0.0,
-          "answer_relevance_score": 0.14224746764692744,
-          "is_answer_relevant": false,
-          "relevance_category": "low"
-        },
-        {
-          "example_id": "attention_004",
-          "question": "How does multi-head attention work and what are its benefits?",
-          "difficulty": "medium",
-          "query_type": "conceptual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.6666666666666666,
-            "precision_at_k": 0.4,
-            "f1_at_k": 0.5,
-            "hit_rate": 1.0,
-            "mrr": 1.0,
-            "ndcg_at_5": 0.8303010754742701
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.85,
-          "has_hallucination": false,
-          "final_answer": "Multi-head attention works by allowing a model to jointly attend to information from different representation subspaces at different positions. It consists of several attention heads running in parallel, and the output of these heads is concatenated and projected to produce final values. The formula for multi-head attention is:\n\n\\[ \\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\ldots, \\text{head}_h) W_O \\]\n\nwhere each head is computed as:\n\n\\[ \\text{head}_i = \\text{Attention}(QW_{Q_i}, KW_{K_i}, VW_{V_i}) \\]\n\nThe attention mechanism uses \"Scaled Dot-Product Attention,\" where the compatibility function is based on the dot products of the query and keys, scaled by the square root of the key dimension \\( d_k \\), followed by a softmax to obtain weights for the values.\n\nThe benefits of multi-head attention include:\n\n1. **Parallel Processing**: It enables the model to process multiple attention mechanisms simultaneously, capturing diverse aspects of the input.\n2. **Expanded Representation**: By using multiple heads, the model can learn to focus on different parts of the input, enhancing its ability to understand complex relationships in the data.\n3. **Efficiency**: Even though each head has reduced dimensions, the overall computational cost remains similar to that of single-head attention with full dimensionality, thus maintaining efficiency.\n\nThis information is contained in the retrieved documents, particularly in the descriptions of multi-head attention and its formulation (from [Attention Is All You Need.pdf]).",
-          "ground_truth_answer": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. Instead of performing a single attention function, multi-head attention projects the queries, keys, and values h times with different learned linear projections. Each head performs attention independently, and the outputs are concatenated and linearly transformed. This mechanism allows the model to capture different types of relationships and attend to different parts of the representation space simultaneously, improving the model's ability to focus on different aspects of the input.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 1.0,
-          "completeness": 0.8,
-          "answer_relevance_score": 0.7895807448251027,
-          "is_answer_relevant": true,
-          "relevance_category": "medium"
-        },
-        {
-          "example_id": "attention_005",
-          "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
-          "difficulty": "hard",
-          "query_type": "procedural",
-          "retrieval_metrics": {
-            "recall_at_k": 0.5,
-            "precision_at_k": 0.4,
-            "f1_at_k": 0.4444444444444445,
-            "hit_rate": 1.0,
-            "mrr": 1.0,
-            "ndcg_at_5": 0.6662577939453029
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.45,
-          "has_hallucination": false,
-          "final_answer": "The provided context does not contain enough information to answer this question.",
-          "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
-          "semantic_similarity": 0.0,
-          "factual_accuracy": 0.0,
-          "completeness": 0.0,
-          "answer_relevance_score": 0.18112100181086396,
-          "is_answer_relevant": false,
-          "relevance_category": "low"
-        }
-      ],
-      "total_examples": 5,
-      "successful_evaluations": 5,
-      "tier": "budget",
-      "tier_config": {
-        "name": "Budget",
-        "daily_cost": 1200,
-        "quality_target": "70-75%",
-        "models": "All GPT-4o-mini"
-      },
-      "execution_time_seconds": 345.7735412120819,
-      "examples_evaluated": 5,
-      "avg_time_per_example": 69.15470824241638
-    },
-    "balanced": {
-      "retrieval_metrics": {
-        "recall_at_k": 0.4,
-        "precision_at_k": 0.24000000000000005,
-        "f1_at_k": 0.29603174603174603,
-        "hit_rate": 0.8,
-        "mrr": 0.5666666666666667,
-        "ndcg_at_5": 0.3863096365173381
-      },
-      "generation_metrics": {
-        "avg_groundedness": 0.9333333333333332,
-        "avg_confidence": 0.7859999999999999,
-        "hallucination_rate": 0.2,
-        "avg_semantic_similarity": 0.72,
-        "avg_factual_accuracy": 0.78,
-        "avg_completeness": 0.6,
-        "avg_answer_relevance": 0.6842557858160195
-      },
-      "per_difficulty_breakdown": {
-        "easy": {
-          "recall_at_k": 0.25,
-          "precision_at_k": 0.1,
-          "f1_at_k": 0.14285714285714288,
-          "hit_rate": 0.5,
-          "mrr": 0.25,
-          "ndcg_at_5": 0.1480409554829326
-        },
-        "medium": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.30000000000000004,
-          "f1_at_k": 0.375,
-          "hit_rate": 1.0,
-          "mrr": 0.6666666666666666,
-          "ndcg_at_5": 0.5
-        },
-        "hard": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.4,
-          "f1_at_k": 0.4444444444444445,
-          "hit_rate": 1.0,
-          "mrr": 1.0,
-          "ndcg_at_5": 0.6354662716208254
-        }
-      },
-      "per_query_type_breakdown": {
-        "factual": {
-          "recall_at_k": 0.25,
-          "precision_at_k": 0.1,
-          "f1_at_k": 0.14285714285714288,
-          "hit_rate": 0.5,
-          "mrr": 0.25,
-          "ndcg_at_5": 0.1480409554829326
-        },
-        "conceptual": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.30000000000000004,
-          "f1_at_k": 0.375,
-          "hit_rate": 1.0,
-          "mrr": 0.6666666666666666,
-          "ndcg_at_5": 0.5
-        },
-        "procedural": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.4,
-          "f1_at_k": 0.4444444444444445,
-          "hit_rate": 1.0,
-          "mrr": 1.0,
-          "ndcg_at_5": 0.6354662716208254
-        }
-      },
-      "per_example_results": [
-        {
-          "example_id": "attention_001",
-          "question": "How many attention heads are used in the base Transformer model?",
-          "difficulty": "easy",
-          "query_type": "factual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.5,
-            "precision_at_k": 0.2,
-            "f1_at_k": 0.28571428571428575,
-            "hit_rate": 1.0,
-            "mrr": 0.5,
-            "ndcg_at_5": 0.2960819109658652
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.95,
-          "has_hallucination": false,
-          "final_answer": "The base Transformer model uses 8 attention heads, as stated in the retrieved context: \"we employ h = 8 parallel attention layers, or heads.\"",
-          "ground_truth_answer": "The base Transformer model uses 8 attention heads (h=8). This is specified in the model configuration where the base model has dmodel=512 and uses 8 parallel attention heads, with each head operating on dk=dv=64 dimensions.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 0.9,
-          "completeness": 0.6,
-          "answer_relevance_score": 0.8446295364669704,
-          "is_answer_relevant": true,
-          "relevance_category": "medium"
-        },
-        {
-          "example_id": "attention_002",
-          "question": "What is the dimensionality of the model (dmodel) in the base Transformer?",
-          "difficulty": "easy",
-          "query_type": "factual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.0,
-            "precision_at_k": 0.0,
-            "f1_at_k": 0.0,
-            "hit_rate": 0.0,
-            "mrr": 0.0,
-            "ndcg_at_5": 0.0
-          },
-          "groundedness_score": 0.6666666666666666,
-          "confidence_score": 0.95,
-          "has_hallucination": true,
-          "final_answer": "The dimensionality of the model (dmodel) in the base Transformer is 512, as stated in the retrieved context (Document 2).",
-          "ground_truth_answer": "The base Transformer model uses dmodel=512. This is the dimensionality of the input and output of all sub-layers in the model, including the attention layers and feed-forward networks.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 1.0,
-          "completeness": 0.7,
-          "answer_relevance_score": 0.915036080525673,
-          "is_answer_relevant": true,
-          "relevance_category": "high"
-        },
-        {
-          "example_id": "attention_003",
-          "question": "What is self-attention and how does it differ from traditional attention?",
-          "difficulty": "medium",
-          "query_type": "conceptual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.3333333333333333,
-            "precision_at_k": 0.2,
-            "f1_at_k": 0.25,
-            "hit_rate": 1.0,
-            "mrr": 0.3333333333333333,
-            "ndcg_at_5": 0.1696989245257299
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.9,
-          "has_hallucination": false,
-          "final_answer": "Self-attention is a mechanism used within neural network architectures, particularly in models like the Transformer, which allows each position in a sequence to attend to all other positions within that same sequence. This contrasts with traditional attention mechanisms, which typically involve separate sequences for queries, keys, and values.\n\nIn the context of self-attention:\n- All keys, values, and queries come from the same source, specifically the output of the previous layer in the encoder or decoder (as noted in the retrieved documents).\n- This allows for a richer representation since each position can consider the entire context of the sequence.\n\nTraditional attention mechanisms, on the other hand, often rely on encoder-decoder architectures where queries come from the decoder and keys/values come from the encoder, enabling the model to attend to all positions in the input sequence during decoding (as mentioned in the retrieved information about \"encoder-decoder attention\").\n\nIn summary, self-attention differs from traditional attention in that it operates on a single sequence allowing for internal context awareness, while traditional attention usually involves two distinct sequences (encoder and decoder) where attention is applied cross-sequence.",
-          "ground_truth_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same source sequence, allowing the model to relate different positions within a single sequence. Unlike traditional attention mechanisms that attend from one sequence to another (like encoder-decoder attention), self-attention computes relationships between all positions in the same sequence, enabling the model to capture dependencies regardless of their distance in the sequence.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 1.0,
-          "completeness": 0.9,
-          "answer_relevance_score": 0.7190359120597917,
-          "is_answer_relevant": true,
-          "relevance_category": "medium"
-        },
-        {
-          "example_id": "attention_004",
-          "question": "How does multi-head attention work and what are its benefits?",
-          "difficulty": "medium",
-          "query_type": "conceptual",
-          "retrieval_metrics": {
-            "recall_at_k": 0.6666666666666666,
-            "precision_at_k": 0.4,
-            "f1_at_k": 0.5,
-            "hit_rate": 1.0,
-            "mrr": 1.0,
-            "ndcg_at_5": 0.8303010754742701
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.88,
-          "has_hallucination": false,
-          "final_answer": "Multi-head attention works by employing multiple attention heads to allow the model to jointly attend to information from different representation subspaces at various positions. The output from each attention head is concatenated and projected to obtain the final values. The formula for multi-head attention is defined as:\n\nMultiHead(Q, K, V) = Concat(head1, ..., headh)W_O\n\nwhere each head is computed as:\n\nheadi = Attention(QW_Qi, KW_Ki, V W_Vi)\n\nIn this formulation, the projections are parameter matrices, and the model utilizes h = 8 parallel attention layers, with specific dimensions for each head.\n\nThe benefits of multi-head attention include:\n1. **Diverse Representation**: It allows the model to capture different aspects of the input data through multiple attention mechanisms running in parallel.\n2. **Reduced Averaging Effect**: Unlike single attention heads, which can average information, multi-head attention facilitates richer and more nuanced understanding of the input.\n3. **Efficiency**: By using reduced dimensionality for each head, the total computational cost remains similar to that of single-head attention with full dimensionality, making it efficient.\n\nThis information is derived from the context provided in the documents detailing the structure and applications of multi-head attention in models like the Transformer.",
-          "ground_truth_answer": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. Instead of performing a single attention function, multi-head attention projects the queries, keys, and values h times with different learned linear projections. Each head performs attention independently, and the outputs are concatenated and linearly transformed. This mechanism allows the model to capture different types of relationships and attend to different parts of the representation space simultaneously, improving the model's ability to focus on different aspects of the input.",
-          "semantic_similarity": 0.9,
-          "factual_accuracy": 1.0,
-          "completeness": 0.8,
-          "answer_relevance_score": 0.7614563982167992,
-          "is_answer_relevant": true,
-          "relevance_category": "medium"
-        },
-        {
-          "example_id": "attention_005",
-          "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
-          "difficulty": "hard",
-          "query_type": "procedural",
-          "retrieval_metrics": {
-            "recall_at_k": 0.5,
-            "precision_at_k": 0.4,
-            "f1_at_k": 0.4444444444444445,
-            "hit_rate": 1.0,
-            "mrr": 1.0,
-            "ndcg_at_5": 0.6354662716208254
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.25,
-          "has_hallucination": false,
-          "final_answer": "The provided context does not contain enough information to answer this question.",
-          "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
-          "semantic_similarity": 0.0,
-          "factual_accuracy": 0.0,
-          "completeness": 0.0,
-          "answer_relevance_score": 0.18112100181086396,
-          "is_answer_relevant": false,
-          "relevance_category": "low"
-        }
-      ],
-      "total_examples": 5,
-      "successful_evaluations": 5,
-      "tier": "balanced",
-      "tier_config": {
-        "name": "Balanced",
-        "daily_cost": 1800,
-        "quality_target": "78-80%",
-        "models": "Hybrid GPT-4o-mini + GPT-5-mini"
-      },
-      "execution_time_seconds": 401.9041841030121,
-      "examples_evaluated": 5,
-      "avg_time_per_example": 80.38083682060241
-    },
-    "premium": {
-      "retrieval_metrics": {
-        "recall_at_k": 0.5,
-        "precision_at_k": 0.25,
-        "f1_at_k": 0.3303571428571429,
-        "hit_rate": 0.75,
-        "mrr": 0.5833333333333333,
-        "ndcg_at_5": 0.44310993644339447
-      },
-      "generation_metrics": {
-        "avg_groundedness": 1.0,
-        "avg_confidence": 0.9450000000000001,
-        "hallucination_rate": 0.0,
-        "avg_semantic_similarity": 0.7250000000000001,
-        "avg_factual_accuracy": 1.0,
-        "avg_completeness": 0.525,
-        "avg_answer_relevance": 0.804126542744762
-      },
-      "per_difficulty_breakdown": {
-        "easy": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.2,
-          "f1_at_k": 0.28571428571428575,
-          "hit_rate": 0.5,
-          "mrr": 0.5,
-          "ndcg_at_5": 0.38621987288678894
-        },
-        "medium": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.30000000000000004,
-          "f1_at_k": 0.375,
-          "hit_rate": 1.0,
-          "mrr": 0.6666666666666666,
-          "ndcg_at_5": 0.5
-        }
-      },
-      "per_query_type_breakdown": {
-        "factual": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.2,
-          "f1_at_k": 0.28571428571428575,
-          "hit_rate": 0.5,
-          "mrr": 0.5,
-          "ndcg_at_5": 0.38621987288678894
-        },
-        "conceptual": {
-          "recall_at_k": 0.5,
-          "precision_at_k": 0.30000000000000004,
-          "f1_at_k": 0.375,
-          "hit_rate": 1.0,
-          "mrr": 0.6666666666666666,
-          "ndcg_at_5": 0.5
-        }
-      },
-      "per_example_results": [
-        {
-          "example_id": "attention_001",
-          "question": "How many attention heads are used in the base Transformer model?",
-          "difficulty": "easy",
-          "query_type": "factual",
-          "retrieval_metrics": {
-            "recall_at_k": 1.0,
-            "precision_at_k": 0.4,
-            "f1_at_k": 0.5714285714285715,
-            "hit_rate": 1.0,
-            "mrr": 1.0,
-            "ndcg_at_5": 0.7724397457735779
-          },
-          "groundedness_score": 1.0,
-          "confidence_score": 0.95,
+          "confidence_score": 0.98,
           "has_hallucination": false,
           "final_answer": "The base Transformer model uses **8 attention heads**.",
           "ground_truth_answer": "The base Transformer model uses 8 attention heads (h=8). This is specified in the model configuration where the base model has dmodel=512 and uses 8 parallel attention heads, with each head operating on dk=dv=64 dimensions.",
           "semantic_similarity": 0.5,
           "factual_accuracy": 1.0,
           "completeness": 0.2,
-          "answer_relevance_score": 0.8738255144908467,
+          "answer_relevance_score": 0.8737385359681894,
           "is_answer_relevant": true,
           "relevance_category": "high"
         },
@@ -523,12 +567,12 @@
           "groundedness_score": 1.0,
           "confidence_score": 0.98,
           "has_hallucination": false,
-          "final_answer": "The dimensionality of the model (dmodel) in the base Transformer is **512**.",
+          "final_answer": "The dimensionality of the model \\(d_{\\text{model}}\\) in the base Transformer is **512**.",
           "ground_truth_answer": "The base Transformer model uses dmodel=512. This is the dimensionality of the input and output of all sub-layers in the model, including the attention layers and feed-forward networks.",
-          "semantic_similarity": 0.8,
+          "semantic_similarity": 0.9,
           "factual_accuracy": 1.0,
           "completeness": 0.5,
-          "answer_relevance_score": 0.903203370431617,
+          "answer_relevance_score": 0.8539986832808099,
           "is_answer_relevant": true,
           "relevance_category": "high"
         },
@@ -542,18 +586,18 @@
             "precision_at_k": 0.2,
             "f1_at_k": 0.25,
             "hit_rate": 1.0,
-            "mrr": 0.3333333333333333,
-            "ndcg_at_5": 0.1696989245257299
+            "mrr": 1.0,
+            "ndcg_at_5": 0.5090967735771897
           },
           "groundedness_score": 1.0,
           "confidence_score": 0.9,
           "has_hallucination": false,
-          "final_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same sequence (the output of the previous layer in the encoder or decoder):\n\n- In the **encoder**, \u201call of the keys, values and queries come from the same place, in this case, the output of the previous layer in the encoder. Each position in the encoder can attend to all positions in the previous layer of the encoder.\u201d\n- In the **decoder**, \u201cself-attention layers in the decoder allow each position in the decoder to attend to all positions in the decoder up to and including that position.\u201d\n\nBy contrast, **traditional (encoder-decoder) attention** uses queries and memory from different sources:\n\n- In **encoder-decoder attention** layers, \u201cthe queries come from the previous decoder layer, and the memory keys and values come from the output of the encoder. This allows every position in the decoder to attend over all positions in the input sequence. This mimics the typical encoder-decoder attention mechanisms in sequence-to-sequence models.\u201d\n\nSo, the key difference is:\n- **Self-attention**: Q, K, V all derived from the same sequence (self), enabling each position to attend to other positions within that sequence.\n- **Traditional encoder-decoder attention**: Q comes from the decoder, while K and V come from the encoder, enabling the decoder to attend over the input sequence.",
+          "final_answer": "An attention function maps a **query** and a set of **key\u2013value pairs** to an output, where all of these (query, keys, values, output) are vectors. The output is computed as a **weighted sum** of the values, with weights determined by how well each key matches the query.\n\n**Self-attention** is a specific type of attention where:\n- **All keys, values, and queries come from the same place**, e.g., the output of the previous layer in the encoder or decoder.\n- In the encoder, each position can attend to **all positions in the previous encoder layer**.\n- In the decoder, each position can attend to **all positions in the decoder up to and including that position** (with masking to prevent looking ahead).\n\nIn contrast, **traditional (encoder\u2013decoder) attention** in these models is described as:\n- **Queries** come from the **previous decoder layer**.\n- **Keys and values** come from the **encoder output**.\n- This allows each position in the decoder to attend over **all positions in the input sequence**, mimicking typical encoder\u2013decoder attention mechanisms in sequence-to-sequence models.",
           "ground_truth_answer": "Self-attention is an attention mechanism where the queries, keys, and values all come from the same source sequence, allowing the model to relate different positions within a single sequence. Unlike traditional attention mechanisms that attend from one sequence to another (like encoder-decoder attention), self-attention computes relationships between all positions in the same sequence, enabling the model to capture dependencies regardless of their distance in the sequence.",
-          "semantic_similarity": 0.9,
+          "semantic_similarity": 0.8,
           "factual_accuracy": 1.0,
           "completeness": 0.9,
-          "answer_relevance_score": 0.675253419247835,
+          "answer_relevance_score": 0.5914018649896183,
           "is_answer_relevant": false,
           "relevance_category": "low"
         },
@@ -573,32 +617,67 @@
           "groundedness_score": 1.0,
           "confidence_score": 0.95,
           "has_hallucination": false,
-          "final_answer": "Multi-head attention works by running several attention \u201cheads\u201d in parallel, each operating on different learned projections of the same inputs, and then combining their outputs.\n\nFrom the context:\n\n- Each head computes Scaled Dot-Product Attention:\n  \\[\n  \\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^T}{\\sqrt{d_k}}\\right)V\n  \\]\n- For multi-head attention, the model first linearly projects the queries, keys, and values into multiple lower-dimensional subspaces using separate parameter matrices:\n  \\[\n  \\text{head}_i = \\text{Attention}(Q W_i^Q,\\; K W_i^K,\\; V W_i^V)\n  \\]\n  where \\(W_i^Q, W_i^K \\in \\mathbb{R}^{d_\\text{model} \\times d_k}\\), \\(W_i^V \\in \\mathbb{R}^{d_\\text{model} \\times d_v}\\).\n- The outputs of all heads are then concatenated and projected again with \\(W^O \\in \\mathbb{R}^{h d_v \\times d_\\text{model}}\\):\n  \\[\n  \\text{MultiHead}(Q, K, V) = \\text{Concat}(\\text{head}_1, \\dots, \\text{head}_h) W^O\n  \\]\n\nIn the described setup, there are \\(h = 8\\) heads, with \\(d_k = d_v = d_\\text{model} / h = 64\\). Because each head uses reduced dimensionality, the total computational cost is similar to single-head attention with full dimensionality.\n\nBenefits (explicitly stated):\n\n- \u201cMulti-head attention allows the model to jointly attend to information from different representation subspaces at different positions.\u201d\n- \u201cWith a single attention head, averaging inhibits this.\u201d  \n  That is, using multiple heads avoids the limitation that a single head\u2019s averaging would impose on what the model can capture.\n\nAdditionally, the Transformer uses multi-head attention in three ways (all exploiting this mechanism):\n\n- Encoder\u2013decoder attention: queries from the decoder, keys/values from the encoder output, so each decoder position can attend to all input positions.\n- Encoder self-attention: queries, keys, and values all from the encoder\u2019s previous layer, allowing each encoder position to attend to all positions in that layer.\n- Decoder self-attention: similarly, but restricted so each position attends only up to and including itself.",
+          "final_answer": "Multi-head attention works by running several attention operations in parallel on different learned projections of the inputs, then combining their results:\n\n- First, queries \\(Q\\), keys \\(K\\), and values \\(V\\) are linearly projected into multiple lower-dimensional subspaces using separate parameter matrices for each head:\n  \\[\n  \\text{head}_i = \\text{Attention}(Q W^Q_i,\\ K W^K_i,\\ V W^V_i)\n  \\]\n  where \\(W^Q_i, W^K_i \\in \\mathbb{R}^{d_{model} \\times d_k}\\), \\(W^V_i \\in \\mathbb{R}^{d_{model} \\times d_v}\\).\n\n- Each head uses scaled dot\u2011product attention:\n  \\[\n  \\text{Attention}(Q, K, V) = \\text{softmax}\\left(\\frac{QK^\\top}{\\sqrt{d_k}}\\right) V\n  \\]\n  This computes weights from the compatibility (dot product) between queries and keys (scaled by \\(\\sqrt{d_k}\\)), then applies those weights to the values.\n\n- The outputs of all heads are concatenated and projected once more with \\(W^O \\in \\mathbb{R}^{h d_v \\times d_{model}}\\):\n  \\[\n  \\text{MultiHead}(Q,K,V) = \\text{Concat}(\\text{head}_1, \\dots, \\text{head}_h) W^O\n  \\]\n\nIn the cited work, they use \\(h = 8\\) heads, with \\(d_k = d_v = d_{model}/h = 64\\). Because each head operates in a reduced dimension, the total computational cost is similar to using a single attention head at full dimensionality.\n\nBenefits (as stated in the context):\n\n- Multi-head attention \"allows the model to jointly attend to information from different representation subspaces at different positions.\"  \n- With a single attention head, \"averaging inhibits this\" \u2014 meaning a single head cannot as effectively capture diverse types of relationships or features across positions.\n- It is used in different ways in the Transformer:\n  - Encoder\u2013decoder attention: decoder queries attend to all encoder outputs, letting each decoder position attend over all input positions.\n  - Encoder self-attention: each encoder position can attend to all positions in the previous encoder layer.\n  - Decoder self-attention: each decoder position can attend to all positions up to and including that position in the decoder.",
           "ground_truth_answer": "Multi-head attention allows the model to jointly attend to information from different representation subspaces at different positions. Instead of performing a single attention function, multi-head attention projects the queries, keys, and values h times with different learned linear projections. Each head performs attention independently, and the outputs are concatenated and linearly transformed. This mechanism allows the model to capture different types of relationships and attend to different parts of the representation space simultaneously, improving the model's ability to focus on different aspects of the input.",
-          "semantic_similarity": 0.7,
+          "semantic_similarity": 0.9,
           "factual_accuracy": 1.0,
-          "completeness": 0.5,
-          "answer_relevance_score": 0.7642238668087491,
+          "completeness": 0.8,
+          "answer_relevance_score": 0.7799453164375688,
           "is_answer_relevant": true,
           "relevance_category": "medium"
         },
         {
           "example_id": "attention_005",
-          "error": "'charmap' codec can't encode character '\\u2192' in position 385: character maps to <undefined>"
+          "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
+          "difficulty": "hard",
+          "query_type": "procedural",
+          "retrieval_metrics": {
+            "recall_at_k": 0.5,
+            "precision_at_k": 0.4,
+            "f1_at_k": 0.4444444444444445,
+            "hit_rate": 1.0,
+            "mrr": 1.0,
+            "ndcg_at_5": 0.6662577939453029
+          },
+          "groundedness_score": 1.0,
+          "confidence_score": 0.8,
+          "has_hallucination": false,
+          "final_answer": "The Transformer encoder, as described in the provided context, operates as follows:\n\n1. **Overall structure**  \n   - The encoder is composed of a **stack of N = 6 identical layers**.  \n   - **All sub-layers and the embedding layers** produce outputs of dimension **d_model = 512** to facilitate residual connections.\n\n2. **Sub-layers in each encoder layer**  \n   Each of the 6 encoder layers has **two sub-layers**:\n\n   1. **Multi-head self-attention sub-layer**  \n      - This sub-layer performs **multi-head self-attention** over the encoder\u2019s input representations.  \n      - It is applied such that each position can attend to all positions in the input (this is implied by it being a self-attention mechanism in the encoder, but the detailed mechanics are not given in the provided text).\n\n   2. **Position-wise feed-forward sub-layer**  \n      - After self-attention, there is a **position-wise fully connected feed-forward network**.  \n      - This feed-forward network is applied **to each position separately and identically**.  \n      - It consists of **two linear transformations with a ReLU activation in between**, defined as:  \n        \\[\n        \\text{FFN}(x) = \\max(0, xW_1 + b_1)W_2 + b_2\n        \\]\n      - The linear transformations are the same across positions but use different parameters from other layers.\n\n3. **Residual connections and layer normalization**  \n   - Around **each** of the two sub-layers (self-attention and feed-forward), the model uses a **residual connection**, followed by **layer normalization**.  \n   - The output of each sub-layer is:\n     \\[\n     \\text{LayerNorm}(x + \\text{Sublayer}(x))\n     \\]\n     where \\(x\\) is the input to the sub-layer, and \\(\\text{Sublayer}(x)\\) is the function implemented by that sub-layer (either the multi-head self-attention or the FFN).\n\n4. **Forward pass through one encoder layer**  \n   Combining the above, the forward pass through a single encoder layer is:\n\n   1. Take the layer input \\(x\\) (dimension 512).\n   2. Apply multi-head self-attention to get \\(\\text{SelfAttn}(x)\\).\n   3. Apply residual connection and layer normalization:\n      \\[\n      x^{(1)} = \\text{LayerNorm}(x + \\text{SelfAttn}(x))\n      \\]\n   4. Apply the position-wise feed-forward network:\n      \\[\n      \\text{FFN}(x^{(1)}) = \\max(0, x^{(1)}W_1 + b_1)W_2 + b_2\n      \\]\n   5. Apply residual connection and layer normalization:\n      \\[\n      x^{(2)} = \\text{LayerNorm}(x^{(1)} + \\text{FFN}(x^{(1)}))\n      \\]\n   6. \\(x^{(2)}\\) is the output of this encoder layer and the input to the next encoder layer.\n\n5. **Forward pass through the full encoder stack**  \n   - The initial input (from the embedding layer, also of dimension 512) is passed into the **first encoder layer**.  \n   - The output of each layer (after the second LayerNorm) becomes the input to the **next** layer.  \n   - This process is repeated through all **N = 6** layers, yielding the final encoder output.\n\nThe provided context does not contain more detailed equations or mechanics of the multi-head self-attention itself, so the description of attention is limited to what is explicitly stated.",
+          "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
+          "semantic_similarity": 0.9,
+          "factual_accuracy": 1.0,
+          "completeness": 0.9,
+          "answer_relevance_score": 0.6526917433643401,
+          "is_answer_relevant": false,
+          "relevance_category": "low"
         }
       ],
       "total_examples": 5,
-      "successful_evaluations": 4,
+      "successful_evaluations": 5,
       "tier": "premium",
       "tier_config": {
         "name": "Premium",
         "daily_cost": 12060,
-        "quality_target": "88-92%",
-        "models": "GPT-5.1 + GPT-5-mini + GPT-5-nano"
+        "quality_narrative": "88-92%",
+        "models": "GPT-5.1 + GPT-5-mini + GPT-5-nano",
+        "targets": {
+          "f1_at_k": [
+            0.35,
+            0.5
+          ],
+          "groundedness": [
+            0.95,
+            1.0
+          ],
+          "confidence": [
+            0.85,
+            0.95
+          ]
+        }
       },
-      "execution_time_seconds": 260.7205545902252,
+      "execution_time_seconds": 550.1309900283813,
       "examples_evaluated": 5,
-      "avg_time_per_example": 52.144110918045044
+      "avg_time_per_example": 110.02619800567626
     }
   }
 }
