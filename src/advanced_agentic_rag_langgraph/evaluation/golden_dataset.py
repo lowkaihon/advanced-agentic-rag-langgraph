@@ -18,21 +18,11 @@ class GoldenDatasetManager:
     """
     Manage and validate golden datasets for RAG evaluation.
 
-    Features:
-    - Load/save golden datasets with validation
-    - Filter examples by difficulty, query type, domain
-    - Validate dataset structure and completeness
-    - Verify chunk IDs against corpus
-    - Generate dataset statistics
+    Features: Load/save datasets, filter by difficulty/query type/domain,
+    validate structure, verify chunk IDs, generate statistics.
     """
 
     def __init__(self, dataset_path: str):
-        """
-        Initialize the GoldenDatasetManager.
-
-        Args:
-            dataset_path: Path to the golden dataset JSON file
-        """
         self.dataset_path = dataset_path
         self.dataset = []
 
@@ -40,16 +30,7 @@ class GoldenDatasetManager:
             self.dataset = self.load_dataset()
 
     def load_dataset(self) -> List[Dict]:
-        """
-        Load and validate golden dataset from JSON file.
-
-        Returns:
-            List of validated example dictionaries
-
-        Raises:
-            FileNotFoundError: If dataset file doesn't exist
-            ValueError: If dataset has invalid structure
-        """
+        """Load and validate golden dataset from JSON file."""
         if not os.path.exists(self.dataset_path):
             raise FileNotFoundError(f"Dataset not found: {self.dataset_path}")
 
@@ -74,13 +55,7 @@ class GoldenDatasetManager:
         return dataset
 
     def save_dataset(self, dataset: List[Dict]):
-        """
-        Save dataset to JSON file with validation.
-
-        Args:
-            dataset: List of example dictionaries to save
-        """
-        # Validate all examples before saving
+        """Save dataset to JSON file with validation."""
         for example in dataset:
             is_valid, errors = self.validate_example(example)
             if not is_valid:
@@ -95,22 +70,10 @@ class GoldenDatasetManager:
         """
         Validate single example structure and completeness.
 
-        Checks:
-        - Required fields present
-        - Relevance grades match doc_ids
-        - Difficulty is valid value
-        - Query type is valid
-        - Ground truth answer is reasonable length
-
-        Args:
-            example: Example dictionary to validate
-
-        Returns:
-            Tuple of (is_valid, list_of_errors)
+        Returns: (is_valid, list_of_errors)
         """
         errors = []
 
-        # Required fields
         required_fields = [
             "id", "question", "ground_truth_answer", "relevant_doc_ids",
             "source_document", "difficulty", "query_type", "domain", "expected_strategy"
@@ -120,43 +83,35 @@ class GoldenDatasetManager:
             if field not in example:
                 errors.append(f"Missing required field: {field}")
 
-        # Validate difficulty
         valid_difficulties = ["easy", "medium", "hard"]
         if example.get("difficulty") not in valid_difficulties:
             errors.append(f"Invalid difficulty: {example.get('difficulty')}")
 
-        # Validate query type
         valid_query_types = ["factual", "conceptual", "procedural", "comparative"]
         if example.get("query_type") not in valid_query_types:
             errors.append(f"Invalid query_type: {example.get('query_type')}")
 
-        # Validate expected strategy
         valid_strategies = ["semantic", "keyword", "hybrid"]
         if example.get("expected_strategy") not in valid_strategies:
             errors.append(f"Invalid expected_strategy: {example.get('expected_strategy')}")
 
-        # Validate ground truth answer length
         answer = example.get("ground_truth_answer", "")
         if len(answer) < 50:
             errors.append("Ground truth answer too short (< 50 chars)")
         if len(answer) > 2000:
             errors.append("Ground truth answer too long (> 2000 chars)")
 
-        # Validate relevant_doc_ids is a list
         if not isinstance(example.get("relevant_doc_ids"), list):
             errors.append("relevant_doc_ids must be a list")
 
-        # Validate relevance_grades if present
         if "relevance_grades" in example:
             relevance_grades = example["relevance_grades"]
             doc_ids = set(example.get("relevant_doc_ids", []))
 
-            # Check that graded doc_ids are subset of relevant_doc_ids
             graded_ids = set(relevance_grades.keys())
             if not graded_ids.issubset(doc_ids):
                 errors.append("relevance_grades contains doc_ids not in relevant_doc_ids")
 
-            # Check that grades are 0-3
             for doc_id, grade in relevance_grades.items():
                 if not isinstance(grade, int) or grade not in [0, 1, 2, 3]:
                     errors.append(f"Invalid relevance grade for {doc_id}: {grade} (must be 0-3)")
@@ -164,15 +119,7 @@ class GoldenDatasetManager:
         return (len(errors) == 0, errors)
 
     def add_example(self, example: Dict) -> bool:
-        """
-        Add new example to dataset with validation.
-
-        Args:
-            example: Example dictionary to add
-
-        Returns:
-            True if added successfully, False otherwise
-        """
+        """Add new example to dataset with validation."""
         is_valid, errors = self.validate_example(example)
         if not is_valid:
             print(f"Cannot add invalid example: {', '.join(errors)}")
@@ -182,87 +129,47 @@ class GoldenDatasetManager:
         return True
 
     def get_by_difficulty(self, difficulty: str) -> List[Dict]:
-        """
-        Filter examples by difficulty level.
-
-        Args:
-            difficulty: "easy", "medium", or "hard"
-
-        Returns:
-            List of examples matching difficulty
-        """
+        """Filter examples by difficulty level."""
         return [ex for ex in self.dataset if ex.get("difficulty") == difficulty]
 
     def get_by_query_type(self, query_type: str) -> List[Dict]:
-        """
-        Filter examples by query type.
-
-        Args:
-            query_type: "factual", "conceptual", "procedural", or "comparative"
-
-        Returns:
-            List of examples matching query type
-        """
+        """Filter examples by query type."""
         return [ex for ex in self.dataset if ex.get("query_type") == query_type]
 
     def get_by_domain(self, domain: str) -> List[Dict]:
-        """
-        Filter examples by domain.
-
-        Args:
-            domain: Domain name (e.g., "nlp", "computer_vision", "generative_models")
-
-        Returns:
-            List of examples matching domain
-        """
+        """Filter examples by domain."""
         return [ex for ex in self.dataset if ex.get("domain") == domain]
 
     def get_cross_document_examples(self) -> List[Dict]:
-        """
-        Get examples that involve multiple source documents.
-
-        Returns:
-            List of cross-document examples
-        """
+        """Get examples that involve multiple source documents."""
         return [
             ex for ex in self.dataset
             if isinstance(ex.get("source_document"), list) and len(ex["source_document"]) > 1
         ]
 
     def get_statistics(self) -> Dict:
-        """
-        Get comprehensive dataset statistics.
-
-        Returns:
-            Dictionary with dataset composition stats
-        """
+        """Get comprehensive dataset statistics."""
         if not self.dataset:
             return {}
 
-        # Count by difficulty
         difficulty_counts = defaultdict(int)
         for ex in self.dataset:
             difficulty_counts[ex.get("difficulty", "unknown")] += 1
 
-        # Count by query type
         query_type_counts = defaultdict(int)
         for ex in self.dataset:
             query_type_counts[ex.get("query_type", "unknown")] += 1
 
-        # Count by domain
         domain_counts = defaultdict(int)
         for ex in self.dataset:
             domain_counts[ex.get("domain", "unknown")] += 1
 
-        # Count by expected strategy
         strategy_counts = defaultdict(int)
         for ex in self.dataset:
             strategy_counts[ex.get("expected_strategy", "unknown")] += 1
 
-        # Cross-document examples
         cross_doc_count = len(self.get_cross_document_examples())
 
-        # Source document distribution
         source_doc_counts = defaultdict(int)
         for ex in self.dataset:
             source_doc = ex.get("source_document", "unknown")
@@ -326,30 +233,17 @@ class GoldenDatasetManager:
         print(f"{'='*60}\n")
 
     def validate_against_corpus(self, retriever) -> Dict:
-        """
-        Verify that all chunk IDs in the dataset exist in the corpus.
-
-        Args:
-            retriever: AdaptiveRetriever instance with loaded documents
-
-        Returns:
-            Dictionary with validation results
-        """
+        """Verify that all chunk IDs in the dataset exist in the corpus."""
         all_chunk_ids = set()
 
-        # Get all chunk IDs from retriever's vector store
-        # Note: This assumes the retriever exposes its document store
         if hasattr(retriever, 'semantic_retriever') and hasattr(retriever.semantic_retriever, 'vectorstore'):
-            # Try to get documents from FAISS store
             try:
-                # This is implementation-specific and may need adjustment
                 docs = retriever.semantic_retriever.vectorstore.docstore._dict.values()
                 all_chunk_ids = {doc.metadata.get('id') for doc in docs if 'id' in doc.metadata}
             except Exception as e:
                 print(f"Warning: Could not extract chunk IDs from retriever: {e}")
                 return {"error": str(e)}
 
-        # Check each example's chunk IDs
         missing_chunks = []
         total_chunks_referenced = 0
 
@@ -385,20 +279,7 @@ def evaluate_on_golden_dataset(
     """
     Run RAG graph on golden dataset and calculate comprehensive metrics.
 
-    For each example:
-    1. Inject ground_truth_doc_ids and relevance_grades into state
-    2. Run graph with question
-    3. Collect retrieval_metrics from result
-    4. Compare generated answer to ground_truth_answer
-    5. Track groundedness scores
-
-    Args:
-        graph: Compiled LangGraph instance
-        dataset: List of golden dataset examples
-        verbose: Whether to print progress
-
-    Returns:
-        Dictionary with aggregated metrics and per-example results
+    Returns: Aggregated metrics and per-example results
     """
     if verbose:
         print(f"\n{'='*70}")
@@ -418,7 +299,6 @@ def evaluate_on_golden_dataset(
             print(f"[{i}/{len(dataset)}] Evaluating: {example_id}")
             print(f"  Question: {question[:80]}...")
 
-        # Prepare state with ground truth
         state = {
             "question": question,
             "original_query": question,
@@ -427,40 +307,33 @@ def evaluate_on_golden_dataset(
             "query_expansions": [],
             "messages": [],
             "retrieved_docs": [],
-            # Inject ground truth for evaluation
             "ground_truth_doc_ids": set(example.get('relevant_doc_ids', [])),
             "relevance_grades": example.get('relevance_grades', {}),
         }
 
         try:
-            # Run the graph
             config = {"configurable": {"thread_id": f"eval-{example_id}"}}
             result = graph.invoke(state, config=config)
 
-            # Extract metrics
             retrieval_metrics = result.get('retrieval_metrics', {})
             groundedness_score = result.get('groundedness_score', 0.0)
             confidence_score = result.get('confidence_score', 0.0)
             has_hallucination = result.get('has_hallucination', False)
             final_answer = result.get('final_answer', '')
 
-            # Compare generated answer to ground truth
             answer_comparison = compare_answers(
                 generated=final_answer,
                 ground_truth=example['ground_truth_answer']
             )
 
-            # Calculate answer relevance (question-answer alignment)
             answer_relevance = calculate_answer_relevance(
                 question=question,
                 answer=final_answer
             )
 
-            # Aggregate retrieval metrics
             for metric_name, value in retrieval_metrics.items():
                 retrieval_metrics_agg[metric_name].append(value)
 
-            # Aggregate generation metrics
             generation_metrics_agg['groundedness'].append(groundedness_score)
             generation_metrics_agg['confidence'].append(confidence_score)
             generation_metrics_agg['has_hallucination'].append(int(has_hallucination))
@@ -469,7 +342,6 @@ def evaluate_on_golden_dataset(
             generation_metrics_agg['completeness'].append(answer_comparison.get('completeness', 0.0))
             generation_metrics_agg['answer_relevance'].append(answer_relevance.get('relevance_score', 0.0))
 
-            # Store per-example result
             per_example_results.append({
                 'example_id': example_id,
                 'question': question,
@@ -500,7 +372,6 @@ def evaluate_on_golden_dataset(
                 'error': str(e)
             })
 
-    # Calculate aggregate metrics
     avg_retrieval_metrics = {
         metric: sum(values) / len(values) if values else 0.0
         for metric, values in retrieval_metrics_agg.items()
@@ -516,7 +387,6 @@ def evaluate_on_golden_dataset(
         'avg_answer_relevance': sum(generation_metrics_agg['answer_relevance']) / len(generation_metrics_agg['answer_relevance']) if generation_metrics_agg['answer_relevance'] else 0.0,
     }
 
-    # Breakdown by difficulty
     per_difficulty_breakdown = defaultdict(lambda: defaultdict(list))
     for result in per_example_results:
         if 'error' not in result:
@@ -531,7 +401,6 @@ def evaluate_on_golden_dataset(
             for metric, values in metrics.items()
         }
 
-    # Breakdown by query type
     per_query_type_breakdown = defaultdict(lambda: defaultdict(list))
     for result in per_example_results:
         if 'error' not in result:
@@ -577,17 +446,7 @@ def compare_answers(
     ground_truth: str,
     llm: Optional[ChatOpenAI] = None
 ) -> Dict:
-    """
-    Use LLM to compare generated answer to ground truth.
-
-    Args:
-        generated: Generated answer from RAG system
-        ground_truth: Ground truth answer from dataset
-        llm: Optional LLM instance (creates default if not provided)
-
-    Returns:
-        Dictionary with comparison scores and reasoning
-    """
+    """Use LLM to compare generated answer to ground truth."""
     if llm is None:
         llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
 

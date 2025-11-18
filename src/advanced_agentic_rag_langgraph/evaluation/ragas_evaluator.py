@@ -32,11 +32,7 @@ class RAGASEvaluator:
     """
     Wrapper for RAGAS evaluation framework.
 
-    Provides methods to:
-    - Initialize RAGAS metrics with LLM and embeddings
-    - Evaluate single samples
-    - Run batch evaluation on datasets
-    - Compare RAGAS metrics with custom metrics
+    Provides: Initialize metrics, evaluate single samples, batch evaluation, metric comparison.
     """
 
     def __init__(
@@ -45,34 +41,18 @@ class RAGASEvaluator:
         temperature: float = 0.0,
         embedding_model: Optional[str] = None
     ):
-        """
-        Initialize RAGAS evaluator with LLM and embedding models.
-
-        Args:
-            llm_model: OpenAI model name for LLM-based metrics
-            temperature: Temperature for LLM evaluation (0.0 for deterministic)
-            embedding_model: Optional embedding model name (defaults to OpenAI default)
-        """
-        # Initialize LLMs and embeddings
         self.evaluator_llm = ChatOpenAI(model=llm_model, temperature=temperature)
         self.evaluator_embeddings = OpenAIEmbeddings(
             model=embedding_model if embedding_model else "text-embedding-3-small"
         )
 
-        # Wrap for RAGAS compatibility
         self.llm_wrapper = LangchainLLMWrapper(self.evaluator_llm)
         self.embeddings_wrapper = LangchainEmbeddingsWrapper(self.evaluator_embeddings)
 
-        # Initialize metrics
         self.metrics = self._initialize_metrics()
 
     def _initialize_metrics(self) -> List:
-        """
-        Initialize and configure RAGAS metrics.
-
-        Returns:
-            List of configured RAGAS metric instances
-        """
+        """Initialize and configure RAGAS metrics."""
         metrics = [
             Faithfulness(),
             ContextRecall(),
@@ -80,7 +60,6 @@ class RAGASEvaluator:
             ResponseRelevancy()
         ]
 
-        # Configure each metric with LLM and embeddings
         run_config = RunConfig()
 
         for metric in metrics:
@@ -89,7 +68,6 @@ class RAGASEvaluator:
             if hasattr(metric, 'embeddings'):
                 metric.embeddings = self.embeddings_wrapper
 
-            # Initialize metric
             metric.init(run_config)
 
         return metrics
@@ -101,25 +79,13 @@ class RAGASEvaluator:
         contexts: List[str],
         ground_truth: Optional[str] = None
     ) -> SingleTurnSample:
-        """
-        Prepare a single sample in RAGAS format.
-
-        Args:
-            question: User question
-            answer: Generated answer
-            contexts: Retrieved context documents
-            ground_truth: Optional ground truth answer for Context Recall
-
-        Returns:
-            SingleTurnSample ready for RAGAS evaluation
-        """
+        """Prepare a single sample in RAGAS format."""
         sample_data = {
             "user_input": question,
             "response": answer,
             "retrieved_contexts": contexts
         }
 
-        # Add ground truth if available (needed for Context Recall)
         if ground_truth:
             sample_data["reference"] = ground_truth
 
@@ -130,16 +96,7 @@ class RAGASEvaluator:
         sample: SingleTurnSample,
         metrics: Optional[List] = None
     ) -> Dict[str, float]:
-        """
-        Evaluate a single sample with RAGAS metrics.
-
-        Args:
-            sample: SingleTurnSample to evaluate
-            metrics: Optional list of metrics (uses all if not specified)
-
-        Returns:
-            Dictionary mapping metric names to scores
-        """
+        """Evaluate a single sample with RAGAS metrics."""
         if metrics is None:
             metrics = self.metrics
 
@@ -147,7 +104,6 @@ class RAGASEvaluator:
 
         for metric in metrics:
             try:
-                # Run async evaluation
                 score = await metric.single_turn_ascore(sample)
                 scores[metric.name] = score
             except Exception as e:
@@ -161,16 +117,7 @@ class RAGASEvaluator:
         sample: SingleTurnSample,
         metrics: Optional[List] = None
     ) -> Dict[str, float]:
-        """
-        Synchronous wrapper for evaluate_sample.
-
-        Args:
-            sample: SingleTurnSample to evaluate
-            metrics: Optional list of metrics
-
-        Returns:
-            Dictionary mapping metric names to scores
-        """
+        """Synchronous wrapper for evaluate_sample."""
         return asyncio.run(self.evaluate_sample(sample, metrics))
 
     async def evaluate_dataset(
@@ -178,20 +125,10 @@ class RAGASEvaluator:
         dataset: EvaluationDataset,
         metrics: Optional[List] = None
     ) -> Dict[str, Any]:
-        """
-        Run batch evaluation on an EvaluationDataset.
-
-        Args:
-            dataset: EvaluationDataset containing samples
-            metrics: Optional list of metrics (uses all if not specified)
-
-        Returns:
-            Dictionary with evaluation results and statistics
-        """
+        """Run batch evaluation on an EvaluationDataset."""
         if metrics is None:
             metrics = self.metrics
 
-        # Run RAGAS batch evaluation
         results = await evaluate(
             dataset,
             metrics=metrics,
@@ -206,16 +143,7 @@ class RAGASEvaluator:
         dataset: EvaluationDataset,
         metrics: Optional[List] = None
     ) -> Dict[str, Any]:
-        """
-        Synchronous wrapper for evaluate_dataset.
-
-        Args:
-            dataset: EvaluationDataset to evaluate
-            metrics: Optional list of metrics
-
-        Returns:
-            Dictionary with evaluation results
-        """
+        """Synchronous wrapper for evaluate_dataset."""
         return asyncio.run(self.evaluate_dataset(dataset, metrics))
 
 
@@ -223,32 +151,19 @@ def prepare_ragas_dataset_from_golden(
     golden_dataset: List[Dict],
     graph_results: List[Dict]
 ) -> EvaluationDataset:
-    """
-    Convert golden dataset and graph results into RAGAS EvaluationDataset.
-
-    Args:
-        golden_dataset: List of golden dataset examples with ground truth
-        graph_results: List of graph execution results matching golden examples
-
-    Returns:
-        EvaluationDataset ready for RAGAS evaluation
-    """
+    """Convert golden dataset and graph results into RAGAS EvaluationDataset."""
     samples = []
 
     for golden_example, graph_result in zip(golden_dataset, graph_results):
-        # Extract data from golden example
         question = golden_example['question']
         ground_truth = golden_example['ground_truth_answer']
 
-        # Extract data from graph result
         answer = graph_result.get('final_answer', '')
 
-        # Get retrieved contexts
         retrieved_docs = graph_result.get('retrieved_docs', [])
         contexts = [doc if isinstance(doc, str) else doc.page_content
                    for doc in retrieved_docs]
 
-        # Create sample
         sample = SingleTurnSample(
             user_input=question,
             response=answer,
@@ -270,20 +185,7 @@ def run_ragas_evaluation_on_golden(
     """
     Run complete RAGAS evaluation on golden dataset.
 
-    Steps:
-    1. Execute graph on each golden example
-    2. Prepare RAGAS dataset from results
-    3. Run RAGAS batch evaluation
-    4. Return comprehensive metrics
-
-    Args:
-        golden_dataset: List of golden dataset examples
-        graph: Compiled LangGraph instance
-        evaluator: Optional RAGASEvaluator instance (creates default if None)
-        verbose: Whether to print progress
-
-    Returns:
-        Dictionary with RAGAS metrics and per-example results
+    Returns: RAGAS metrics and per-example results
     """
     if evaluator is None:
         evaluator = RAGASEvaluator()
@@ -294,7 +196,6 @@ def run_ragas_evaluation_on_golden(
         print(f"{'='*70}")
         print(f"Evaluating {len(golden_dataset)} examples...\n")
 
-    # Execute graph on all examples
     graph_results = []
 
     for i, example in enumerate(golden_dataset, 1):
@@ -304,7 +205,6 @@ def run_ragas_evaluation_on_golden(
         if verbose:
             print(f"[{i}/{len(golden_dataset)}] Running: {example_id}")
 
-        # Prepare state
         state = {
             "question": question,
             "original_query": question,
@@ -318,7 +218,6 @@ def run_ragas_evaluation_on_golden(
         }
 
         try:
-            # Execute graph
             config = {"configurable": {"thread_id": f"ragas-eval-{example_id}"}}
             result = graph.invoke(state, config=config)
             graph_results.append(result)
@@ -331,7 +230,6 @@ def run_ragas_evaluation_on_golden(
                 print(f"  Status: ERROR - {str(e)}")
             graph_results.append({"error": str(e)})
 
-    # Prepare RAGAS dataset
     if verbose:
         print(f"\nPreparing RAGAS dataset...")
 
@@ -340,19 +238,16 @@ def run_ragas_evaluation_on_golden(
         graph_results
     )
 
-    # Run RAGAS evaluation
     if verbose:
         print(f"Running RAGAS metrics evaluation...")
 
     ragas_results = evaluator.evaluate_dataset_sync(ragas_dataset)
 
-    # Calculate aggregate statistics
     if verbose:
         print(f"\n{'='*70}")
         print(f"RAGAS EVALUATION RESULTS")
         print(f"{'='*70}")
 
-        # Print metric scores
         if hasattr(ragas_results, 'scores'):
             for metric_name in ragas_results.scores.columns:
                 scores = ragas_results.scores[metric_name].dropna()
@@ -378,18 +273,8 @@ def compare_ragas_with_custom_metrics(
     """
     Compare RAGAS metrics with custom evaluation metrics.
 
-    Analyzes correlation between:
-    - Faithfulness (RAGAS) vs. Groundedness (custom)
-    - Context Precision (RAGAS) vs. Retrieval Quality (custom)
-    - Response Relevancy (RAGAS) vs. Answer Sufficiency (custom)
-
-    Args:
-        ragas_results: Results from RAGAS evaluation
-        custom_results: Results from custom evaluation pipeline
-        verbose: Whether to print comparison
-
-    Returns:
-        Dictionary with comparison analysis
+    Analyzes: Faithfulness vs Groundedness, Context Precision vs Retrieval Quality,
+    Response Relevancy vs Answer Sufficiency.
     """
     comparison = {
         'ragas_metrics': {},
@@ -398,14 +283,12 @@ def compare_ragas_with_custom_metrics(
         'insights': []
     }
 
-    # Extract RAGAS metric averages
     if hasattr(ragas_results, 'scores'):
         for metric_name in ragas_results.scores.columns:
             scores = ragas_results.scores[metric_name].dropna()
             if len(scores) > 0:
                 comparison['ragas_metrics'][metric_name] = float(scores.mean())
 
-    # Extract custom metric averages
     if 'generation_metrics' in custom_results:
         comparison['custom_metrics']['groundedness'] = custom_results['generation_metrics'].get('avg_groundedness', 0.0)
         comparison['custom_metrics']['confidence'] = custom_results['generation_metrics'].get('avg_confidence', 0.0)
@@ -415,7 +298,6 @@ def compare_ragas_with_custom_metrics(
         comparison['custom_metrics']['recall_at_k'] = custom_results['retrieval_metrics'].get('recall_at_k', 0.0)
         comparison['custom_metrics']['precision_at_k'] = custom_results['retrieval_metrics'].get('precision_at_k', 0.0)
 
-    # Analyze correlations and generate insights
     if 'faithfulness' in comparison['ragas_metrics'] and 'groundedness' in comparison['custom_metrics']:
         faithfulness = comparison['ragas_metrics']['faithfulness']
         groundedness = comparison['custom_metrics']['groundedness']

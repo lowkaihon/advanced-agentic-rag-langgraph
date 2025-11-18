@@ -21,29 +21,15 @@ class TwoStageReRanker:
     """
     Two-stage hybrid reranking: CrossEncoder then LLM-as-judge.
 
-    Architecture:
-        Initial documents (e.g., 20-50)
-            |
-            v
-        Stage 1: CrossEncoder semantic filtering
-            produces Top 15 documents (~375ms, ~$0.0001)
-            |
-            v
-        Stage 2: LLM-as-judge with metadata analysis
-            produces Final top 4 documents (~400ms, ~$0.005)
-            |
-            v
-        Total: ~775ms, ~$0.006 per query
+    Stage 1: CrossEncoder semantic filtering to top-15 (~375ms, ~$0.0001)
+    Stage 2: LLM-as-judge metadata-aware scoring to final top-4 (~400ms, ~$0.005)
+    Total: ~775ms, ~$0.006 per query
 
-    Benefits vs. LLM-only reranking:
+    Benefits vs. LLM-only:
     - 3-5x faster (650ms vs 2-5s)
     - 5-10x cheaper ($0.006 vs $0.03-0.05)
-    - Maintains metadata-aware quality (document type, technical level, domain)
-    - Combines semantic similarity (CrossEncoder) with contextual appropriateness (LLM)
-
-    Usage:
-        reranker = TwoStageReRanker(k_cross_encoder=15, k_final=4)
-        final_docs = reranker.rank("What is attention?", documents)
+    - Maintains metadata-aware quality
+    - Combines semantic similarity with contextual appropriateness
     """
 
     def __init__(
@@ -53,26 +39,13 @@ class TwoStageReRanker:
         cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
         llm_model: str = "gpt-4o-mini"
     ):
-        """
-        Initialize hybrid reranker with two-stage pipeline.
-
-        Args:
-            k_cross_encoder: Number of docs to keep after CrossEncoder stage (default: 15)
-            k_final: Number of final docs after LLM stage (default: 4)
-            cross_encoder_model: CrossEncoder model name (default: ms-marco-MiniLM-L-6-v2)
-            llm_model: LLM model for metadata-aware scoring (default: gpt-4o-mini)
-        """
+        """Initialize two-stage hybrid reranker."""
         self.k_cross_encoder = k_cross_encoder
         self.k_final = k_final
-
-        # Stage 1: CrossEncoder for fast semantic filtering
         self.cross_encoder = CrossEncoderReRanker(
             model_name=cross_encoder_model,
             top_k=k_cross_encoder
         )
-
-        # Stage 2: LLM-as-judge for metadata-aware quality scoring
-        # Note: LLMMetadataReRanker already uses gpt-4o-mini by default
         self.llm_judge = LLMMetadataReRanker(top_k=k_final)
 
     def rank(
@@ -83,34 +56,13 @@ class TwoStageReRanker:
         """
         Two-stage reranking: CrossEncoder then LLM-as-judge.
 
-        Args:
-            query: User query string
-            documents: List of Document objects to rerank
-
-        Returns:
-            List of (document, score) tuples from LLM-as-judge,
-            sorted by relevance (highest first), limited to k_final
-
-        Example:
-            >>> reranker = TwoStageReRanker(k_cross_encoder=10, k_final=4)
-            >>> docs = retriever.get_relevant_documents("attention mechanism", k=20)
-            >>> final_docs = reranker.rank("attention mechanism", docs)
-            >>> # Returns 4 best documents after two-stage filtering
+        Returns list of (document, score) tuples sorted by relevance, limited to k_final.
         """
         if not documents:
             return []
 
-        # Stage 1: CrossEncoder filtering
-        # Fast semantic similarity to reduce candidate set
         cross_encoder_ranked = self.cross_encoder.rank(query, documents)
-
-        # Extract just the documents (discard CrossEncoder scores)
-        # These scores are replaced by LLM scores in stage 2
         intermediate_docs = [doc for doc, score in cross_encoder_ranked]
-
-        # Stage 2: LLM-as-judge quality scoring
-        # Metadata-aware ranking (document type, technical level, domain)
-        # Returns (doc, score) tuples with LLM relevance scores
         final_ranked = self.llm_judge.rank(query, intermediate_docs)
 
         return final_ranked
@@ -121,20 +73,9 @@ class TwoStageReRanker:
         documents: List[Document]
     ) -> dict:
         """
-        Two-stage reranking with detailed stage information.
+        Two-stage reranking with detailed stage information (for debugging).
 
-        Useful for debugging and analysis of reranking decisions.
-
-        Args:
-            query: User query string
-            documents: List of Document objects to rerank
-
-        Returns:
-            Dictionary with:
-            - final_ranked: List of (document, llm_score) tuples
-            - stage1_count: Number of docs after CrossEncoder
-            - stage2_count: Number of final docs
-            - stage1_ranked: Full CrossEncoder results with scores
+        Returns dict with final_ranked, stage1_count, stage2_count, and stage1_ranked.
         """
         if not documents:
             return {
@@ -144,11 +85,8 @@ class TwoStageReRanker:
                 "stage1_ranked": []
             }
 
-        # Stage 1: CrossEncoder
         stage1_ranked = self.cross_encoder.rank(query, documents)
         intermediate_docs = [doc for doc, score in stage1_ranked]
-
-        # Stage 2: LLM-as-judge
         final_ranked = self.llm_judge.rank(query, intermediate_docs)
 
         return {

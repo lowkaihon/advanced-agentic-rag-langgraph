@@ -12,33 +12,21 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY")
 
-# Enable LangSmith tracing only if explicitly requested in .env
 if LANGSMITH_API_KEY and os.getenv("LANGSMITH_TRACING", "false").lower() == "true":
     os.environ["LANGCHAIN_TRACING_V2"] = "true"
     os.environ["LANGSMITH_PROJECT"] = "advanced-agentic-rag"
 
-# Global retriever instance and corpus statistics
 _retriever_instance = None
 _corpus_stats = None
 _document_profiles = None
 
-# PDF directory - uses package-based path resolution (works with editable install)
-# This approach is consistent with import best practices (no PYTHONPATH needed)
 import advanced_agentic_rag_langgraph
 PROJECT_ROOT = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 
 def get_all_pdf_paths_from_docs() -> List[str]:
-    """
-    Get paths to all PDF files in docs/ directory.
-
-    Returns:
-        List of absolute paths to PDF files, sorted alphabetically
-
-    Raises:
-        FileNotFoundError: If docs/ folder doesn't exist or contains no PDFs
-    """
+    """Get paths to all PDF files in docs/ directory."""
     if not DOCS_DIR.exists():
         raise FileNotFoundError(
             f"docs/ directory not found at: {DOCS_DIR}\n"
@@ -65,19 +53,7 @@ def get_all_pdf_paths_from_docs() -> List[str]:
 
 
 def get_specific_pdf_paths(filenames: str | List[str]) -> List[str]:
-    """
-    Get absolute paths for specific PDF filenames from docs/ directory.
-
-    Args:
-        filenames: Single filename or list of filenames (not full paths)
-
-    Returns:
-        List of absolute paths to specified PDFs
-
-    Raises:
-        FileNotFoundError: If any specified PDF is not found
-    """
-    # Normalize to list
+    """Get absolute paths for specific PDF filenames from docs/ directory."""
     if isinstance(filenames, str):
         filenames = [filenames]
 
@@ -116,62 +92,27 @@ def setup_retriever(
     """
     Initialize hybrid retriever with PDF documents from docs/ folder.
 
-    This function:
-    1. Loads full PDF documents (before chunking)
-    2. Profiles each FULL document with LLM
-    3. Chunks documents
-    4. Attaches profile metadata to each chunk
-    5. Creates AdaptiveRetriever with profiled documents
-    6. Stores corpus statistics globally
+    Process: Load full PDFs → Profile with LLM → Chunk → Attach metadata → Create retriever
 
-    Args:
-        pdfs: Which PDFs to load:
-            - None (default): Load ALL PDFs from docs/ folder
-            - str: Load single PDF by filename (e.g., "Attention Is All You Need.pdf")
-            - List[str]: Load specific PDFs by filenames
-        chunk_size: Maximum characters per chunk
-        chunk_overlap: Characters overlap between chunks
-        verbose: Print loading progress
-
-    Returns:
-        AdaptiveRetriever instance with profiled documents
-
-    Examples:
-        >>> # Load all PDFs (default)
-        >>> retriever = setup_retriever()
-
-        >>> # Load single PDF
-        >>> retriever = setup_retriever(pdfs="Attention Is All You Need.pdf")
-
-        >>> # Load multiple PDFs
-        >>> retriever = setup_retriever(pdfs=["paper1.pdf", "paper2.pdf"])
-
-    Raises:
-        FileNotFoundError: If docs/ folder is empty or specified PDF not found
-        ValueError: If pdfs parameter has invalid type
+    Returns: AdaptiveRetriever instance with profiled documents
     """
     global _retriever_instance, _corpus_stats, _document_profiles
 
-    # Singleton pattern check
     if _retriever_instance is not None:
         return _retriever_instance
 
-    # Validate pdfs parameter type
     if pdfs is not None and not isinstance(pdfs, (str, list)):
         raise ValueError(
             f"pdfs parameter must be None, str, or List[str], got {type(pdfs).__name__}"
         )
 
-    # Determine which PDFs to load
     if pdfs is None:
-        # Default: load all PDFs
         if verbose:
             print("\n" + "="*60)
             print("LOADING ALL PDFS FROM docs/")
             print("="*60 + "\n")
         pdf_paths = get_all_pdf_paths_from_docs()
     else:
-        # Specific PDF(s)
         if verbose:
             print("\n" + "="*60)
             print("LOADING SPECIFIC PDF(S)")
@@ -185,25 +126,21 @@ def setup_retriever(
             print(f"  {i}. {os.path.basename(path)} ({size_mb:.1f} MB)")
         print()
 
-    # Initialize PDF loader
     pdf_loader = PDFDocumentLoader(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap
     )
 
-    # Profile full documents BEFORE chunking
     if verbose:
         print("="*60)
         print("STEP 1: Loading full documents (no chunking)")
         print("="*60 + "\n")
 
-    # Load full documents
     full_documents = pdf_loader.load_multiple_pdfs_full_documents(
         pdf_paths,
         verbose=verbose
     )
 
-    # Profile documents using profiling pipeline
     if verbose:
         print("="*60)
         print("STEP 2: Profiling documents with LLM")
@@ -215,7 +152,6 @@ def setup_retriever(
         verbose=verbose
     )
 
-    # Now chunk the documents
     if verbose:
         print("="*60)
         print("STEP 3: Chunking documents")
@@ -223,17 +159,13 @@ def setup_retriever(
 
     all_chunks = []
     for profiled_doc in profiled_docs:
-        # Chunk the document
         chunks = pdf_loader.text_splitter.split_text(profiled_doc.page_content)
 
         source = profiled_doc.metadata.get('source', 'unknown')
 
-        # Extract profile from document metadata (added by profiling pipeline)
         profile = profiled_doc.metadata.get('profile')
 
-        # Create Document objects with profile metadata
         for i, chunk_text in enumerate(chunks):
-            # Start with basic chunk metadata
             chunk_metadata = {
                 "id": f"{source}_chunk_{i}",
                 "chunk_index": i,
@@ -242,7 +174,6 @@ def setup_retriever(
                 "source_type": "pdf",
             }
 
-            # Attach profile metadata to chunk (already extracted by profiling pipeline)
             if profile:
                 chunk_metadata.update({
                     "content_type": profile['doc_type'],
@@ -265,7 +196,6 @@ def setup_retriever(
     if verbose:
         print(f"Created {len(all_chunks)} chunks from {len(profiled_docs)} documents\n")
 
-    # Store corpus statistics and profiles globally
     _corpus_stats = corpus_stats
     _document_profiles = document_profiles
 
@@ -281,7 +211,6 @@ def setup_retriever(
         print(f"Has math: {corpus_stats.get('pct_with_math', 0):.0f}%")
         print("="*60 + "\n")
 
-    # Create retriever with profiled documents
     _retriever_instance = AdaptiveRetriever(all_chunks)
 
     return _retriever_instance

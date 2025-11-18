@@ -16,11 +16,7 @@ class PDFDocumentLoader:
     """
     Loads PDF documents and chunks them for RAG.
 
-    Features:
-    - Page-by-page PDF text extraction using PyPDFLoader
-    - Intelligent text chunking with RecursiveCharacterTextSplitter
-    - Preserves document structure (paragraphs, sentences)
-    - Adds rich metadata for tracking
+    Features: Page extraction, intelligent chunking, structure preservation, metadata tracking.
     """
 
     def __init__(
@@ -29,25 +25,16 @@ class PDFDocumentLoader:
         chunk_overlap: int = 200,
         separators: Optional[List[str]] = None
     ):
-        """
-        Initialize PDF loader with chunking configuration.
-
-        Args:
-            chunk_size: Maximum characters per chunk (default: 1000)
-            chunk_overlap: Characters overlap between chunks (default: 200)
-            separators: List of split separators (default: paragraph/sentence boundaries)
-        """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
 
-        # Default separators prioritize document structure
         if separators is None:
             separators = [
-                "\n\n",  # Paragraph breaks
-                "\n",    # Line breaks
-                ". ",    # Sentence endings
-                " ",     # Word boundaries
-                ""       # Character-level fallback
+                "\n\n",
+                "\n",
+                ". ",
+                " ",
+                ""
             ]
 
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -63,22 +50,10 @@ class PDFDocumentLoader:
         source_name: Optional[str] = None,
         verbose: bool = True
     ) -> List[Document]:
-        """
-        Load and chunk a PDF document.
-
-        Args:
-            pdf_path: Path to the PDF file
-            source_name: Optional name for the source (defaults to filename)
-            verbose: Whether to print loading progress
-
-        Returns:
-            List of Document objects (chunked and enriched with metadata)
-        """
-        # Validate file exists
+        """Load and chunk a PDF document."""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Extract source name from path if not provided
         if source_name is None:
             source_name = os.path.basename(pdf_path)
 
@@ -88,14 +63,12 @@ class PDFDocumentLoader:
             print(f"{'='*60}")
             print(f"Path: {pdf_path}")
 
-        # Load PDF pages
         loader = PyMuPDFLoader(pdf_path)
         pages = loader.load()
 
         if verbose:
             print(f"Extracted {len(pages)} pages from PDF")
 
-        # Chunk the documents
         chunks = self.text_splitter.split_documents(pages)
 
         if verbose:
@@ -103,10 +76,8 @@ class PDFDocumentLoader:
             print(f"Chunk size: {self.chunk_size} characters")
             print(f"Chunk overlap: {self.chunk_overlap} characters")
 
-        # Enrich chunks with metadata
         enriched_chunks = []
         for i, chunk in enumerate(chunks):
-            # Preserve existing metadata and add new fields
             chunk.metadata.update({
                 "id": f"{source_name}_chunk_{i}",
                 "chunk_index": i,
@@ -117,7 +88,6 @@ class PDFDocumentLoader:
             enriched_chunks.append(chunk)
 
         if verbose:
-            # Show sample chunk
             if enriched_chunks:
                 sample = enriched_chunks[0]
                 print(f"\nSample chunk (first 200 chars):")
@@ -133,38 +103,21 @@ class PDFDocumentLoader:
         source_name: Optional[str] = None,
         verbose: bool = True
     ) -> Document:
-        """
-        Load a PDF as a single full document (WITHOUT chunking).
-
-        Use this for document profiling before chunking.
-
-        Args:
-            pdf_path: Path to the PDF file
-            source_name: Optional name for the source (defaults to filename)
-            verbose: Whether to print loading progress
-
-        Returns:
-            Single Document object with full PDF content
-        """
-        # Validate file exists
+        """Load a PDF as a single full document (WITHOUT chunking)."""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Extract source name from path if not provided
         if source_name is None:
             source_name = os.path.basename(pdf_path)
 
         if verbose:
             print(f"Loading full document: {source_name}")
 
-        # Load PDF pages
         loader = PyMuPDFLoader(pdf_path)
         pages = loader.load()
 
-        # Combine all pages into single document
         full_text = "\n\n".join([page.page_content for page in pages])
 
-        # Create single document with metadata
         full_document = Document(
             page_content=full_text,
             metadata={
@@ -185,16 +138,7 @@ class PDFDocumentLoader:
         pdf_paths: List[str],
         verbose: bool = True
     ) -> List[Document]:
-        """
-        Load and chunk multiple PDF documents.
-
-        Args:
-            pdf_paths: List of paths to PDF files
-            verbose: Whether to print loading progress
-
-        Returns:
-            Combined list of Document objects from all PDFs
-        """
+        """Load and chunk multiple PDF documents."""
         all_chunks = []
 
         for pdf_path in pdf_paths:
@@ -211,18 +155,7 @@ class PDFDocumentLoader:
         pdf_paths: List[str],
         verbose: bool = True
     ) -> List[Document]:
-        """
-        Load multiple PDFs as full documents (WITHOUT chunking).
-
-        Use this for document profiling before chunking.
-
-        Args:
-            pdf_paths: List of paths to PDF files
-            verbose: Whether to print loading progress
-
-        Returns:
-            List of full Document objects (one per PDF)
-        """
+        """Load multiple PDFs as full documents (WITHOUT chunking)."""
         full_documents = []
 
         if verbose:
@@ -239,15 +172,7 @@ class PDFDocumentLoader:
         return full_documents
 
     def get_chunk_statistics(self, chunks: List[Document]) -> dict:
-        """
-        Get statistics about the chunked documents.
-
-        Args:
-            chunks: List of chunked documents
-
-        Returns:
-            Dictionary with chunk statistics
-        """
+        """Get statistics about the chunked documents."""
         if not chunks:
             return {}
 
@@ -294,18 +219,7 @@ def load_pdf_for_rag(
     chunk_overlap: int = 200,
     verbose: bool = True
 ) -> List[Document]:
-    """
-    Quick utility to load a PDF with default RAG settings.
-
-    Args:
-        pdf_path: Path to PDF file
-        chunk_size: Maximum characters per chunk
-        chunk_overlap: Characters overlap between chunks
-        verbose: Print loading progress
-
-    Returns:
-        List of chunked Document objects
-    """
+    """Quick utility to load a PDF with default RAG settings."""
     loader = PDFDocumentLoader(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap

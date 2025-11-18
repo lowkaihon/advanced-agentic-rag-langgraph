@@ -14,34 +14,27 @@ from langchain_core.messages import HumanMessage
 class DocumentProfile(TypedDict):
     """Structured output schema for document profiling"""
     doc_type: Literal[
-        # Academic (6 types)
         "research_paper", "thesis", "dissertation",
         "conference_paper", "journal_article", "literature_review",
-        # Educational (5 types)
         "tutorial", "course_material", "textbook",
         "lecture_notes", "study_guide",
-        # Technical (4 types)
         "api_reference", "technical_specification",
         "architecture_document", "system_design",
-        # Business (4 types)
         "whitepaper", "case_study", "business_report", "proposal",
-        # Legal (3 types)
         "legal_document", "contract", "policy_document",
-        # General (6 types)
         "blog_post", "article", "guide", "manual", "faq", "documentation",
-        # Fallback
         "other"
     ]
-    doc_type_description: str  # Clarification or custom description if type="other"
-    technical_density: float  # 0.0-1.0
+    doc_type_description: str
+    technical_density: float
     reading_level: Literal["beginner", "intermediate", "advanced"]
-    domain_tags: list[str]  # Top 3 domains
+    domain_tags: list[str]
     best_retrieval_strategy: Literal["semantic", "keyword", "hybrid"]
-    strategy_confidence: float  # 0.0-1.0
+    strategy_confidence: float
     has_math: bool
     has_code: bool
-    summary: str  # 2-3 sentence summary
-    key_concepts: list[str]  # Top 5 concepts
+    summary: str
+    key_concepts: list[str]
 
 
 class DocumentProfiler:
@@ -58,13 +51,7 @@ class DocumentProfiler:
     """
 
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0):
-        """
-        Initialize LLM-based document profiler.
-
-        Args:
-            model: OpenAI model to use (default: gpt-4o-mini for cost efficiency)
-            temperature: Sampling temperature (0 for deterministic)
-        """
+        """Initialize LLM-based document profiler."""
         self.llm = ChatOpenAI(model=model, temperature=temperature)
         self.structured_llm = self.llm.with_structured_output(DocumentProfile)
 
@@ -74,12 +61,6 @@ class DocumentProfiler:
 
         Detects presence of code and math patterns before LLM profiling,
         allowing LLM to confirm and classify rather than discover from scratch.
-
-        Args:
-            doc_text: Full document text
-
-        Returns:
-            Dictionary with has_code_signal and has_math_signal booleans
         """
         return {
             'has_code_signal': bool(re.search(
@@ -112,43 +93,32 @@ class DocumentProfiler:
         Returns:
             Stratified sample of document with section markers
         """
-        # Rough estimate: 1 token ≈ 4 chars
-        target_chars = target_tokens * 4  # ~20,000 chars for 5,000 tokens
-
+        target_chars = target_tokens * 4
         doc_length = len(doc_text)
 
-        # If document is shorter than target, use it all
         if doc_length <= target_chars:
             return doc_text
 
-        # Calculate section boundaries (positional strategy)
         first_30_pct = int(doc_length * 0.30)
         last_20_pct_start = int(doc_length * 0.80)
 
-        # Token budget allocation (in characters)
-        first_budget = int(target_chars * 0.45)  # 45% for first 30%
-        last_budget = int(target_chars * 0.22)   # 22% for last 20%
-        middle_budget = target_chars - first_budget - last_budget  # ~33% for middle
+        first_budget = int(target_chars * 0.45)
+        last_budget = int(target_chars * 0.22)
+        middle_budget = target_chars - first_budget - last_budget
 
-        # Sample first section (intro, abstract, early content)
         first_section = doc_text[:min(first_30_pct, first_budget)]
-
-        # Sample last section (conclusions, appendices, final content)
         last_section = doc_text[max(last_20_pct_start, doc_length - last_budget):]
 
-        # Sample middle section (body, methods, results)
         middle_start = first_30_pct
         middle_end = last_20_pct_start
         middle_available = middle_end - middle_start
 
         if middle_available > middle_budget:
-            # Sample from middle of the middle section
             middle_sample_start = middle_start + (middle_available - middle_budget) // 2
             middle_section = doc_text[middle_sample_start:middle_sample_start + middle_budget]
         else:
             middle_section = doc_text[middle_start:middle_end]
 
-        # Combine sections with clear separators
         return f"{first_section}\n\n[... middle section sampled ...]\n\n{middle_section}\n\n[... final section sampled ...]\n\n{last_section}"
 
     def profile_document(self, doc_text: str, doc_id: str = None) -> DocumentProfile:
@@ -295,11 +265,7 @@ IMPORTANT INSTRUCTIONS:
             return self._get_fallback_profile(doc_text, doc_id)
 
     def _get_fallback_profile(self, doc_text: str, doc_id: str = None) -> DocumentProfile:
-        """
-        Generate fallback profile if LLM call fails.
-
-        Uses simple heuristics as safety net.
-        """
+        """Generate fallback profile if LLM call fails (uses simple heuristics as safety net)."""
         return {
             "doc_type": "other",
             "doc_type_description": f"Unknown document type (LLM profiling failed for {doc_id or 'unknown'})",
@@ -315,15 +281,7 @@ IMPORTANT INSTRUCTIONS:
         }
 
     def profile_corpus(self, documents: list[tuple[str, str]]) -> dict[str, DocumentProfile]:
-        """
-        Profile multiple documents.
-
-        Args:
-            documents: List of (doc_id, doc_text) tuples
-
-        Returns:
-            Dictionary mapping doc_id to DocumentProfile
-        """
+        """Profile multiple documents, returning dict mapping doc_id to DocumentProfile."""
         profiles = {}
         for doc_id, doc_text in documents:
             profiles[doc_id] = self.profile_document(doc_text, doc_id)

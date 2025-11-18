@@ -35,8 +35,8 @@ import re
 
 class ClaimDecomposition(TypedDict):
     """Structured output schema for claim extraction"""
-    claims: List[str]  # Atomic factual claims
-    reasoning: str  # Brief explanation of decomposition
+    claims: List[str]
+    reasoning: str
 
 
 class NLIHallucinationDetector:
@@ -63,11 +63,6 @@ class NLIHallucinationDetector:
 
         Zero-shot NLI baseline achieving ~0.65-0.70 F1.
         Production systems (0.83 F1) require fine-tuning on RAGTruth dataset.
-
-        Args:
-            nli_model_name: CrossEncoder NLI model for entailment detection
-            llm_model: LLM for claim decomposition
-            entailment_threshold: Score threshold for entailment (default: 0.7, research-backed)
         """
         from sentence_transformers import CrossEncoder
 
@@ -80,16 +75,7 @@ class NLIHallucinationDetector:
         """
         Decompose answer into atomic factual claims using LLM.
 
-        Each claim should be:
-        - Atomic: Single factual statement
-        - Verifiable: Can be checked against context
-        - Self-contained: Understandable without additional context
-
-        Args:
-            answer: Generated answer text
-
-        Returns:
-            List of atomic factual claims
+        Each claim should be atomic (single fact), verifiable, and self-contained.
         """
         decomposition_prompt = f"""Extract all factual claims from this answer.
 
@@ -123,63 +109,35 @@ Provide:
 
     def verify_claim_entailment(self, claim: str, context: str) -> dict:
         """
-        Verify if a claim is entailed by context using NLI model.
+        Verify if claim is entailed by context using NLI model.
 
-        NLI labels:
-        - Entailment: Claim is supported by context (score > threshold)
-        - Neutral: Cannot determine (score around 0.33)
-        - Contradiction: Claim contradicts context (score < threshold)
-
-        Args:
-            claim: Single factual claim to verify
-            context: Retrieved context documents
-
-        Returns:
-            {
-                "entailment_score": float,  # Probability of entailment
-                "label": str,  # "entailment", "neutral", or "contradiction"
-                "supported": bool  # True if entailment score > threshold
-            }
+        Returns dict with entailment_score, label, and supported flag.
         """
         import numpy as np
 
-        # NLI models expect premise-hypothesis pairs
-        # Premise: context (what we know to be true)
-        # Hypothesis: claim (what we're testing)
         pairs = [[context, claim]]
-
-        # Get NLI predictions with softmax to convert logits to probabilities
-        # For nli-deberta-v3-base: outputs [contradiction, neutral, entailment] logits
         scores = self.nli_model.predict(
             pairs,
             convert_to_tensor=False,
-            apply_softmax=True  # Convert logits to probabilities
+            apply_softmax=True
         )
 
-        # Extract probabilities
-        # For nli-deberta-v3-base: [contradiction, neutral, entailment]
         if len(scores.shape) > 1:
-            # Multi-class output: [contradiction, neutral, entailment]
             contradiction_prob = float(scores[0][0])
             neutral_prob = float(scores[0][1])
             entailment_prob = float(scores[0][2])
         else:
-            # Unexpected format - use as-is
             entailment_prob = float(scores[0])
             contradiction_prob = 0.0
             neutral_prob = 0.0
 
-        # Determine label and support based on research-backed best practices
-        # Standard label mapping for RAG hallucination detection:
-        # - Entailment (> threshold): SUPPORTED (explicitly stated in context)
-        # - Neutral: UNSUPPORTED (cannot verify from context - treat as hallucination)
-        # - Contradiction: UNSUPPORTED (conflicts with context)
-        #
-        # Research: Production systems map neutral → unsupported explicitly.
-        # Zero-shot NLI achieves ~0.65-0.70 F1 with this mapping.
-        # Higher F1 (0.79-0.83) requires fine-tuning on RAGTruth dataset.
+        # Research-backed label mapping:
+        # - Entailment (> threshold): SUPPORTED
+        # - Neutral: UNSUPPORTED (standard practice)
+        # - Contradiction: UNSUPPORTED
+        # Zero-shot achieves ~0.65-0.70 F1 with this mapping
+        # Production (0.79-0.83 F1) requires fine-tuning on RAGTruth
 
-        # Identify the predicted label
         max_prob = max(contradiction_prob, neutral_prob, entailment_prob)
 
         if entailment_prob == max_prob:
@@ -187,15 +145,12 @@ Provide:
                 label = "entailment"
                 supported = True
             else:
-                # Low entailment probability - treat as unsupported
                 label = "entailment_low"
                 supported = False
         elif contradiction_prob == max_prob:
             label = "contradiction"
             supported = False
         else:
-            # Neutral is most probable
-            # Research finding: neutral → UNSUPPORTED (standard practice)
             label = "neutral"
             supported = False
 
@@ -211,24 +166,10 @@ Provide:
         """
         Verify groundedness of answer using NLI-based claim verification.
 
-        Two-step process:
-        1. Decompose answer into atomic claims
-        2. Verify each claim against context using NLI
+        Two-step process: (1) Decompose answer into atomic claims, (2) Verify each claim using NLI.
 
-        Args:
-            answer: Generated answer text
-            context: Retrieved context documents (concatenated)
-
-        Returns:
-            {
-                "claims": List[str],  # Extracted claims
-                "entailment_scores": List[float],  # Per-claim NLI scores
-                "supported": List[bool],  # Per-claim support status
-                "unsupported_claims": List[str],  # Claims not supported
-                "groundedness_score": float,  # supported / total (0.0-1.0)
-                "claim_details": List[dict],  # Full NLI results per claim
-                "reasoning": str  # Summary of verification
-            }
+        Returns dict with claims, entailment_scores, supported flags, unsupported_claims,
+        groundedness_score (supported/total), claim_details, and reasoning.
         """
         if not answer or not context:
             return {
@@ -241,7 +182,6 @@ Provide:
                 "reasoning": "Empty answer or context"
             }
 
-        # Step 1: Decompose answer into claims
         claims = self.decompose_into_claims(answer)
 
         if not claims:
@@ -255,7 +195,6 @@ Provide:
                 "reasoning": "No claims extracted from answer"
             }
 
-        # Step 2: Verify each claim using NLI
         claim_details = []
         entailment_scores = []
         supported_flags = []
@@ -276,12 +215,9 @@ Provide:
             if not verification["supported"]:
                 unsupported_claims.append(claim)
 
-        # Calculate groundedness score
         total_claims = len(claims)
         supported_count = sum(supported_flags)
         groundedness_score = supported_count / total_claims if total_claims > 0 else 1.0
-
-        # Generate reasoning
         reasoning = f"Verified {total_claims} claims: {supported_count} supported, {len(unsupported_claims)} unsupported"
 
         return {
