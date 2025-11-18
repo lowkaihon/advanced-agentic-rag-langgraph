@@ -21,14 +21,11 @@ class ConversationalRewriter:
         model = model or spec.name
         temperature = temperature if temperature is not None else spec.temperature
 
-        model_kwargs = {}
-        if spec.reasoning_effort:
-            model_kwargs["reasoning_effort"] = spec.reasoning_effort
-
         self.llm = ChatOpenAI(
             model=model,
             temperature=temperature,
-            model_kwargs=model_kwargs
+            reasoning_effort=spec.reasoning_effort,
+            verbosity=spec.verbosity
         )
 
     def rewrite(

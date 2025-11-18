@@ -311,7 +311,7 @@ PREMIUM_TIER = TierConfig(
     strategy_optimization=ModelSpec(
         name="gpt-5-nano",
         temperature=0.7,
-        reasoning_effort=None,
+        reasoning_effort="low",
         verbosity="low",
         few_shot_count=0  # Lightweight, rare path
     ),

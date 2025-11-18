@@ -21,13 +21,11 @@ import json
 def _get_answer_generation_llm():
     """Get LLM for answer generation with tier-based configuration."""
     spec = get_model_for_task("answer_generation")
-    model_kwargs = {}
-    if spec.reasoning_effort:
-        model_kwargs["reasoning_effort"] = spec.reasoning_effort
     return ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
-        model_kwargs=model_kwargs
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
     )
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
@@ -154,13 +152,11 @@ def _should_skip_expansion_llm(query: str) -> bool:
     More accurate than heuristics - handles context and intent.
     """
     spec = get_model_for_task("expansion_decision")
-    model_kwargs = {}
-    if spec.reasoning_effort:
-        model_kwargs["reasoning_effort"] = spec.reasoning_effort
     expansion_llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
-        model_kwargs=model_kwargs
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
     )
 
     prompt = f"""Should this query be expanded into multiple variations for better retrieval?
@@ -527,13 +523,11 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     ])
 
     spec = get_model_for_task("retrieval_quality_eval")
-    model_kwargs = {}
-    if spec.reasoning_effort:
-        model_kwargs["reasoning_effort"] = spec.reasoning_effort
     quality_llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
-        model_kwargs=model_kwargs
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
     )
     structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
@@ -835,13 +829,11 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
     spec = get_model_for_task("answer_quality_eval")
-    model_kwargs = {}
-    if spec.reasoning_effort:
-        model_kwargs["reasoning_effort"] = spec.reasoning_effort
     quality_llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
-        model_kwargs=model_kwargs
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
     )
     structured_answer_llm = quality_llm.with_structured_output(AnswerQualityEvaluation)
 

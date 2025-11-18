@@ -24,14 +24,12 @@ class LLMMetadataReRanker:
         self.top_k = top_k
 
         spec = get_model_for_task("llm_reranking")
-        model_kwargs = {}
-        if spec.reasoning_effort:
-            model_kwargs["reasoning_effort"] = spec.reasoning_effort
 
         self.llm = ChatOpenAI(
             model=spec.name,
             temperature=spec.temperature,
-            model_kwargs=model_kwargs
+            reasoning_effort=spec.reasoning_effort,
+            verbosity=spec.verbosity
         )
         self.structured_llm = self.llm.with_structured_output(RankingResult)
 

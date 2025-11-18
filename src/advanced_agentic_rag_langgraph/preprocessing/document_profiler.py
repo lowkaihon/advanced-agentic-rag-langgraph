@@ -144,14 +144,71 @@ class DocumentProfiler:
 
         prompt = f"""Analyze this document comprehensively for retrieval optimization.
 
+<document_metadata>
 Document ID: {doc_id or 'unknown'}
-Content (stratified sample from full document): {content}
-{'... [sampled from full document, original length: ' + str(len(doc_text)) + ' chars]' if sampled else ''}
+{'Sampled from full document (original length: ' + str(len(doc_text)) + ' chars)' if sampled else 'Full document provided'}
+</document_metadata>
 
-Pre-detected signals (confirm and classify if present):
-- Code patterns detected: {signals['has_code_signal']}
-- Math notation detected: {signals['has_math_signal']}
+<document_sample>
+{content}
+</document_sample>
 
+<pre_detected_signals>
+Code patterns detected: {signals['has_code_signal']}
+Math notation detected: {signals['has_math_signal']}
+</pre_detected_signals>
+
+<few_shot_examples>
+Example 1 - Legal Document:
+Document: "SOFTWARE LICENSE AGREEMENT. This Agreement is entered into as of January 1, 2024, by and between Licensor and Licensee. 1. GRANT OF LICENSE. Licensor hereby grants to Licensee a non-exclusive, non-transferable license..."
+Profile:
+- doc_type: legal_document
+- doc_type_description: "Software license agreement establishing terms between licensor and licensee"
+- technical_density: 0.3
+- reading_level: intermediate
+- domain_tags: ["legal", "software", "contracts"]
+- best_retrieval_strategy: keyword
+- strategy_confidence: 0.85
+- has_math: False
+- has_code: False
+- summary: "Legal agreement defining software licensing terms, restrictions, and obligations between parties. Focuses on rights, limitations, and compliance requirements."
+- key_concepts: ["license_grant", "intellectual_property", "terms_and_conditions", "compliance", "liability"]
+Reasoning: Formal legal language with numbered clauses, contract structure, legal terminology like "hereby grants", "non-exclusive". Keyword search optimal for finding specific clauses and legal terms.
+
+Example 2 - Educational Tutorial:
+Document: "Beginner's Guide to Photography. Chapter 1: Understanding Aperture. Aperture is one of three elements that control exposure. Think of it like the pupil of your eye - it opens wider in dim light and closes in bright light. Let's start with the basics: What is f-stop? The f-stop number tells you how wide the aperture opening is..."
+Profile:
+- doc_type: tutorial
+- doc_type_description: "Beginner photography tutorial teaching fundamental camera settings with practical examples"
+- technical_density: 0.4
+- reading_level: beginner
+- domain_tags: ["photography", "education", "camera_techniques"]
+- best_retrieval_strategy: semantic
+- strategy_confidence: 0.9
+- has_math: False
+- has_code: False
+- summary: "Step-by-step photography tutorial explaining aperture settings for beginners. Uses analogies and simple explanations to teach camera fundamentals without assuming prior knowledge."
+- key_concepts: ["aperture", "f_stop", "exposure", "camera_settings", "beginner_techniques"]
+Reasoning: Instructional tone, uses analogies ("like the pupil of your eye"), assumes no prior knowledge, step-by-step structure. Semantic search best for conceptual understanding questions.
+
+Example 3 - Business Report:
+Document: "Q3 2023 Financial Performance Report. Executive Summary: Revenue increased 23% YoY to $145M, driven by enterprise segment growth. Key Metrics: - ARR: $520M (+31% YoY) - Gross Margin: 72% (up 3pp) - Customer Acquisition Cost: $12K (down 15%) Enterprise segment represented 68% of new bookings..."
+Profile:
+- doc_type: business_report
+- doc_type_description: "Quarterly financial performance report with revenue metrics and business analysis"
+- technical_density: 0.5
+- reading_level: intermediate
+- domain_tags: ["finance", "business", "quarterly_results"]
+- best_retrieval_strategy: hybrid
+- strategy_confidence: 0.75
+- has_math: False
+- has_code: False
+- summary: "Q3 financial report showing strong revenue growth and key business metrics. Highlights enterprise segment performance and operational efficiency improvements."
+- key_concepts: ["revenue_growth", "ARR", "gross_margin", "customer_acquisition", "enterprise_segment"]
+Reasoning: Mix of exact metrics (need keyword search for "$145M", "23% YoY") and conceptual analysis (need semantic for "enterprise growth drivers"). Hybrid strategy optimal for both specific numbers and business insights.
+</few_shot_examples>
+
+<classification_criteria>
 Profile the document according to these criteria:
 
 1. **doc_type**: What kind of document is this? Choose the MOST SPECIFIC type:
@@ -247,13 +304,16 @@ Profile the document according to these criteria:
 
 11. **key_concepts**: List the top 5 key concepts, terms, or topics covered.
     Be specific (e.g., "multi-head attention" not just "attention")
+</classification_criteria>
 
-IMPORTANT INSTRUCTIONS:
+<important_instructions>
 - Be SPECIFIC with doc_type (choose conference_paper over research_paper if it's from a conference)
 - Always provide doc_type_description with meaningful clarification
 - Consider the ENTIRE document context, not just the beginning
 - Domain tags should be specific and relevant (avoid generic tags like "general" unless truly general)
 - If document is truly novel or unique, use "other" and describe it well
+- Follow the reasoning patterns shown in the few-shot examples above
+</important_instructions>
 """
 
         try:

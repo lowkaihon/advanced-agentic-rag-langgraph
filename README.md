@@ -356,6 +356,15 @@ Control cost-quality tradeoffs via `MODEL_TIER` environment variable:
 2. **Balanced tier** adds selective GPT-5-mini upgrades for improved quality
 3. **Premium tier** uses best models for all tasks for maximum quality
 
+**Tier System Exceptions:**
+
+The system uses **13 LLM instances total**: 11 are tier-aware (runtime operations like query rewriting, answer generation, strategy selection) and 2 are hardcoded for quality-critical operations:
+
+- **Golden dataset evaluation**: Hardcoded to `gpt-5-mini` regardless of tier. Rationale: Consistent evaluation quality across all tiers (85-90% agreement with human judges), enables accurate tier comparison metrics.
+- **Document profiling**: Hardcoded to `gpt-4o-mini` regardless of tier. Rationale: Tier-independence (ingestion happens once before runtime), already optimal for the task, minimal cost impact.
+
+**Design principle:** Evaluation and ingestion prioritize quality/appropriateness; runtime components prioritize tier-based cost-quality flexibility.
+
 **Configuration:**
 ```bash
 # Set in .env

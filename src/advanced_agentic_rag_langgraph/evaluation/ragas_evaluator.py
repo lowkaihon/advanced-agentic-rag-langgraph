@@ -54,14 +54,11 @@ class RAGASEvaluator:
         llm_model = llm_model or spec.name
         temperature = temperature if temperature is not None else spec.temperature
 
-        model_kwargs = {}
-        if spec.reasoning_effort:
-            model_kwargs["reasoning_effort"] = spec.reasoning_effort
-
         self.evaluator_llm = ChatOpenAI(
             model=llm_model,
             temperature=temperature,
-            model_kwargs=model_kwargs
+            reasoning_effort=spec.reasoning_effort,
+            verbosity=spec.verbosity
         )
         self.evaluator_embeddings = OpenAIEmbeddings(
             model=embedding_model if embedding_model else "text-embedding-3-small"

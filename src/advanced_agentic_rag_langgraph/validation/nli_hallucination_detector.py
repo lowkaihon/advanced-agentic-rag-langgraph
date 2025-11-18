@@ -77,14 +77,11 @@ class NLIHallucinationDetector:
         spec = get_model_for_task("nli_claim_decomposition")
         llm_model = llm_model or spec.name
 
-        model_kwargs = {}
-        if spec.reasoning_effort:
-            model_kwargs["reasoning_effort"] = spec.reasoning_effort
-
         self.llm = ChatOpenAI(
             model=llm_model,
             temperature=spec.temperature,
-            model_kwargs=model_kwargs
+            reasoning_effort=spec.reasoning_effort,
+            verbosity=spec.verbosity
         )
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
