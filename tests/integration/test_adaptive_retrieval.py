@@ -54,8 +54,8 @@ def test_adaptive_retrieval_workflow():
 
         # Create initial state
         initial_state = {
-            "question": test_case["query"],
-            "original_query": test_case["query"],
+            "user_question": test_case["query"],
+            "baseline_query": test_case["query"],
             "conversation_history": [],
             "retrieval_attempts": 0,
             "query_expansions": [],
@@ -72,7 +72,7 @@ def test_adaptive_retrieval_workflow():
             print("\n" + "-"*80)
             print("RESULTS")
             print("-"*80)
-            print(f"Original Query: {result.get('question', 'N/A')}")
+            print(f"Original Query: {result.get('user_question', 'N/A')}")
             print(f"Initial Strategy: {result.get('retrieval_strategy', 'N/A')}")
             print(f"Retrieval Attempts: {result.get('retrieval_attempts', 0)}")
 

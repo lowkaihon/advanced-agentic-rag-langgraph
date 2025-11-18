@@ -326,14 +326,24 @@ Use for: The keyword/sparse component of hybrid retrieval systems (exact term ma
 ### LangGraph Best Practices
 
 **State Reducers** - add_messages vs operator.add for state management
-Use `add_messages` for message history (idempotent, deduplicates by message ID), `operator.add` for generic list accumulation. This system uses selective accumulation: `operator.add` for messages/docs/history, direct replacement for query_expansions (ensures expansion-query alignment).
+Use `add_messages` for message history (idempotent, deduplicates by message ID), `operator.add` for generic list accumulation. This system uses selective accumulation: `add_messages` for messages, `operator.add` for docs/history, direct replacement for query_expansions (ensures expansion-query alignment).
 https://docs.langchain.com/oss/python/langgraph/use-graph-api#messagesstate
 Code Pattern:
 ```python
 # state.py - Selective accumulation
 class AdvancedRAGState(TypedDict):
-    messages: Annotated[list[BaseMessage], operator.add]  # Accumulate
-    query_expansions: list[str]  # Regenerate fresh per iteration
+    # Always set (no Optional)
+    user_question: str
+    baseline_query: str
+    conversation_history: list[dict[str, str]]
+
+    # Conditionally set (Optional)
+    active_query: Optional[str]
+    query_expansions: Optional[list[str]]  # Regenerated per iteration (not accumulated)
+
+    # Accumulated with reducers
+    messages: Annotated[list[BaseMessage], add_messages]  # Idempotent
+    retrieved_docs: Annotated[list[str], operator.add]
 ```
 
 **Router Function Purity** - Deterministic conditional edges without side effects

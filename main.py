@@ -15,10 +15,9 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
     
     # Initial state
     initial_state = {
-        "original_query": question,
+        "baseline_query": question,
         "query_expansions": [],
-        "rewritten_query": "",
-        "current_query": question,
+        "active_query": question,
         "retrieval_strategy": "hybrid",
         "messages": [],
         "retrieved_docs": [],
@@ -63,8 +62,11 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
                     bar = "#" * int(quality * 10) + "-" * (10 - int(quality * 10))
                     print(f"Retrieval Quality: [{bar}] {quality:.0%}")
                 
-                if "rewritten_query" in node_state and node_state["rewritten_query"]:
-                    print(f"Rewritten Query: {node_state['rewritten_query']}")
+                if "active_query" in node_state and node_state["active_query"]:
+                    current_query = node_state["active_query"]
+                    baseline_query = node_state.get("baseline_query", "")
+                    if current_query != baseline_query:
+                        print(f"Rewritten Query: {current_query}")
                 
                 if "final_answer" in node_state and node_state["final_answer"]:
                     answer = node_state["final_answer"]
@@ -93,7 +95,7 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
     print(f"Retrieval Attempts: {final_values.get('retrieval_attempts', 0)}")
     print(f"Retrieval Quality: {final_values.get('retrieval_quality_score', 0):.0%}")
     print(f"Strategy Used: {final_values.get('retrieval_strategy', 'hybrid').upper()}")
-    print(f"Query Rewritten: {'Yes' if final_values.get('rewritten_query') else 'No'}")
+    print(f"Query Rewritten: {'Yes' if final_values.get('active_query') != final_values.get('baseline_query') else 'No'}")
     print(f"Query Variations: {len(final_values.get('query_expansions', []))}")
     
     return final_values

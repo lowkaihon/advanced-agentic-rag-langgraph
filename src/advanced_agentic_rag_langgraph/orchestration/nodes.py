@@ -56,7 +56,7 @@ def conversational_rewrite_node(state: dict) -> dict:
 
     This node runs before query expansion to ensure queries have proper context.
     """
-    question = state.get("question", state.get("original_query", ""))
+    question = state.get("user_question", state.get("baseline_query", ""))
     conversation_history = state.get("conversation_history", [])
 
     rewritten_query, reasoning = conversational_rewriter.rewrite(
@@ -73,8 +73,8 @@ def conversational_rewrite_node(state: dict) -> dict:
         print(f"{'='*60}\n")
 
     return {
-        "original_query": rewritten_query,
-        "question": question,
+        "baseline_query": rewritten_query,
+        "user_question": question,
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
     }
@@ -158,7 +158,7 @@ def query_expansion_node(state: dict) -> dict:
 
         next_strategy = select_next_strategy(current_strategy, issues)
         optimized_query = optimize_query_for_strategy(
-            query=state.get("current_query", state["original_query"]),
+            query=state.get("active_query", state["baseline_query"]),
             new_strategy=next_strategy,
             old_strategy=current_strategy,
             issues=issues
@@ -175,7 +175,7 @@ def query_expansion_node(state: dict) -> dict:
 
         query = optimized_query
         updates = {
-            "current_query": optimized_query,
+            "active_query": optimized_query,
             "retrieval_strategy": next_strategy,
             "strategy_switch_reason": f"Early detection: {', '.join(issues)}",
             "strategy_changed": True,
@@ -194,7 +194,7 @@ def query_expansion_node(state: dict) -> dict:
             next_strategy = "semantic"
 
         optimized_query = optimize_query_for_strategy(
-            query=state.get("current_query", state["original_query"]),
+            query=state.get("active_query", state["baseline_query"]),
             new_strategy=next_strategy,
             old_strategy=current_strategy,
             issues=["retrieval_caused_hallucination"]
@@ -211,7 +211,7 @@ def query_expansion_node(state: dict) -> dict:
 
         query = optimized_query
         updates = {
-            "current_query": optimized_query,
+            "active_query": optimized_query,
             "retrieval_strategy": next_strategy,
             "strategy_changed": True,
             "query_expansions": [],
@@ -270,13 +270,13 @@ def query_expansion_node(state: dict) -> dict:
         }
 
         strategy_changed_flag = (next_strategy != current_strategy)
-        optimized_query = state.get("current_query", state["original_query"])
+        optimized_query = state.get("active_query", state["baseline_query"])
 
         if strategy_changed_flag:
             answer_quality_issues = state.get("answer_quality_issues", [])
             combined_issues = list(set(retrieval_quality_issues + answer_quality_issues))
             optimized_query = optimize_query_for_strategy(
-                query=state.get("current_query", state["original_query"]),
+                query=state.get("active_query", state["baseline_query"]),
                 new_strategy=next_strategy,
                 old_strategy=current_strategy,
                 issues=combined_issues
@@ -298,7 +298,7 @@ def query_expansion_node(state: dict) -> dict:
 
         query = optimized_query
         updates = {
-            "current_query": optimized_query,
+            "active_query": optimized_query,
             "retrieval_strategy": next_strategy,
             "refinement_history": new_history,
             "query_expansions": [],
@@ -306,26 +306,26 @@ def query_expansion_node(state: dict) -> dict:
         }
         state.update(updates)
 
-    query = state.get("current_query", state["original_query"])
+    query = state.get("active_query", state["baseline_query"])
     result = {}
 
     if early_switch:
         result.update({
-            "current_query": state["current_query"],
+            "active_query": state["active_query"],
             "retrieval_strategy": state["retrieval_strategy"],
-            "strategy_switch_reason": state["strategy_switch_reason"],
+            "strategy_switch_reason": state.get("strategy_switch_reason", ""),
             "strategy_changed": state["strategy_changed"],
         })
     elif retrieval_caused_hallucination and attempts < 3:
         result.update({
-            "current_query": state["current_query"],
+            "active_query": state["active_query"],
             "retrieval_strategy": state["retrieval_strategy"],
             "strategy_changed": state["strategy_changed"],
             "retrieval_caused_hallucination": state["retrieval_caused_hallucination"],
         })
     elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
         result.update({
-            "current_query": state["current_query"],
+            "active_query": state["active_query"],
             "retrieval_strategy": state["retrieval_strategy"],
             "refinement_history": state["refinement_history"],
             "strategy_changed": state["strategy_changed"],
@@ -340,7 +340,7 @@ def query_expansion_node(state: dict) -> dict:
 
         result.update({
             "query_expansions": [query],
-            "current_query": query,
+            "active_query": query,
         })
         return result
 
@@ -353,7 +353,7 @@ def query_expansion_node(state: dict) -> dict:
 
     result.update({
         "query_expansions": expansions,
-        "current_query": query,
+        "active_query": query,
     })
     return result
 
@@ -363,7 +363,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
 
     Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
     """
-    query = state["current_query"]
+    query = state["active_query"]
     corpus_stats = state.get("corpus_stats", {})
 
     strategy, confidence, reasoning = strategy_selector.select_strategy(
@@ -404,7 +404,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     doc_ranks = {}
     doc_objects = {}
 
-    for query in state["query_expansions"]:
+    for query in state.get("query_expansions", []):
         docs = adaptive_retriever.retrieve_without_reranking(query, strategy=strategy)
 
         for rank, doc in enumerate(docs):
@@ -438,7 +438,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     print(f"TWO-STAGE RERANKING (After RRF)")
     print(f"Input: {len(reranking_input)} docs (from RRF top-40)")
 
-    query_for_reranking = state.get('rewritten_query', state.get('original_query', ''))
+    query_for_reranking = state.get('active_query', state.get('baseline_query', ''))
     ranked_results = adaptive_retriever.reranker.rank(
         query_for_reranking,
         reranking_input
@@ -459,7 +459,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     quality_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
     structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
-    quality_prompt = f"""Query: {state['original_query']}
+    quality_prompt = f"""Query: {state['baseline_query']}
 
 Retrieved documents (top 5 after reranking):
 {docs_text}
@@ -589,7 +589,7 @@ def rewrite_and_refine_node(state: dict) -> dict:
     Uses specific feedback from retrieval_quality_issues to guide rewriting.
     """
 
-    query = state["current_query"]
+    query = state["active_query"]
     quality = state.get("retrieval_quality_score", 0)
     issues = state.get("retrieval_quality_issues", [])
 
@@ -640,8 +640,7 @@ def rewrite_and_refine_node(state: dict) -> dict:
     print(f"Note: Query expansions cleared - will regenerate for rewritten query\n")
 
     return {
-        "current_query": rewritten,
-        "rewritten_query": rewritten,
+        "active_query": rewritten,
         "query_expansions": [],
         "messages": [AIMessage(content=f"Query rewritten: {query} → {rewritten}")],
     }
@@ -656,7 +655,7 @@ def answer_generation_with_quality_node(state: dict) -> dict:
     Handles retry counter increment (moved from router for purity).
     """
 
-    question = state["original_query"]
+    question = state["baseline_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
     quality_score = state.get("retrieval_quality_score", 0)
     retry_needed = state.get("retry_needed", False)
@@ -820,7 +819,7 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
     Handles re-retrieval flag setting (moved from router for purity).
     Uses vRAG-Eval framework with adaptive thresholds.
     """
-    question = state["original_query"]
+    question = state["baseline_query"]
     answer = state.get("final_answer", "")
     retrieval_quality = state.get("retrieval_quality_score", 0)
     retrieval_quality_issues = state.get("retrieval_quality_issues", [])

@@ -146,8 +146,8 @@ def test_full_pipeline():
 
     # Create initial state
     initial_state = {
-        "question": test_query,
-        "original_query": test_query,
+        "user_question": test_query,
+        "baseline_query": test_query,
         "conversation_history": [],
         "retrieval_attempts": 0,
         "query_expansions": [],
@@ -164,7 +164,7 @@ def test_full_pipeline():
         print("\n" + "-"*80)
         print("PIPELINE RESULTS")
         print("-"*80)
-        print(f"\nOriginal Query: {result.get('question', 'N/A')}")
+        print(f"\nOriginal Query: {result.get('user_question', 'N/A')}")
         print(f"Strategy Used: {result.get('retrieval_strategy', 'N/A')}")
         print(f"Retrieval Attempts: {result.get('retrieval_attempts', 0)}")
         print(f"Retrieval Quality: {result.get('retrieval_quality_score', 0):.0%}")
