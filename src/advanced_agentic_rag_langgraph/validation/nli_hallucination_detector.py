@@ -70,35 +70,23 @@ class NLIHallucinationDetector:
             llm_model: LLM for claim decomposition (None = use tier config)
             entailment_threshold: Minimum entailment score to consider claim supported
         """
-        import os
+        from sentence_transformers import CrossEncoder
 
-        # Check for mock mode (allows running tests without model downloads)
-        self.use_mock = os.getenv("USE_MOCK_MODELS", "false").lower() == "true"
+        self.nli_model = CrossEncoder(nli_model_name)
 
-        if self.use_mock:
-            print("[MOCK MODE] NLI detector using placeholder results (no model downloads)")
-            self.nli_model = None
-            self.llm = None
-            self.structured_llm = None
-        else:
-            from sentence_transformers import CrossEncoder
+        spec = get_model_for_task("nli_claim_decomposition")
+        llm_model = llm_model or spec.name
 
-            self.nli_model = CrossEncoder(nli_model_name)
+        model_kwargs = {}
+        if spec.reasoning_effort:
+            model_kwargs["reasoning_effort"] = spec.reasoning_effort
 
-            spec = get_model_for_task("nli_claim_decomposition")
-            llm_model = llm_model or spec.name
-
-            model_kwargs = {}
-            if spec.reasoning_effort:
-                model_kwargs["reasoning_effort"] = spec.reasoning_effort
-
-            self.llm = ChatOpenAI(
-                model=llm_model,
-                temperature=spec.temperature,
-                model_kwargs=model_kwargs
-            )
-            self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
-
+        self.llm = ChatOpenAI(
+            model=llm_model,
+            temperature=spec.temperature,
+            model_kwargs=model_kwargs
+        )
+        self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
 
     def decompose_into_claims(self, answer: str) -> List[str]:
@@ -107,10 +95,6 @@ class NLIHallucinationDetector:
 
         Each claim should be atomic (single fact), verifiable, and self-contained.
         """
-        # Mock mode: Simple sentence splitting
-        if self.use_mock:
-            return [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
-
         from advanced_agentic_rag_langgraph.prompts import get_prompt
 
         decomposition_prompt = get_prompt("nli_claim_decomposition", answer=answer)
@@ -129,29 +113,6 @@ class NLIHallucinationDetector:
 
         Returns dict with entailment_score, label, and supported flag.
         """
-        # Mock mode: Return fake but realistic scores
-        if self.use_mock:
-            # Simple heuristic: check if some words from claim appear in context
-            claim_words = set(claim.lower().split())
-            context_words = set(context.lower().split())
-            overlap = len(claim_words & context_words) / len(claim_words) if claim_words else 0
-
-            # Generate fake scores based on overlap
-            entailment_prob = min(0.6 + overlap * 0.3, 0.95)
-            contradiction_prob = max(0.05, 0.2 - overlap * 0.15)
-            neutral_prob = 1.0 - entailment_prob - contradiction_prob
-
-            supported = entailment_prob > self.entailment_threshold
-            label = "entailment" if supported else "neutral"
-
-            return {
-                "entailment_score": entailment_prob,
-                "contradiction_score": contradiction_prob,
-                "neutral_score": neutral_prob,
-                "label": label,
-                "supported": supported
-            }
-
         import numpy as np
 
         pairs = [[context, claim]]
@@ -268,11 +229,3 @@ class NLIHallucinationDetector:
             "claim_details": claim_details,
             "reasoning": reasoning
         }
-
-    def detect(self, answer: str, context: str) -> dict:
-        """
-        Alias for verify_groundedness() to maintain API compatibility.
-
-        Returns dict with groundedness_score and claim verification details.
-        """
-        return self.verify_groundedness(answer, context)

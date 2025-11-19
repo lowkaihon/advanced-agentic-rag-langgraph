@@ -24,27 +24,18 @@ class CrossEncoderReRanker:
         max_length: int = 512,  # MiniLM models trained with 512 token limit
         batch_size: int = 16
     ):
-        import os
-
         self.top_k = top_k
         self.batch_size = batch_size
 
-        # Check for mock mode (allows running tests without model downloads)
-        self.use_mock = os.getenv("USE_MOCK_MODELS", "false").lower() == "true"
+        try:
+            from sentence_transformers import CrossEncoder
+        except ImportError:
+            raise ImportError(
+                "sentence-transformers is required for CrossEncoderReRanker.\n"
+                "Install with: uv add sentence-transformers"
+            )
 
-        if self.use_mock:
-            print("[MOCK MODE] CrossEncoder using placeholder scores (no model download)")
-            self.model = None
-        else:
-            try:
-                from sentence_transformers import CrossEncoder
-            except ImportError:
-                raise ImportError(
-                    "sentence-transformers is required for CrossEncoderReRanker.\n"
-                    "Install with: uv add sentence-transformers"
-                )
-
-            self.model = CrossEncoder(model_name, max_length=max_length)
+        self.model = CrossEncoder(model_name, max_length=max_length)
 
     def rank(
         self,
@@ -54,15 +45,6 @@ class CrossEncoderReRanker:
     ) -> List[Tuple[Document, float]]:
         if not documents:
             return []
-
-        # Mock mode: Return fake decreasing scores
-        if self.use_mock:
-            import numpy as np
-            num_docs = len(documents)
-            # Generate fake scores with slight variation (0.9, 0.85, 0.8, ...)
-            scores = np.linspace(0.9, 0.5, num_docs)
-            ranked = list(zip(documents, scores))
-            return ranked[:self.top_k]
 
         pairs = [
             [query, doc.page_content[:truncate_content]]
@@ -87,13 +69,6 @@ class CrossEncoderReRanker:
     ) -> List[float]:
         if not documents:
             return []
-
-        # Mock mode: Return fake scores
-        if self.use_mock:
-            import numpy as np
-            num_docs = len(documents)
-            scores = np.linspace(0.9, 0.5, num_docs)
-            return scores.tolist()
 
         pairs = [
             [query, doc.page_content[:truncate_content]]

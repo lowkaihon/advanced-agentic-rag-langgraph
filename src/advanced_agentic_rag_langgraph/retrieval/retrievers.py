@@ -76,32 +76,8 @@ class SemanticRetriever:
     """Semantic retrieval using embeddings"""
 
     def __init__(self, documents: list[Document]):
-        import os
-
-        self.documents = documents
-        self.use_mock = os.getenv("USE_MOCK_MODELS", "false").lower() == "true"
-
-        if self.use_mock:
-            print("[MOCK MODE] SemanticRetriever using simple keyword matching (no embeddings)")
-            self.vectorstore = None
-        else:
-            embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-            self.vectorstore = FAISS.from_documents(documents, embeddings)
+        embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        self.vectorstore = FAISS.from_documents(documents, embeddings)
 
     def retrieve(self, query: str, k: int = 5) -> list[Document]:
-        if self.use_mock:
-            # Mock retrieval: Simple keyword matching based on query terms
-            query_words = set(query.lower().split())
-
-            # Score documents by word overlap
-            scored_docs = []
-            for doc in self.documents:
-                doc_words = set(doc.page_content.lower().split())
-                overlap = len(query_words & doc_words)
-                scored_docs.append((doc, overlap))
-
-            # Sort by overlap score and return top k
-            scored_docs.sort(key=lambda x: x[1], reverse=True)
-            return [doc for doc, score in scored_docs[:k]]
-        else:
-            return self.vectorstore.similarity_search(query, k=k)
+        return self.vectorstore.similarity_search(query, k=k)
