@@ -59,7 +59,7 @@ def retrieve_node(state: PureSemanticRAGState) -> dict:
     query = state["user_question"]
 
     # Single semantic search, no RRF, no reranking
-    docs = adaptive_retriever.retrieve_without_reranking(query, strategy="semantic", top_k=4)
+    docs = adaptive_retriever.retrieve_without_reranking(query, strategy="semantic", k_total=4)
 
     print(f"\n{'='*60}")
     print(f"PURE SEMANTIC RETRIEVAL")

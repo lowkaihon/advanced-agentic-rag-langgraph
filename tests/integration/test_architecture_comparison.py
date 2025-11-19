@@ -456,8 +456,8 @@ independent of model quality**:
    {inter_to_adv_f1:.0f}% F1@5 improvement
 
 4. **The value is in the architecture, not just the model:** All tiers use identical
-   BUDGET models (gpt-4o-mini), yet Advanced tier shows {basic_to_adv_f1:.0f}% improvement
-   over Basic through architecture alone
+   BUDGET models (gpt-4o-mini), yet Advanced tier shows {pure_to_adv_f1:.0f}% improvement
+   over Pure Semantic through architecture alone
 
 ---
 
