@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-11-19T06:24:06.805431",
+  "timestamp": "2025-11-19T06:39:55.265466",
   "model_tier": "BUDGET (gpt-4o-mini)",
   "dataset_size": 20,
   "tiers": {
@@ -19,7 +19,7 @@
         {
           "example_id": "attention_001",
           "query": "How many attention heads are used in the base Transformer model?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -29,7 +29,7 @@
         {
           "example_id": "attention_002",
           "query": "What is the dimensionality of the model (dmodel) in the base Transformer?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -39,7 +39,7 @@
         {
           "example_id": "attention_003",
           "query": "What is self-attention and how does it differ from traditional attention?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -49,7 +49,7 @@
         {
           "example_id": "attention_004",
           "query": "How does multi-head attention work and what are its benefits?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -59,7 +59,7 @@
         {
           "example_id": "attention_005",
           "query": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -69,7 +69,7 @@
         {
           "example_id": "bert_001",
           "query": "What does BERT stand for?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -79,7 +79,7 @@
         {
           "example_id": "bert_002",
           "query": "How many parameters does BERT-Base have?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -89,7 +89,7 @@
         {
           "example_id": "bert_003",
           "query": "What is masked language modeling (MLM) and how does BERT use it?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -99,7 +99,7 @@
         {
           "example_id": "bert_004",
           "query": "What is the Next Sentence Prediction (NSP) task in BERT?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -109,7 +109,7 @@
         {
           "example_id": "bert_005",
           "query": "How does BERT's pre-training approach differ from traditional autoregressive language models like GPT?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -119,7 +119,7 @@
         {
           "example_id": "ddpm_001",
           "query": "What is the forward diffusion process in DDPM?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -129,7 +129,7 @@
         {
           "example_id": "ddpm_002",
           "query": "How many diffusion steps (T) are typically used in DDPM?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -139,7 +139,7 @@
         {
           "example_id": "ddpm_003",
           "query": "What is the variational lower bound in DDPM and why is it important?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -149,7 +149,7 @@
         {
           "example_id": "ddpm_004",
           "query": "How does the reverse diffusion process work in DDPM?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -159,7 +159,7 @@
         {
           "example_id": "ddpm_005",
           "query": "Explain the mathematical derivation of the simplified training objective in DDPM and why it works better than the full variational bound.",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -169,7 +169,7 @@
         {
           "example_id": "cross_001",
           "query": "How is 'attention' used differently in the Transformer architecture compared to Vision Transformer (ViT)?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -179,7 +179,7 @@
         {
           "example_id": "cross_002",
           "query": "How does ViT adapt the Transformer architecture for computer vision tasks?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -189,7 +189,7 @@
         {
           "example_id": "cross_003",
           "query": "Compare the diffusion process in DDPM versus Consistency Models.",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -199,7 +199,7 @@
         {
           "example_id": "cross_004",
           "query": "How does RAPTOR improve upon standard RAG retrieval strategies?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
@@ -209,7 +209,7 @@
         {
           "example_id": "cross_005",
           "query": "Compare the generative modeling approaches of DDPM and WGAN-GP. What are the fundamental differences?",
-          "error": "AdaptiveRetriever.retrieve_without_reranking() got an unexpected keyword argument 'top_k'",
+          "error": "Access denied",
           "f1_at_5": 0.0,
           "precision_at_5": 0.0,
           "recall_at_5": 0.0,
