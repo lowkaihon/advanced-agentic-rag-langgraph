@@ -18,6 +18,7 @@ import sys
 import warnings
 import logging
 import importlib
+import shutil
 import time
 from datetime import datetime
 from pathlib import Path
@@ -147,15 +148,20 @@ def calculate_improvement(budget_value: float, tier_value: float) -> float:
     return ((tier_value - budget_value) / budget_value) * 100
 
 
-def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = "evaluation"):
+def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None):
     """
     Generate markdown comparison report.
 
     Args:
         tier_results: Dictionary mapping tier names to results
         output_dir: Directory to save report
+        timestamp: Timestamp string for filename (format: YYYYMMDD_HHMMSS). If None, generates current time.
     """
-    output_path = Path(output_dir) / "tier_comparison_report.md"
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    output_path = Path(output_dir) / f"tier_comparison_report_{timestamp}.md"
+    latest_path = Path(output_dir) / "tier_comparison_report_latest.md"
 
     # Extract key metrics
     budget = tier_results["budget"]
@@ -420,18 +426,27 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
+    # Also create "latest" copy for convenience
+    shutil.copy2(output_path, latest_path)
+
     print(f"[OK] Comparison report saved to {output_path}")
+    print(f"[OK] Latest copy saved to {latest_path}")
 
 
-def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation"):
+def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None):
     """
     Save tier comparison results to JSON.
 
     Args:
         tier_results: Dictionary mapping tier names to results
         output_dir: Directory to save results
+        timestamp: Timestamp string for filename (format: YYYYMMDD_HHMMSS). If None, generates current time.
     """
-    output_path = Path(output_dir) / "tier_comparison_results.json"
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    output_path = Path(output_dir) / f"tier_comparison_results_{timestamp}.json"
+    latest_path = Path(output_dir) / "tier_comparison_results_latest.json"
 
     # Add metadata
     output_data = {
@@ -445,7 +460,11 @@ def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation"):
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=2)
 
+    # Also create "latest" copy for convenience
+    shutil.copy2(output_path, latest_path)
+
     print(f"[OK] Results saved to {output_path}")
+    print(f"[OK] Latest copy saved to {latest_path}")
 
 
 def test_tier_comparison(quick_mode: bool = False):
@@ -518,10 +537,11 @@ def test_tier_comparison(quick_mode: bool = False):
         config = result["tier_config"]
         print(f"  {config['name']:10s}: Retrieval +{f1_improvement:4.1f} pts, Generation +{ground_improvement:4.1f} pts")
 
-    # Save results
+    # Save results with consistent timestamp for both files
     print()
-    save_results(tier_results)
-    generate_comparison_report(tier_results)
+    test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    save_results(tier_results, timestamp=test_timestamp)
+    generate_comparison_report(tier_results, timestamp=test_timestamp)
 
     print("\n" + "="*70)
     print("[OK] Tier comparison test COMPLETED")
