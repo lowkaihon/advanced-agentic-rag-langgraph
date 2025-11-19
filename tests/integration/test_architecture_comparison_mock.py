@@ -11,10 +11,14 @@ Usage:
     uv run python tests/integration/test_architecture_comparison_mock.py
 
 IMPORTANT LIMITATIONS:
-- Graph imports may still trigger model initialization (CrossEncoder, embeddings)
-- Even with mocks, initial setup can take 30-60 seconds
+- **REQUIRES PRE-DOWNLOADED MODELS**: Variant graphs initialize CrossEncoder at module
+  import time (basic_rag_graph.py:54), which triggers HuggingFace downloads BEFORE
+  mocking can occur. This test CANNOT run in offline environments without cached models.
+- Models needed: cross-encoder/ms-marco-MiniLM-L-6-v2, cross-encoder/nli-deberta-v3-base,
+  sentence-transformers/all-MiniLM-L6-v2 (for embeddings)
+- Even with mocks and cached models, initial setup takes 30-60 seconds
 - This test validates LOGIC, not actual model performance
-- For full offline testing, pre-download models or use test_architecture_structure.py
+- For TRUE offline testing without models, use test_architecture_structure.py instead
 
 This mock test:
 - Bypasses all LLM calls (uses fake answers)
@@ -22,6 +26,7 @@ This mock test:
 - Generates realistic fake metrics
 - Validates graph structure and node execution flow
 - Requires OPENAI_API_KEY set (can be fake value)
+"""
 
 import json
 import os
