@@ -1,16 +1,16 @@
 # Model Tier Comparison Report
 
-**Generated:** 2025-11-19 12:28:05
-**Examples Evaluated:** 5
+**Generated:** 2025-11-19 14:47:40
+**Examples Evaluated:** 20
 
 ## Executive Summary
 
 This report compares three model tier configurations to validate the portfolio narrative:
 **"Architecture adds X%, model upgrades add Y%"**
 
-- **Budget Baseline:** F1@5=29.6%, Groundedness=95.4%
-- **Balanced Improvement:** Retrieval +-0.0 pts, Generation +-0.1 pts
-- **Premium Improvement:** Retrieval +-0.0 pts, Generation +-0.0 pts
+- **Budget Baseline:** F1@5=14.0%, Groundedness=91.5%
+- **Balanced Improvement:** Retrieval +0.1 pts, Generation +-0.1 pts
+- **Premium Improvement:** Retrieval +0.0 pts, Generation +0.1 pts
 
 ---
 
@@ -18,9 +18,9 @@ This report compares three model tier configurations to validate the portfolio n
 
 | Tier | Models | Daily Cost | Quality Narrative | Retrieval F1@5 | Groundedness |
 |------|--------|------------|-------------------|----------------|--------------|
-| Budget | All GPT-4o-mini | $1,200 | 70-75% | 29.6% | 95.4% |
-| Balanced | Hybrid GPT-4o-mini + GPT-5-mini | $1,800 | 78-80% | 25.9% | 89.7% |
-| Premium | GPT-5.1 + GPT-5-mini + GPT-5-nano | $12,060 | 88-92% | 24.6% | 93.3% |
+| Budget | All GPT-4o-mini | $1,200 | 70-75% | 14.0% | 91.5% |
+| Balanced | Hybrid GPT-4o-mini + GPT-5-mini | $1,800 | 78-80% | 19.2% | 83.9% |
+| Premium | GPT-5.1 + GPT-5-mini + GPT-5-nano | $12,060 | 88-92% | 18.8% | 97.6% |
 
 ---
 
@@ -30,20 +30,20 @@ This report compares three model tier configurations to validate the portfolio n
 
 | Metric | Budget | Balanced | Premium | Balanced vs Budget | Premium vs Budget |
 |--------|--------|----------|---------|-------------------|------------------|
-| Groundedness | 95.4% | 89.7% | 93.3% | -0.1 pts | -0.0 pts |
-| Hallucination Rate | 20.0% | 20.0% | 20.0% | -0.0 pts | -0.0 pts |
-| Confidence | 84.0% | 88.2% | 89.8% | +0.0 pts | +0.1 pts |
-| Answer Quality | 79.8% | 75.6% | 98.4% | -0.0 pts | +0.2 pts |
+| Groundedness | 91.5% | 83.9% | 97.6% | -0.1 pts | +0.1 pts |
+| Hallucination Rate | 10.0% | 20.0% | 0.0% | -0.1 pts | +0.1 pts |
+| Confidence | 78.0% | 73.2% | 82.3% | -0.0 pts | +0.0 pts |
+| Answer Quality | 67.7% | 53.6% | 69.2% | -0.1 pts | +0.0 pts |
 
 ### Retrieval Quality Metrics
 
 | Metric | Budget | Balanced | Premium | Balanced vs Budget | Premium vs Budget |
 |--------|--------|----------|---------|-------------------|------------------|
-| Recall@5 | 40.0% | 38.3% | 33.3% | -1.7 pts | -6.7 pts |
-| Precision@5 | 24.0% | 20.0% | 20.0% | -4.0 pts | -4.0 pts |
-| F1@5 | 29.6% | 25.9% | 24.6% | -3.7 pts | -5.0 pts |
+| Recall@5 | 20.4% | 27.9% | 26.8% | +7.5 pts | +6.4 pts |
+| Precision@5 | 11.0% | 15.0% | 15.0% | +4.0 pts | +4.0 pts |
+| F1@5 | 14.0% | 19.2% | 18.8% | +5.2 pts | +4.8 pts |
 | nDCG | 0.0 | 0.0 | 0.0 | +0.0 pts | +0.0 pts |
-| MRR | 0.7 | 0.5 | 0.6 | -0.2 pts | -0.1 pts |
+| MRR | 0.3 | 0.3 | 0.3 | +0.0 pts | +0.1 pts |
 
 ---
 
@@ -51,13 +51,13 @@ This report compares three model tier configurations to validate the portfolio n
 
 ### Cost Per Quality Point
 
-**Budget:** $4053.62 per F1 point
-**Balanced:** $6957.06 per F1 point
-**Premium:** $49018.06 per F1 point
+**Budget:** $8542.37 per F1 point
+**Balanced:** $9362.23 per F1 point
+**Premium:** $64021.91 per F1 point
 
 ### Incremental Cost-Benefit (Retrieval F1@5)
 
-- **Budget → Balanced:** +-0.0 pts for $600/day ($0.00 per point)
+- **Budget → Balanced:** +0.1 pts for $600/day ($11586.21 per point)
 - **Balanced → Premium:** +-0.0 pts for $10,260/day ($0.00 per point)
 
 ---
@@ -66,9 +66,9 @@ This report compares three model tier configurations to validate the portfolio n
 
 | Tier | Total Time | Avg Per Example | Examples |
 |------|-----------|----------------|----------|
-| Budget | 444.9s (7.4 min) | 89.0s | 5 |
-| Balanced | 404.7s (6.7 min) | 80.9s | 5 |
-| Premium | 454.2s (7.6 min) | 90.8s | 5 |
+| Budget | 1768.7s (29.5 min) | 88.4s | 20 |
+| Balanced | 3845.1s (64.1 min) | 192.3s | 20 |
+| Premium | 2201.2s (36.7 min) | 110.1s | 20 |
 
 ---
 
@@ -76,7 +76,7 @@ This report compares three model tier configurations to validate the portfolio n
 
 ### Architecture Value (Budget Tier)
 
-The Budget tier achieves **F1@5=29.6%, Groundedness=95.4%** using only GPT-4o-mini models across all components. 
+The Budget tier achieves **F1@5=14.0%, Groundedness=91.5%** using only GPT-4o-mini models across all components. 
 This demonstrates that the Advanced Agentic RAG architecture itself provides substantial value through:
 
 - Multi-stage query processing and expansion
@@ -85,21 +85,21 @@ This demonstrates that the Advanced Agentic RAG architecture itself provides sub
 - Self-correction loops with quality gates
 - NLI-based hallucination detection
 
-**Architecture Contribution:** F1@5=29.6%, Groundedness=95.4%
+**Architecture Contribution:** F1@5=14.0%, Groundedness=91.5%
 
 ### Model Upgrade Impact
 
-**Balanced Tier:** Selective GPT-5-mini upgrades for critical reasoning tasks add **Retrieval +-0.0 pts, Generation +-0.1 pts** 
-(F1@5=25.9%, Groundedness=89.7%) for an additional $600/day.
+**Balanced Tier:** Selective GPT-5-mini upgrades for critical reasoning tasks add **Retrieval +0.1 pts, Generation +-0.1 pts** 
+(F1@5=19.2%, Groundedness=83.9%) for an additional $600/day.
 
-**Premium Tier:** Full GPT-5.1 deployment adds **Retrieval +-0.0 pts, Generation +-0.0 pts** 
-(F1@5=24.6%, Groundedness=93.3%) for an additional $10,860/day.
+**Premium Tier:** Full GPT-5.1 deployment adds **Retrieval +0.0 pts, Generation +0.1 pts** 
+(F1@5=18.8%, Groundedness=97.6%) for an additional $10,860/day.
 
 ### Key Findings
 
-1. **Architecture provides the foundation:** F1@5=29.6%, Groundedness=95.4% with budget models
-2. **Balanced tier offers best ROI:** Retrieval +-0.0 pts, Generation +-0.1 pts for 50% cost increase
-3. **Premium tier for critical applications:** Retrieval +-0.0 pts, Generation +-0.0 pts justifies 10x cost when quality is paramount
+1. **Architecture provides the foundation:** F1@5=14.0%, Groundedness=91.5% with budget models
+2. **Balanced tier offers best ROI:** Retrieval +0.1 pts, Generation +-0.1 pts for 50% cost increase
+3. **Premium tier for critical applications:** Retrieval +0.0 pts, Generation +0.1 pts justifies 10x cost when quality is paramount
 
 ---
 
@@ -107,16 +107,16 @@ This demonstrates that the Advanced Agentic RAG architecture itself provides sub
 
 | Tier | Metric | Target | Actual | Status |
 |------|--------|--------|--------|--------|
-| Budget | F1@5 (Retrieval) | 20%-30% | 29.6% | [OK] |
-| Budget | Groundedness (Anti-Hallucination) | 85%-95% | 95.4% | [WARN] |
-| Budget | Confidence (Answer Quality) | 65%-80% | 84.0% | [WARN] |
-| Balanced | F1@5 (Retrieval) | 28%-38% | 25.9% | [WARN] |
-| Balanced | Groundedness (Anti-Hallucination) | 88%-98% | 89.7% | [OK] |
-| Balanced | Confidence (Answer Quality) | 72%-87% | 88.2% | [WARN] |
-| Premium | F1@5 (Retrieval) | 35%-50% | 24.6% | [WARN] |
-| Premium | Groundedness (Anti-Hallucination) | 95%-100% | 93.3% | [WARN] |
-| Premium | Confidence (Answer Quality) | 85%-95% | 89.8% | [OK] |
+| Budget | F1@5 (Retrieval) | 20%-30% | 14.0% | [WARN] |
+| Budget | Groundedness (Anti-Hallucination) | 85%-95% | 91.5% | [OK] |
+| Budget | Confidence (Answer Quality) | 65%-80% | 78.0% | [OK] |
+| Balanced | F1@5 (Retrieval) | 28%-38% | 19.2% | [WARN] |
+| Balanced | Groundedness (Anti-Hallucination) | 88%-98% | 83.9% | [WARN] |
+| Balanced | Confidence (Answer Quality) | 72%-87% | 73.2% | [OK] |
+| Premium | F1@5 (Retrieval) | 35%-50% | 18.8% | [WARN] |
+| Premium | Groundedness (Anti-Hallucination) | 95%-100% | 97.6% | [OK] |
+| Premium | Confidence (Answer Quality) | 85%-95% | 82.3% | [WARN] |
 
 ---
 
-*Report generated by test_tier_comparison.py at 2025-11-19 12:28:05*
+*Report generated by test_tier_comparison.py at 2025-11-19 14:47:40*

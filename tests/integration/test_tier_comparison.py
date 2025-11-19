@@ -241,9 +241,9 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     ]
 
     for key, label, unit in gen_metrics_to_compare:
-        budget_val = budget["generation_metrics"].get(key, 0)
-        balanced_val = balanced["generation_metrics"].get(key, 0)
-        premium_val = premium["generation_metrics"].get(key, 0)
+        budget_val = budget["generation_metrics"].get(key, 0) * 100  # Convert to percentage
+        balanced_val = balanced["generation_metrics"].get(key, 0) * 100
+        premium_val = premium["generation_metrics"].get(key, 0) * 100
 
         balanced_delta = balanced_val - budget_val
         premium_delta = premium_val - budget_val
@@ -254,7 +254,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
             premium_delta = -premium_delta
 
         lines.append(
-            f"| {label} | {budget_val:.1%} | {balanced_val:.1%} | {premium_val:.1%} | "
+            f"| {label} | {budget_val:.1f}% | {balanced_val:.1f}% | {premium_val:.1f}% | "
             f"{balanced_delta:+.1f} pts | {premium_delta:+.1f} pts |"
         )
 
