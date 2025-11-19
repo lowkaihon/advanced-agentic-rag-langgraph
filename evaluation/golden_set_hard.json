@@ -1,0 +1,226 @@
+[
+  {
+    "id": "transformer_encoder_complete_forward_pass",
+    "question": "Explain the complete forward pass through the Transformer encoder, including all sub-layers and their connections.",
+    "ground_truth_answer": "The Transformer encoder consists of N=6 identical layers. Each layer has two sub-layers: (1) a multi-head self-attention mechanism, and (2) a position-wise fully connected feed-forward network. A residual connection is applied around each sub-layer, followed by layer normalization. The forward pass works as follows: First, the input embeddings are added with positional encodings. Then, for each of the 6 encoder layers: the input passes through multi-head self-attention (allowing positions to attend to all positions), the output is added to the input via residual connection and normalized, then it passes through a feed-forward network (two linear transformations with ReLU activation), and again a residual connection and normalization are applied. The output of the final encoder layer is then passed to the decoder.",
+    "relevant_doc_ids": [
+      "Attention Is All You Need.pdf_chunk_10",
+      "Attention Is All You Need.pdf_chunk_11",
+      "Attention Is All You Need.pdf_chunk_12",
+      "Attention Is All You Need.pdf_chunk_19"
+    ],
+    "relevance_grades": {
+      "Attention Is All You Need.pdf_chunk_10": 3,
+      "Attention Is All You Need.pdf_chunk_11": 3,
+      "Attention Is All You Need.pdf_chunk_12": 2,
+      "Attention Is All You Need.pdf_chunk_19": 2
+    },
+    "source_document": "Attention Is All You Need.pdf",
+    "difficulty": "hard",
+    "query_type": "procedural",
+    "domain": "nlp",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "bert_vs_gpt_pretraining_comparison",
+    "question": "How does BERT's pre-training approach differ from traditional autoregressive language models like GPT?",
+    "ground_truth_answer": "BERT differs fundamentally from autoregressive language models like GPT in its use of bidirectional context. While autoregressive models like GPT are trained to predict the next token based only on previous (left) context, BERT uses masked language modeling to condition on both left and right context simultaneously. This is achieved by randomly masking tokens and predicting them based on surrounding context in both directions. Additionally, BERT uses the encoder-only Transformer architecture, while GPT uses the decoder architecture. This bidirectional training allows BERT to achieve better performance on tasks requiring deep understanding of context, though it comes at the cost of not being directly usable for text generation tasks that require left-to-right generation.",
+    "relevant_doc_ids": [
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_5",
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6",
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_14"
+    ],
+    "relevance_grades": {
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_5": 3,
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6": 2,
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_14": 3
+    },
+    "source_document": "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf",
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "nlp",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "ddpm_simplified_objective_derivation",
+    "question": "Explain the mathematical derivation of the simplified training objective in DDPM and why it works better than the full variational bound.",
+    "ground_truth_answer": "The simplified training objective in DDPM is derived from the variational lower bound but focuses on predicting the noise εt rather than the mean directly. The full variational bound can be reweighted and simplified to L_simple = E[||ε - εθ(xt, t)||²], where ε is the noise added at timestep t, and εθ is the neural network's prediction. This formulation is equivalent to denoising score matching and has several advantages: (1) It removes complicated weighting terms from the full bound that can lead to optimization difficulties, (2) It directly optimizes for the quality of individual denoising steps rather than the overall likelihood, (3) Empirically, it produces better sample quality despite being a less tight bound, (4) It provides a clearer training signal by focusing on the core task of noise prediction. The simplified objective essentially trades off some likelihood optimization for improved perceptual quality of generated samples.",
+    "relevant_doc_ids": [
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_13",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_16",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_17"
+    ],
+    "relevance_grades": {
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_13": 3,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14": 3,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_16": 2,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_17": 2
+    },
+    "source_document": "Denoising Diffusion Probabilistic Models.pdf",
+    "difficulty": "hard",
+    "query_type": "procedural",
+    "domain": "generative_models",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "transformer_vs_vit_attention_usage",
+    "question": "How is 'attention' used differently in the Transformer architecture compared to Vision Transformer (ViT)?",
+    "ground_truth_answer": "While both Transformers and Vision Transformers (ViT) use the same self-attention mechanism, they differ in how they handle input modalities. The original Transformer operates on sequences of word embeddings in NLP tasks, where each token represents a word or subword. In contrast, ViT adapts this architecture for images by dividing the image into fixed-size patches (typically 16x16 pixels), flattening each patch, and treating these flattened patches as 'tokens' analogous to words. Both use multi-head self-attention to capture relationships, but ViT's innovation is in treating image patches as a sequence, allowing the same attention mechanism to work across spatial dimensions of images rather than temporal sequences of text. Additionally, ViT adds a learnable classification token [CLS] similar to BERT's approach, and uses learnable 1D positional embeddings to retain information about patch positions.",
+    "relevant_doc_ids": [
+      "Attention Is All You Need.pdf_chunk_12",
+      "Attention Is All You Need.pdf_chunk_16",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_6"
+    ],
+    "relevance_grades": {
+      "Attention Is All You Need.pdf_chunk_12": 2,
+      "Attention Is All You Need.pdf_chunk_16": 2,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_6": 3
+    },
+    "source_document": [
+      "Attention Is All You Need.pdf",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "cross_domain",
+    "expected_strategy": "hybrid"
+  },
+  {
+    "id": "vit_architecture_adaptation",
+    "question": "How does ViT adapt the Transformer architecture for computer vision tasks?",
+    "ground_truth_answer": "Vision Transformer (ViT) adapts the standard Transformer encoder architecture for images through several key modifications: (1) Image Patching: Images are divided into fixed-size patches (e.g., 16x16 pixels), which are then flattened and linearly embedded, effectively treating patches as tokens analogous to words in NLP. (2) Positional Embeddings: Since patches lose spatial information when flattened, learnable 1D positional embeddings are added to retain information about patch positions. (3) Class Token: A learnable [CLS] token is prepended to the sequence (similar to BERT), whose final representation is used for classification. (4) Pre-training Strategy: ViT is typically pre-trained on large image datasets (like ImageNet-21k or JFT-300M) before fine-tuning on specific tasks. The architecture uses the same multi-head self-attention and MLP blocks as the original Transformer, but applied to visual data rather than text sequences.",
+    "relevant_doc_ids": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_6",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_7",
+      "Attention Is All You Need.pdf_chunk_10"
+    ],
+    "relevance_grades": {
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_6": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_7": 2,
+      "Attention Is All You Need.pdf_chunk_10": 1
+    },
+    "source_document": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf",
+      "Attention Is All You Need.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "conceptual",
+    "domain": "computer_vision",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "ddpm_vs_consistency_models_comparison",
+    "question": "Compare the diffusion process in DDPM versus Consistency Models.",
+    "ground_truth_answer": "While both DDPM and Consistency Models are diffusion-based generative models, they differ fundamentally in their sampling approach. DDPM uses an iterative reverse diffusion process that requires hundreds or thousands of steps (typically T=1000) to gradually denoise from pure noise to a data sample, making sampling slow. Each step involves a neural network evaluation, resulting in significant computational cost. In contrast, Consistency Models learn to map any point on a diffusion trajectory directly to its origin (the clean data point), enabling single-step or few-step generation. Consistency Models achieve this through consistency training or consistency distillation, which enforces that the model's predictions are consistent across different noise levels along the same trajectory. This allows Consistency Models to generate high-quality samples in 1-2 steps instead of 1000 steps, providing a 100-1000x speedup while maintaining competitive sample quality.",
+    "relevant_doc_ids": [
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_8",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14",
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_5",
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_6"
+    ],
+    "relevance_grades": {
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_8": 2,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14": 2,
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_5": 3,
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_6": 3
+    },
+    "source_document": [
+      "Denoising Diffusion Probabilistic Models.pdf",
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "generative_models",
+    "expected_strategy": "hybrid"
+  },
+  {
+    "id": "raptor_vs_standard_rag_improvement",
+    "question": "How does RAPTOR improve upon standard RAG retrieval strategies?",
+    "ground_truth_answer": "RAPTOR (Recursive Abstractive Processing for Tree-Organized Retrieval) improves upon standard RAG by introducing hierarchical document organization and multi-level retrieval. While traditional RAG retrieves similar chunks at a single granularity level (typically fixed-size chunks), RAPTOR builds a tree structure by recursively summarizing and clustering document chunks. This creates multiple levels of abstraction: leaf nodes contain original text chunks, while higher-level nodes contain summaries of clustered content. During retrieval, RAPTOR can access both specific details (from leaf nodes) and high-level thematic information (from summary nodes), enabling better handling of queries that require either detailed facts or broad conceptual understanding. This hierarchical approach is particularly effective for long documents and complex queries that benefit from multi-scale context, with experimental results showing modest improvements of 1-2% F1 gains for extractive and abstractive questions.",
+    "relevant_doc_ids": [
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3",
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_4",
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5"
+    ],
+    "relevance_grades": {
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3": 3,
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_4": 3,
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5": 2
+    },
+    "source_document": "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf",
+    "difficulty": "hard",
+    "query_type": "conceptual",
+    "domain": "rag",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "ddpm_vs_wgan_generative_approaches",
+    "question": "Compare the generative modeling approaches of DDPM and WGAN-GP. What are the fundamental differences?",
+    "ground_truth_answer": "DDPM (Denoising Diffusion Probabilistic Models) and WGAN-GP (Wasserstein GAN with Gradient Penalty) represent fundamentally different paradigms for generative modeling. DDPM uses a diffusion process: it gradually adds noise to data (forward process) and learns to reverse this process (backward/generative process), generating samples through iterative denoising over many steps (typically 1000). Training is stable and uses a simple L2 loss between predicted and actual noise. In contrast, WGAN-GP uses adversarial training with two neural networks: a generator that creates samples and a critic (discriminator) that distinguishes real from fake samples. The Wasserstein distance with gradient penalty provides stable training by enforcing Lipschitz constraints on the critic. Key differences: (1) Training: DDPM uses likelihood-based training while WGAN-GP uses adversarial min-max optimization, (2) Sampling: DDPM requires many iterative steps while GANs generate in a single forward pass, (3) Stability: DDPM training is generally more stable while GANs can suffer from mode collapse, (4) Sample characteristics: In practice, DDPM tends to produce more diverse samples while GANs can generate sharper images but with potentially less diversity, though this varies by architecture and training setup.",
+    "relevant_doc_ids": [
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_8",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14",
+      "Improved Training of Wasserstein GANs.pdf_chunk_3",
+      "Improved Training of Wasserstein GANs.pdf_chunk_4",
+      "Improved Training of Wasserstein GANs.pdf_chunk_5"
+    ],
+    "relevance_grades": {
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_8": 2,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14": 2,
+      "Improved Training of Wasserstein GANs.pdf_chunk_3": 3,
+      "Improved Training of Wasserstein GANs.pdf_chunk_4": 3,
+      "Improved Training of Wasserstein GANs.pdf_chunk_5": 2
+    },
+    "source_document": [
+      "Denoising Diffusion Probabilistic Models.pdf",
+      "Improved Training of Wasserstein GANs.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "generative_models",
+    "expected_strategy": "semantic"
+  },
+  {
+    "id": "vit_patch_size_and_title_meaning",
+    "question": "What patch size does the standard Vision Transformer (ViT) use, and how does this relate to the paper's title?",
+    "ground_truth_answer": "The standard Vision Transformer (ViT) uses a patch size of 16x16 pixels. This directly relates to the paper's title 'An Image is Worth 16x16 Words' - the title is a play on the phrase 'a picture is worth a thousand words,' but specifically references the 16x16 pixel patches that are treated as the basic 'words' or tokens in the Vision Transformer architecture. Each 16x16 patch is flattened and linearly embedded, becoming a single token that the Transformer processes, analogous to how words are tokenized in NLP applications.",
+    "relevant_doc_ids": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_0"
+    ],
+    "relevance_grades": {
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_0": 2
+    },
+    "source_document": "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf",
+    "difficulty": "hard",
+    "query_type": "factual",
+    "domain": "computer_vision",
+    "expected_strategy": "hybrid"
+  },
+  {
+    "id": "clip_contrastive_vs_supervised_learning",
+    "question": "How does CLIP's contrastive pre-training differ from traditional supervised learning for vision models?",
+    "ground_truth_answer": "CLIP's contrastive pre-training differs fundamentally from traditional supervised learning in several ways: (1) Training data: CLIP is trained on 400 million image-text pairs collected from the internet, learning from natural language supervision rather than fixed categorical labels. (2) Training objective: Instead of predicting a specific class label, CLIP learns to maximize the similarity between correct image-text pairs while minimizing similarity for incorrect pairings using a contrastive loss. (3) Generalization: This approach enables zero-shot transfer to new visual concepts without task-specific fine-tuning - you can classify images into arbitrary categories just by providing text descriptions. (4) Flexibility: Traditional models require retraining to add new categories, while CLIP can immediately recognize new concepts described in text. (5) Scalability: CLIP's natural language interface allows it to leverage vast amounts of web data with noisy but abundant supervision, rather than requiring manually curated labeled datasets.",
+    "relevant_doc_ids": [
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_3",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_4",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_5"
+    ],
+    "relevance_grades": {
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_3": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_4": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_5": 2
+    },
+    "source_document": "Learning Transferable Visual Models From Natural Language Supervision.pdf",
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "computer_vision",
+    "expected_strategy": "semantic"
+  }
+]
