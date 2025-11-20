@@ -143,4 +143,5 @@ tier_comparison_report_*_[0-9]*.md
 tier_comparison_results_*_[0-9]*.json
 tier_comparison_report_*_latest.md
 tier_comparison_results_*_latest.json
+test_log_quick_verbose.txt
 scripts

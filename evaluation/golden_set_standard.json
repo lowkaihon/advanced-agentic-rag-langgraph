@@ -277,26 +277,16 @@
     "expected_chunks": 2
   },
   {
-    "id": "raptor_clustering_algorithm",
-    "question": "What clustering algorithm does RAPTOR use for building the tree structure?",
-    "ground_truth_answer": "The original RAPTOR uses Gaussian Mixture Models (GMMs) as the clustering algorithm. However, the paper exploring extensions to RAPTOR proposes using agglomerative clustering as an alternative, which provides a hierarchical clustering method where each element initially represents its own cluster and clusters are progressively merged according to a distance criterion using cosine similarity. The agglomerative approach was found to better support the tree structure and eliminate the need for dimensionality reduction.",
+    "id": "raptor_two_components",
+    "question": "What are the two main components of the RAPTOR framework?",
+    "ground_truth_answer": "The RAPTOR framework is fundamentally segmented into two main components: (1) retrieval and (2) construction of the underlying retrieval tree system. The construction component focuses on building the hierarchical tree through recursively clustering related text chunks and summarizing them, while the retrieval component handles how information is accessed from this tree structure.",
     "relevant_doc_ids": [
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_10",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_19",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_4",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_20",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_21",
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_22"
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_1",
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3"
     ],
     "relevance_grades": {
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_10": 3,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_19": 3,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_4": 3,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5": 2,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_20": 3,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_21": 2,
-      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_22": 2
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_1": 3,
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3": 3
     },
     "source_document": "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf",
     "difficulty": "medium",
