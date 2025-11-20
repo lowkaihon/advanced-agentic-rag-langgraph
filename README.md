@@ -382,6 +382,67 @@ uv run python tests/integration/test_tier_comparison.py
 
 See `evaluation/tier_comparison_report.md` for detailed results.
 
+## Architecture Tier Comparison
+
+Showcase the value of advanced RAG architecture through 4-tier A/B testing. All tiers use the same **BUDGET model tier** (gpt-4o-mini) to isolate architectural improvements from model quality differences.
+
+| Tier | Features | Graph Structure | Description |
+|------|----------|-----------------|-------------|
+| **Pure Semantic** | 4 features | Simplest (2 nodes, no routing) | Pure vector search, top-4 chunks, no reranking |
+| **Basic** | 8 features (+4) | Linear (4 nodes, no routing) | + Query expansion, hybrid retrieval, CrossEncoder reranking, RRF fusion |
+| **Intermediate** | 18 features (+10) | Conditional routing (7 nodes, 2 routers) | + Strategy selection, two-stage reranking, quality gates, limited retry |
+| **Advanced** | 31 features (+13) | Full agentic (9 nodes, 4 routers) | + NLI hallucination detection, dual-tier strategy switching, adaptive loops |
+
+### Key Differentiators
+
+**Pure Semantic → Basic (+4 features):**
+- Query expansion (3 variants with RRF fusion)
+- Hybrid retrieval (semantic + BM25 keyword)
+- CrossEncoder reranking (top-5)
+- Enhanced answer generation prompting
+
+**Basic → Intermediate (+10 features):**
+- Conversational query rewriting
+- LLM-based strategy selection (semantic/keyword/hybrid)
+- Two-stage reranking (CrossEncoder → LLM-as-judge)
+- Binary retrieval quality scoring
+- Query rewriting loop (max 1 rewrite)
+- Answer quality check
+- Conditional routing (2 router functions)
+- Limited retry logic
+
+**Intermediate → Advanced (+13 features):**
+- NLI-based hallucination detection
+- Three-tier groundedness routing (SEVERE/MODERATE/NONE)
+- Root cause detection (LLM vs retrieval-caused hallucination)
+- Dual-tier strategy switching (early + late detection)
+- Query optimization for new strategy
+- Expansion regeneration on strategy change
+- Issue-specific feedback (8 retrieval types, 8 answer types)
+- Adaptive thresholds (65% good retrieval, 50% poor)
+- Content-driven issue → strategy mapping
+
+### Run Comparison Test
+
+```bash
+# Architecture comparison test (~5-10 min, portfolio showcase)
+uv run python tests/integration/test_architecture_comparison.py
+```
+
+**Results:** See `evaluation/architecture_comparison_report.md` for:
+- **F1@5** (Retrieval Quality): Harmonic mean of Precision@5 and Recall@5
+- **Groundedness** (Anti-Hallucination): % claims supported by context (NLI-based)
+- **Confidence** (Answer Quality): LLM confidence score
+- **Delta Analysis**: Shows incremental improvements (Basic → Intermediate → Advanced)
+- **Feature Justification**: Which features drove each improvement
+- **Portfolio Narrative**: Architecture value independent of model quality
+
+**Expected Progression:**
+- Pure Semantic → Basic: +10-15% improvement (hybrid search, query expansion, reranking)
+- Basic → Intermediate: +15-25% improvement (quality gates, two-stage reranking)
+- Intermediate → Advanced: +20-35% improvement (NLI, strategy switching, adaptive loops)
+- Pure Semantic → Advanced: +45-75% overall improvement
+
 ### Example Usage
 
 ```python

@@ -106,6 +106,7 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 | After NLI detector changes | test_nli_hallucination_detector.py | 20-30s | NLI-based hallucination detection validation |
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
+| Portfolio architecture showcase | test_architecture_comparison.py | 5-10min | 4-tier A/B test (pure semantic/basic/intermediate/advanced) with F1@5, Groundedness, Confidence |
 
 ---
 
