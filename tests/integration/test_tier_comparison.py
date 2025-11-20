@@ -8,9 +8,9 @@ This test evaluates the Advanced Agentic RAG system across three model tiers:
 
 Validates the portfolio narrative: "Architecture adds X%, model upgrades add Y%"
 
-Runtime: ~3-5 minutes (quick mode, 2 examples)
-         ~15-20 minutes (hard dataset, 10 examples)
-         ~30-45 minutes (standard dataset, 20 examples)
+Runtime: ~8 minutes (quick mode, 2 examples)
+         ~55 minutes (hard dataset, 10 examples)
+         ~110 minutes (standard dataset, 20 examples)
 """
 
 import json
@@ -210,8 +210,8 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
 
     lines.extend([
         f"- **Budget Baseline:** F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
-        f"- **Balanced Improvement:** Retrieval +{balanced_f1_improvement:.1f} pts, Generation +{balanced_ground_improvement:.1f} pts",
-        f"- **Premium Improvement:** Retrieval +{premium_f1_improvement:.1f} pts, Generation +{premium_ground_improvement:.1f} pts",
+        f"- **Balanced Improvement:** Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts",
+        f"- **Premium Improvement:** Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts",
         "",
         "---",
         "",
@@ -286,17 +286,29 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     ]
 
     for key, label, unit in retrieval_metrics:
-        budget_val = budget["retrieval_metrics"].get(key, 0) * (100 if unit == "%" else 1)
-        balanced_val = balanced["retrieval_metrics"].get(key, 0) * (100 if unit == "%" else 1)
-        premium_val = premium["retrieval_metrics"].get(key, 0) * (100 if unit == "%" else 1)
+        budget_val = budget["retrieval_metrics"].get(key, 0)
+        balanced_val = balanced["retrieval_metrics"].get(key, 0)
+        premium_val = premium["retrieval_metrics"].get(key, 0)
 
-        balanced_delta = balanced_val - budget_val
-        premium_delta = premium_val - budget_val
-
-        lines.append(
-            f"| {label} | {budget_val:.1f}{unit} | {balanced_val:.1f}{unit} | {premium_val:.1f}{unit} | "
-            f"{balanced_delta:+.1f} pts | {premium_delta:+.1f} pts |"
-        )
+        # For percentage metrics, multiply by 100 for display
+        if unit == "%":
+            budget_display = budget_val * 100
+            balanced_display = balanced_val * 100
+            premium_display = premium_val * 100
+            balanced_delta = (balanced_val - budget_val) * 100
+            premium_delta = (premium_val - budget_val) * 100
+            lines.append(
+                f"| {label} | {budget_display:.1f}{unit} | {balanced_display:.1f}{unit} | {premium_display:.1f}{unit} | "
+                f"{balanced_delta:+.1f} pts | {premium_delta:+.1f} pts |"
+            )
+        else:
+            # For 0-1 scores (nDCG, MRR), keep as is with 2 decimal places
+            balanced_delta = (balanced_val - budget_val) * 100
+            premium_delta = (premium_val - budget_val) * 100
+            lines.append(
+                f"| {label} | {budget_val:.2f} | {balanced_val:.2f} | {premium_val:.2f} | "
+                f"{balanced_delta:+.1f} pts | {premium_delta:+.1f} pts |"
+            )
 
     lines.extend([
         "",
@@ -321,10 +333,10 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "",
         "### Incremental Cost-Benefit (Retrieval F1@5)",
         "",
-        f"- **Budget → Balanced:** +{balanced_f1_improvement:.1f} pts for ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day "
-        f"(${(balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']) / balanced_f1_improvement if balanced_f1_improvement > 0 else 0:.2f} per point)",
-        f"- **Balanced → Premium:** +{premium_vs_balanced_f1:.1f} pts for ${premium['tier_config']['daily_cost'] - balanced['tier_config']['daily_cost']:,}/day "
-        f"(${(premium['tier_config']['daily_cost'] - balanced['tier_config']['daily_cost']) / premium_vs_balanced_f1 if premium_vs_balanced_f1 > 0 else 0:.2f} per point)",
+        f"- **Budget → Balanced:** +{balanced_f1_improvement*100:.1f} pts for ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day "
+        f"(${(balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']) / (balanced_f1_improvement * 100) if balanced_f1_improvement > 0 else 0:.2f} per point)",
+        f"- **Balanced → Premium:** +{premium_vs_balanced_f1*100:.1f} pts for ${premium['tier_config']['daily_cost'] - balanced['tier_config']['daily_cost']:,}/day "
+        f"(${(premium['tier_config']['daily_cost'] - balanced['tier_config']['daily_cost']) / (premium_vs_balanced_f1 * 100) if premium_vs_balanced_f1 > 0 else 0:.2f} per point)",
         "",
         "---",
         "",
@@ -366,17 +378,17 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "",
         "### Model Upgrade Impact",
         "",
-        f"**Balanced Tier:** Selective GPT-5-mini upgrades for critical reasoning tasks add **Retrieval +{balanced_f1_improvement:.1f} pts, Generation +{balanced_ground_improvement:.1f} pts** ",
+        f"**Balanced Tier:** Selective GPT-5-mini upgrades for critical reasoning tasks add **Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts** ",
         f"(F1@5={balanced_f1:.1%}, Groundedness={balanced_ground:.1%}) for an additional ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
         "",
-        f"**Premium Tier:** Full GPT-5.1 deployment adds **Retrieval +{premium_f1_improvement:.1f} pts, Generation +{premium_ground_improvement:.1f} pts** ",
+        f"**Premium Tier:** Full GPT-5.1 deployment adds **Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts** ",
         f"(F1@5={premium_f1:.1%}, Groundedness={premium_ground:.1%}) for an additional ${premium['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
         "",
         "### Key Findings",
         "",
         f"1. **Architecture provides the foundation:** F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%} with budget models",
-        f"2. **Balanced tier offers best ROI:** Retrieval +{balanced_f1_improvement:.1f} pts, Generation +{balanced_ground_improvement:.1f} pts for 50% cost increase",
-        f"3. **Premium tier for critical applications:** Retrieval +{premium_f1_improvement:.1f} pts, Generation +{premium_ground_improvement:.1f} pts justifies 10x cost when quality is paramount",
+        f"2. **Balanced tier offers best ROI:** Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts for 50% cost increase",
+        f"3. **Premium tier for critical applications:** Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts justifies 10x cost when quality is paramount",
         "",
         "---",
         "",
@@ -586,9 +598,9 @@ if __name__ == "__main__":
         print(f"[*] Running in quick mode (2 examples from {args.dataset} dataset)")
     else:
         dataset_size = "20 examples" if args.dataset == "standard" else "10 examples"
-        expected_time = "30-45 minutes" if args.dataset == "standard" else "15-20 minutes"
+        expected_time = "110 minutes" if args.dataset == "standard" else "55 minutes"
         print(f"[*] Running full evaluation on {args.dataset} dataset ({dataset_size})")
         print(f"[*] This will take approximately {expected_time}")
-        print("[*] Use --quick flag for faster testing (3-5 minutes)")
+        print("[*] Use --quick flag for faster testing (~8 minutes)")
 
     test_tier_comparison(quick_mode=args.quick, dataset_type=args.dataset)

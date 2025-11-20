@@ -1,4 +1,4 @@
-from typing import TypedDict
+from typing import TypedDict, Literal
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
 from advanced_agentic_rag_langgraph.retrieval import (
@@ -14,6 +14,10 @@ from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
 from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
+from advanced_agentic_rag_langgraph.orchestration.graph import select_next_strategy
+from advanced_agentic_rag_langgraph.prompts import get_prompt
+from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
 import re
 import json
 
@@ -34,6 +38,15 @@ nli_detector = NLIHallucinationDetector()
 
 
 # ============ STRUCTURED OUTPUT SCHEMAS ============
+
+class ExpansionDecision(TypedDict):
+    """Structured output schema for query expansion decision.
+
+    Used with .with_structured_output() to ensure reliable LLM parsing.
+    """
+    decision: Literal["yes", "no"]
+    reasoning: str
+
 
 class RetrievalQualityEvaluation(TypedDict):
     """Structured output schema for retrieval quality assessment.
@@ -182,13 +195,12 @@ IMPORTANT CONSIDERATIONS:
 - Example: "Compare 'X' and 'Y'" has quotes BUT expansion helps (synonyms for "compare")
 - Example: "What is Z?" is simple BUT expansion might help (rephrasing)
 
-Return ONLY 'yes' to expand or 'no' to skip expansion.
-No explanation needed."""
+Return your decision ('yes' or 'no') with brief reasoning."""
 
     try:
-        response = expansion_llm.invoke(prompt)
-        decision = response.content.strip().lower()
-        skip = decision.startswith('no')
+        structured_llm = expansion_llm.with_structured_output(ExpansionDecision)
+        result = structured_llm.invoke(prompt)
+        skip = (result["decision"] == "no")
         return skip
     except Exception as e:
         print(f"Warning: Expansion decision LLM failed: {e}, defaulting to expand")
@@ -222,9 +234,6 @@ def query_expansion_node(state: dict) -> dict:
                     ("off_topic" in issues or "wrong_domain" in issues))
 
     if early_switch:
-        from advanced_agentic_rag_langgraph.orchestration.graph import select_next_strategy
-        from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
-
         next_strategy = select_next_strategy(current_strategy, issues)
         optimized_query = optimize_query_for_strategy(
             query=state.get("active_query", state["baseline_query"]),
@@ -253,8 +262,6 @@ def query_expansion_node(state: dict) -> dict:
         state.update(updates)
 
     elif retrieval_caused_hallucination and attempts < 3:
-        from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
-
         if current_strategy == "semantic":
             next_strategy = "keyword"
         elif current_strategy == "keyword":
@@ -289,8 +296,6 @@ def query_expansion_node(state: dict) -> dict:
         state.update(updates)
 
     elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
-        from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
-
         retrieval_quality_issues = state.get("retrieval_quality_issues", [])
         retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
 
@@ -531,8 +536,6 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     )
     structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
-    from advanced_agentic_rag_langgraph.prompts import get_prompt
-
     quality_prompt = get_prompt("retrieval_quality_eval", query=state['baseline_query'], docs_text=docs_text)
 
     try:
@@ -720,9 +723,6 @@ The retrieved documents are somewhat relevant but may have gaps in coverage. Use
         quality_instruction = f"""Low Confidence Retrieval (Score: {quality_score:.0%})
 The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
-    from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
-    from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
@@ -841,8 +841,6 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
         verbosity=spec.verbosity
     )
     structured_answer_llm = quality_llm.with_structured_output(AnswerQualityEvaluation)
-
-    from advanced_agentic_rag_langgraph.prompts import get_prompt
 
     evaluation_prompt = get_prompt(
         "answer_quality_eval",
