@@ -163,30 +163,13 @@ Answer: {answer}
 Retrieval quality: {retrieval_quality}
 Issues: {retrieval_issues}
 
-CRITERIA:
+EVALUATE:
+- Relevance: Does answer address the question? (True/False)
+- Completeness: All aspects covered with sufficient detail? (True/False)
+- Accuracy: All statements supported by retrieved documents? (True/False)
+- Confidence: 0-100 (threshold {quality_threshold_pct:.0f})
 
-Relevance: Does answer address the question?
-- True: Directly addresses topic and intent
-- False: Off-topic or misunderstands question
-
-Completeness: Are all aspects covered?
-- True: All parts answered with sufficient detail
-- False: Major gaps or missing aspects
-
-Accuracy: Is answer factually correct?
-- True: All statements supported by retrieved documents
-- False: Contains unsupported claims or errors
-
-Confidence (0-100, threshold {quality_threshold_pct:.0f}):
-- 80-100: Excellent (accept immediately)
-- {quality_threshold_pct:.0f}-79: Good (acceptable, will accept)
-- {quality_threshold_low_pct:.0f}-{quality_threshold_minus_1_pct:.0f}: Fair (needs retry)
-- 0-{quality_threshold_low_minus_1_pct:.0f}: Poor (inadequate)
-
-Issues (select applicable):
-- incomplete_synthesis, lacks_specificity, missing_details
-- unsupported_claims, partial_answer, wrong_focus
-- retrieval_limited, contextual_gaps
+Issues if applicable: incomplete_synthesis, lacks_specificity, missing_details, unsupported_claims, partial_answer, wrong_focus, retrieval_limited, contextual_gaps
 
 Return:
 - is_relevant (boolean)

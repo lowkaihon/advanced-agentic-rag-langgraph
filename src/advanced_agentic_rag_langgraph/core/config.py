@@ -87,12 +87,20 @@ def setup_retriever(
     pdfs: None | str | List[str] = None,
     chunk_size: int = 1000,
     chunk_overlap: int = 200,
-    verbose: bool = True
+    verbose: bool = True,
+    k_final: int = 4
 ) -> AdaptiveRetriever:
     """
     Initialize hybrid retriever with PDF documents from docs/ folder.
 
     Process: Load full PDFs → Profile with LLM → Chunk → Attach metadata → Create retriever
+
+    Args:
+        pdfs: PDF filenames or paths (None = all PDFs in docs/)
+        chunk_size: Text chunk size in characters
+        chunk_overlap: Overlap between chunks
+        verbose: Print progress messages
+        k_final: Number of final documents after two-stage reranking (default: 4)
 
     Returns: AdaptiveRetriever instance with profiled documents
     """
@@ -211,7 +219,7 @@ def setup_retriever(
         print(f"Has math: {corpus_stats.get('pct_with_math', 0):.0f}%")
         print("="*60 + "\n")
 
-    _retriever_instance = AdaptiveRetriever(all_chunks)
+    _retriever_instance = AdaptiveRetriever(all_chunks, k_final=k_final)
 
     return _retriever_instance
 

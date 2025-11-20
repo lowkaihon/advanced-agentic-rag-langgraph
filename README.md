@@ -226,8 +226,6 @@ Each issue maps to specific rewriting instructions or strategy changes, ensuring
 - **Two-Tier Evaluation Strategy**:
   - **Standard Dataset** (`golden_set_standard.json`): 20 questions (2-3 avg chunks, 10% cross-doc) - Target: F1@5 65-75%, Groundedness 95-97%, k_final=4
   - **Hard Dataset** (`golden_set_hard.json`): 10 questions (3.3 avg chunks, 50% cross-doc) - Target: F1@5 32-40%, Groundedness 92-95%, k_final=6
-  - **Portfolio Narrative**: "72% F1@5 on standard RAG + maintains 95% groundedness on complex multi-hop queries"
-  - **Legacy Dataset** (`golden_set.json`): 20 questions, deprecated (too difficult, 70% challenging led to defensive positioning)
 - RAGAS integration: 4 industry-standard metrics
 - Answer evaluation: vRAG-Eval framework (Relevance, Completeness, Accuracy) with 8 issue types and adaptive thresholds (65%/50% based on retrieval quality)
 

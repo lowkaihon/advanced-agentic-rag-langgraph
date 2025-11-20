@@ -726,12 +726,17 @@ The retrieved documents may not fully address the question. Only answer what can
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
+    # Detect if this is a retry after hallucination detection
+    is_retry_after_hallucination = retry_needed and unsupported_claims and len(unsupported_claims) > 0
+
     system_prompt, user_message = get_answer_generation_prompts(
         hallucination_feedback=hallucination_feedback,
         quality_instruction=quality_instruction,
         formatted_context=formatted_context,
         question=question,
-        is_gpt5=is_gpt5
+        is_gpt5=is_gpt5,
+        is_retry_after_hallucination=is_retry_after_hallucination,
+        unsupported_claims=unsupported_claims if is_retry_after_hallucination else None
     )
 
     llm = _get_answer_generation_llm()

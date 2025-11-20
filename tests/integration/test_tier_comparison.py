@@ -8,8 +8,9 @@ This test evaluates the Advanced Agentic RAG system across three model tiers:
 
 Validates the portfolio narrative: "Architecture adds X%, model upgrades add Y%"
 
-Runtime: ~8-12 minutes (quick mode, 5 examples)
-         ~30-45 minutes (full test, 20 examples)
+Runtime: ~3-5 minutes (quick mode, 2 examples)
+         ~15-20 minutes (hard dataset, 10 examples)
+         ~30-45 minutes (standard dataset, 20 examples)
 """
 
 import json
@@ -20,6 +21,7 @@ import logging
 import importlib
 import shutil
 import time
+import argparse
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List
@@ -119,7 +121,7 @@ def run_tier_evaluation(tier: str, dataset: List[Dict], quick_mode: bool = False
     print(f"[OK] Graph loaded successfully")
 
     # Prepare dataset
-    eval_dataset = dataset[:5] if quick_mode else dataset
+    eval_dataset = dataset[:2] if quick_mode else dataset
     print(f"[*] Evaluating {len(eval_dataset)} examples...")
 
     # Run evaluation with timing
@@ -148,7 +150,7 @@ def calculate_improvement(budget_value: float, tier_value: float) -> float:
     return ((tier_value - budget_value) / budget_value) * 100
 
 
-def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None):
+def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None, dataset_type: str = "standard"):
     """
     Generate markdown comparison report.
 
@@ -156,12 +158,13 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         tier_results: Dictionary mapping tier names to results
         output_dir: Directory to save report
         timestamp: Timestamp string for filename (format: YYYYMMDD_HHMMSS). If None, generates current time.
+        dataset_type: Dataset type ('standard' or 'hard') for filename and metadata
     """
     if timestamp is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    output_path = Path(output_dir) / f"tier_comparison_report_{timestamp}.md"
-    latest_path = Path(output_dir) / "tier_comparison_report_latest.md"
+    output_path = Path(output_dir) / f"tier_comparison_report_{dataset_type}_{timestamp}.md"
+    latest_path = Path(output_dir) / f"tier_comparison_report_{dataset_type}_latest.md"
 
     # Extract key metrics
     budget = tier_results["budget"]
@@ -169,10 +172,12 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     premium = tier_results["premium"]
 
     # Build report
+    dataset_label = "Standard" if dataset_type == "standard" else "Hard"
     lines = [
         "# Model Tier Comparison Report",
         "",
         f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"**Dataset:** {dataset_label} ({budget['examples_evaluated']} examples)",
         f"**Examples Evaluated:** {budget['examples_evaluated']}",
         "",
         "## Executive Summary",
@@ -433,7 +438,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     print(f"[OK] Latest copy saved to {latest_path}")
 
 
-def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None):
+def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation", timestamp: str = None, dataset_type: str = "standard"):
     """
     Save tier comparison results to JSON.
 
@@ -441,17 +446,19 @@ def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation", 
         tier_results: Dictionary mapping tier names to results
         output_dir: Directory to save results
         timestamp: Timestamp string for filename (format: YYYYMMDD_HHMMSS). If None, generates current time.
+        dataset_type: Dataset type ('standard' or 'hard') for filename and metadata
     """
     if timestamp is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    output_path = Path(output_dir) / f"tier_comparison_results_{timestamp}.json"
-    latest_path = Path(output_dir) / "tier_comparison_results_latest.json"
+    output_path = Path(output_dir) / f"tier_comparison_results_{dataset_type}_{timestamp}.json"
+    latest_path = Path(output_dir) / f"tier_comparison_results_{dataset_type}_latest.json"
 
     # Add metadata
     output_data = {
         "timestamp": datetime.now().isoformat(),
         "test_type": "tier_comparison",
+        "dataset_type": dataset_type,
         "tiers_evaluated": list(tier_results.keys()),
         "results": tier_results,
     }
@@ -467,31 +474,40 @@ def save_results(tier_results: Dict[str, Dict], output_dir: str = "evaluation", 
     print(f"[OK] Latest copy saved to {latest_path}")
 
 
-def test_tier_comparison(quick_mode: bool = False):
+def test_tier_comparison(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Main test function for tier comparison.
 
     Args:
-        quick_mode: If True, evaluate only 5 examples instead of full dataset
+        quick_mode: If True, evaluate only 2 examples instead of full dataset
+        dataset_type: Dataset to evaluate ('standard' or 'hard')
     """
     print("\n" + "="*70)
     print("TEST: Model Tier Comparison")
     print("="*70)
-    print(f"Mode: {'Quick (5 examples)' if quick_mode else 'Full (20 examples)'}")
+    print(f"Dataset: {dataset_type}")
+    print(f"Mode: {'Quick (2 examples)' if quick_mode else 'Full'}")
     print()
 
     # Load golden dataset
-    print("[*] Loading golden dataset...")
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    print(f"[*] Loading {dataset_type} golden dataset...")
+    if dataset_type == "standard":
+        dataset_path = "evaluation/golden_set_standard.json"
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        dataset_path = "evaluation/golden_set_hard.json"
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
     dataset = manager.dataset
-    print(f"[OK] Loaded {len(dataset)} examples")
+    print(f"[OK] Loaded {len(dataset)} examples (k_final={k_final})")
 
     # Pre-build retriever once (tier-independent optimization)
     print("\n[*] Pre-building retriever (tier-independent components)...")
     print("    This avoids re-ingesting 10 PDFs for each tier (saves 50-60% time)")
     from advanced_agentic_rag_langgraph.core import setup_retriever
-    retriever_instance = setup_retriever()
-    print("[OK] Retriever built and cached\n")
+    retriever_instance = setup_retriever(k_final=k_final)
+    print(f"[OK] Retriever built and cached (k_final={k_final})\n")
 
     # Run evaluations for each tier
     tiers = ["budget", "balanced", "premium"]
@@ -540,8 +556,8 @@ def test_tier_comparison(quick_mode: bool = False):
     # Save results with consistent timestamp for both files
     print()
     test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_results(tier_results, timestamp=test_timestamp)
-    generate_comparison_report(tier_results, timestamp=test_timestamp)
+    save_results(tier_results, timestamp=test_timestamp, dataset_type=dataset_type)
+    generate_comparison_report(tier_results, timestamp=test_timestamp, dataset_type=dataset_type)
 
     print("\n" + "="*70)
     print("[OK] Tier comparison test COMPLETED")
@@ -552,14 +568,27 @@ def test_tier_comparison(quick_mode: bool = False):
 
 
 if __name__ == "__main__":
-    # Check for --quick flag
-    quick_mode = "--quick" in sys.argv
+    parser = argparse.ArgumentParser(description='Model Tier Comparison Evaluation')
+    parser.add_argument(
+        '--dataset',
+        choices=['standard', 'hard'],
+        default='standard',
+        help='Dataset to evaluate: standard (20 questions, k_final=4) or hard (10 questions, k_final=6)'
+    )
+    parser.add_argument(
+        '--quick',
+        action='store_true',
+        help='Quick mode: evaluate only first 2 examples'
+    )
+    args = parser.parse_args()
 
-    if quick_mode:
-        print("[*] Running in quick mode (5 examples)")
+    if args.quick:
+        print(f"[*] Running in quick mode (2 examples from {args.dataset} dataset)")
     else:
-        print("[*] Running full evaluation (20 examples)")
-        print("[*] This will take approximately 30-45 minutes")
-        print("[*] Use --quick flag for faster testing (8-12 minutes)")
+        dataset_size = "20 examples" if args.dataset == "standard" else "10 examples"
+        expected_time = "30-45 minutes" if args.dataset == "standard" else "15-20 minutes"
+        print(f"[*] Running full evaluation on {args.dataset} dataset ({dataset_size})")
+        print(f"[*] This will take approximately {expected_time}")
+        print("[*] Use --quick flag for faster testing (3-5 minutes)")
 
-    test_tier_comparison(quick_mode=quick_mode)
+    test_tier_comparison(quick_mode=args.quick, dataset_type=args.dataset)

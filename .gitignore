@@ -137,3 +137,5 @@ Desktop.ini
 .claude/settings.local.json
 notes.ipynb
 evaluation/archive/
+evaluation/corpus_chunks/
+scripts

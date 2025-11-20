@@ -8,11 +8,11 @@ from .two_stage_reranker import TwoStageReRanker
 class AdaptiveRetriever:
     """Adaptive multi-strategy retrieval with intelligent selection"""
 
-    def __init__(self, documents: list[Document]):
+    def __init__(self, documents: list[Document], k_final: int = 4):
         self.semantic_retriever = SemanticRetriever(documents)
         self.keyword_retriever = BM25Retriever.from_documents(documents)
-        # TwoStageReRanker: CrossEncoder (top-15) then LLM-as-judge (top-4)
-        self.reranker = TwoStageReRanker(k_cross_encoder=15, k_final=4)
+        # TwoStageReRanker: CrossEncoder (top-15) then LLM-as-judge (k_final)
+        self.reranker = TwoStageReRanker(k_cross_encoder=15, k_final=k_final)
 
     def retrieve(
         self,

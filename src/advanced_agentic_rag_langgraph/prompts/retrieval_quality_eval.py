@@ -66,6 +66,40 @@ SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
   * Cannot answer query with current results
   * Most/all documents irrelevant
 
+FEW-SHOT EXAMPLES:
+
+Example 1 (Excellent - Score 85):
+Query: "What are the advantages of BERT over traditional word embeddings?"
+Documents: [3 documents explaining BERT's bidirectional architecture, pre-training advantages,
+performance improvements on 11 NLP tasks with specific metrics, and comparisons to ELMo/GPT]
+Evaluation:
+  quality_score: 85
+  reasoning: "All query aspects covered. Documents directly address BERT advantages with specific
+  examples (bidirectionality, pre-training benefits, benchmark results). Complete information for
+  comprehensive answer. All documents highly relevant to query topic."
+  issues: []
+
+Example 2 (Fair - Score 50):
+Query: "Compare BERT and GPT-2 architectures"
+Documents: [BERT paper with architecture details, BERT training procedure, related work section
+mentioning transformers - but NO GPT-2 content, no architectural comparison]
+Evaluation:
+  quality_score: 50
+  reasoning: "Only BERT aspects covered in detail. GPT-2 architecture completely missing - cannot
+  make comparison with current documents. Partial information insufficient for answering comparison
+  query."
+  issues: ["partial_coverage", "missing_key_info"]
+
+Example 3 (Poor - Score 30):
+Query: "What is the time complexity of self-attention in Transformers?"
+Documents: [Vision Transformer application paper, BERT fine-tuning guide, general attention mechanism
+overview without complexity analysis, image classification benchmarks]
+Evaluation:
+  quality_score: 30
+  reasoning: "Documents discuss attention tangentially but lack computational complexity analysis.
+  Wrong focus (applications vs theory). Cannot answer time complexity question from retrieved content."
+  issues: ["missing_key_info", "wrong_domain", "off_topic"]
+
 STRUCTURED OUTPUT:
 
 - quality_score (0-100): Aggregate score following guidelines above
@@ -95,35 +129,19 @@ GPT5_PROMPT = """Query: {query}
 Retrieved documents (top 5 after reranking):
 {docs_text}
 
-Evaluate if these documents sufficiently answer the query.
+Evaluate if these documents sufficiently answer the query (0-100, threshold 60).
 
-CRITERIA:
+EVALUATE:
+- Coverage: All query aspects addressed?
+- Completeness: Can query be fully answered?
+- Relevance: Documents on-topic and directly useful?
 
-Coverage: Are all query aspects addressed?
-- Multi-aspect queries need all parts covered
-- Single-aspect queries need core information
+SCORE (threshold 60 for proceed):
+80-100: Excellent | 60-79: Good | 40-59: Fair (retry) | 0-39: Poor (strategy change)
 
-Completeness: Can query be fully answered?
-- Complete: All information present
-- Partial: Some gaps exist
-- Insufficient: Missing key details
-
-Relevance: Are documents on-topic?
-- High: Directly address query
-- Mixed: Some relevant, some tangential
-- Low: Off-topic or peripheral
-
-SCORING (0-100, threshold 60):
-- 80-100: Excellent (proceed immediately)
-- 60-79: Good (acceptable, will proceed)
-- 40-59: Fair (retry with rewriting)
-- 0-39: Poor (needs strategy change)
-
-Issues (select applicable):
-- missing_key_info, partial_coverage, incomplete_context
-- wrong_domain, insufficient_depth, off_topic, mixed_relevance
+Issues if applicable: missing_key_info, partial_coverage, incomplete_context, wrong_domain, insufficient_depth, off_topic, mixed_relevance
 
 Return:
 - quality_score (0-100)
 - reasoning (2-3 sentences: coverage, completeness, relevance)
-- issues (list, empty if none; include partial_coverage or missing_key_info if key information missing)"""
+- issues (list, empty if none; include partial_coverage or missing_key_info if gaps exist)"""
