@@ -35,7 +35,10 @@ import json
 import os
 import warnings
 import logging
+import argparse
+import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Any, Optional
 
 # Suppress LangSmith warnings
@@ -198,7 +201,7 @@ def run_tier_on_golden_dataset(
                     doc.page_content if hasattr(doc, 'page_content') else str(doc)
                     for doc in retrieved_docs[:4]
                 ])
-                groundedness_result = nli_detector.detect(answer, context)
+                groundedness_result = nli_detector.verify_groundedness(answer, context)
                 groundedness_score = groundedness_result["groundedness_score"]
             else:
                 groundedness_score = 0.0
@@ -286,6 +289,8 @@ def generate_comparison_report(
     basic_results: List[Dict],
     intermediate_results: List[Dict],
     advanced_results: List[Dict],
+    dataset_type: str = "standard",
+    test_timestamp: str = None,
 ) -> str:
     """
     Generate markdown comparison report with delta analysis.
@@ -293,10 +298,14 @@ def generate_comparison_report(
     Args:
         *_metrics: Aggregate metrics for each tier
         *_results: Per-example results for each tier
+        dataset_type: Dataset type ('standard' or 'hard')
+        test_timestamp: Timestamp for report generation (YYYYMMDD_HHMMSS format)
 
     Returns:
         Markdown formatted report string
     """
+    if test_timestamp is None:
+        test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Calculate deltas (all consecutive pairs + pure semantic to advanced)
@@ -310,11 +319,12 @@ def generate_comparison_report(
     inter_to_adv_ground = ((advanced_metrics["avg_groundedness"] - intermediate_metrics["avg_groundedness"]) / intermediate_metrics["avg_groundedness"] * 100) if intermediate_metrics["avg_groundedness"] > 0 else 0
     pure_to_adv_ground = ((advanced_metrics["avg_groundedness"] - pure_semantic_metrics["avg_groundedness"]) / pure_semantic_metrics["avg_groundedness"] * 100) if pure_semantic_metrics["avg_groundedness"] > 0 else 0
 
+    dataset_label = "Standard" if dataset_type == "standard" else "Hard"
     report = f"""# 4-Tier RAG Architecture Comparison Report
 
 **Generated:** {timestamp}
 **Model Tier:** BUDGET (gpt-4o-mini for all tiers)
-**Dataset:** Golden set with {pure_semantic_metrics['total_examples']} examples
+**Dataset:** {dataset_label} ({pure_semantic_metrics['total_examples']} examples)
 
 ---
 
@@ -461,10 +471,40 @@ independent of model quality**:
 
 ---
 
+## Validation Against Expected Progression
+
+### Expected Improvement Ranges
+
+Based on architectural features added at each tier, we expect the following improvements:
+
+| Transition | Metric | Expected Range | Actual | Status |
+|------------|--------|----------------|--------|--------|
+| Pure→Basic | F1@5 | +10-15% | {pure_to_basic_f1:+.1f}% | {'[OK]' if 10 <= pure_to_basic_f1 <= 15 else '[WARN]'} |
+| Pure→Basic | Groundedness | +5-10% | {pure_to_basic_ground:+.1f}% | {'[OK]' if 5 <= pure_to_basic_ground <= 10 else '[WARN]'} |
+| Basic→Intermediate | F1@5 | +15-25% | {basic_to_inter_f1:+.1f}% | {'[OK]' if 15 <= basic_to_inter_f1 <= 25 else '[WARN]'} |
+| Basic→Intermediate | Groundedness | +8-15% | {basic_to_inter_ground:+.1f}% | {'[OK]' if 8 <= basic_to_inter_ground <= 15 else '[WARN]'} |
+| Intermediate→Advanced | F1@5 | +20-35% | {inter_to_adv_f1:+.1f}% | {'[OK]' if 20 <= inter_to_adv_f1 <= 35 else '[WARN]'} |
+| Intermediate→Advanced | Groundedness | +10-20% | {inter_to_adv_ground:+.1f}% | {'[OK]' if 10 <= inter_to_adv_ground <= 20 else '[WARN]'} |
+| Pure→Advanced (Overall) | F1@5 | +45-75% | {pure_to_adv_f1:+.1f}% | {'[OK]' if 45 <= pure_to_adv_f1 <= 75 else '[WARN]'} |
+| Pure→Advanced (Overall) | Groundedness | +25-40% | {pure_to_adv_ground:+.1f}% | {'[OK]' if 25 <= pure_to_adv_ground <= 40 else '[WARN]'} |
+
+### Interpretation
+
+- **[OK]**: Actual improvement falls within expected range (architectural features performing as designed)
+- **[WARN]**: Actual improvement outside expected range (may indicate dataset-specific behavior or need for tuning)
+
+**Note:** Expected ranges are based on incremental architectural complexity:
+- Pure→Basic adds 4 features (hybrid search, expansion, basic reranking)
+- Basic→Intermediate adds 10 features (quality gates, two-stage reranking, limited retry)
+- Intermediate→Advanced adds 13 features (NLI detection, dual-tier switching, adaptive thresholds)
+
+---
+
 ## Per-Example Analysis
 
 ### Success Rate by Tier
 
+- **Pure Semantic:** {pure_semantic_metrics['successful_examples']}/{pure_semantic_metrics['total_examples']} ({(pure_semantic_metrics['successful_examples']/pure_semantic_metrics['total_examples']*100):.0f}%)
 - **Basic:** {basic_metrics['successful_examples']}/{basic_metrics['total_examples']} ({(basic_metrics['successful_examples']/basic_metrics['total_examples']*100):.0f}%)
 - **Intermediate:** {intermediate_metrics['successful_examples']}/{intermediate_metrics['total_examples']} ({(intermediate_metrics['successful_examples']/intermediate_metrics['total_examples']*100):.0f}%)
 - **Advanced:** {advanced_metrics['successful_examples']}/{advanced_metrics['total_examples']} ({(advanced_metrics['successful_examples']/advanced_metrics['total_examples']*100):.0f}%)
@@ -553,41 +593,64 @@ def _format_most_improved(basic_results: List[Dict], advanced_results: List[Dict
 
 # ========== MAIN TEST ==========
 
-def test_architecture_comparison():
+def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Main comparison test - run all 4 tiers on golden dataset.
 
+    Args:
+        quick_mode: If True, evaluate only first 2 examples
+        dataset_type: Dataset to evaluate ('standard' or 'hard')
+
     Generates:
-    - evaluation/architecture_comparison_results.json (raw data)
-    - evaluation/architecture_comparison_report.md (formatted report)
+    - evaluation/architecture_comparison_results_{dataset_type}_{timestamp}.json (raw data)
+    - evaluation/architecture_comparison_report_{dataset_type}_{timestamp}.md (formatted report)
+    - evaluation/architecture_comparison_results_{dataset_type}_latest.json (convenience copy)
+    - evaluation/architecture_comparison_report_{dataset_type}_latest.md (convenience copy)
     """
     print("\n" + "="*80)
     print("4-TIER ARCHITECTURE COMPARISON TEST")
     print("="*80)
     print("Model Tier: BUDGET (gpt-4o-mini for all tiers)")
     print("Tiers: Pure Semantic (4), Basic (8), Intermediate (18), Advanced (31 features)")
+    print(f"Dataset: {dataset_type}")
+    print(f"Mode: {'Quick (2 examples)' if quick_mode else 'Full'}")
     print("="*80 + "\n")
 
-    # Load golden dataset
-    dataset_manager = GoldenDatasetManager("evaluation/golden_set.json")
+    # Load golden dataset with adaptive k_final
+    print(f"[*] Loading {dataset_type} golden dataset...")
+    if dataset_type == "standard":
+        dataset_path = "evaluation/golden_set_standard.json"
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        dataset_path = "evaluation/golden_set_hard.json"
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    dataset_manager = GoldenDatasetManager(dataset_path)
     dataset = dataset_manager.dataset
+    print(f"[OK] Loaded {len(dataset)} examples (k_final={k_final})")
 
     if not dataset:
         print("[ERROR] No examples in golden dataset")
         return
 
+    # Apply quick mode if requested
+    if quick_mode:
+        dataset = dataset[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
+
     # PRE-BUILD RETRIEVER ONCE (optimization to avoid redundant PDF re-ingestion)
     print(f"\n{'='*80}")
-    print("PRE-BUILD: Initializing retriever once for all tiers")
+    print(f"PRE-BUILD: Initializing retriever once for all tiers (k_final={k_final})")
     print(f"{'='*80}")
-    shared_retriever = setup_retriever()
+    print("    This avoids re-ingesting PDFs for each tier (saves 50-60% time)")
+    shared_retriever = setup_retriever(k_final=k_final)
 
     # Inject into all four variant modules
     pure_semantic_module.adaptive_retriever = shared_retriever
     basic_module.adaptive_retriever = shared_retriever
     intermediate_module.adaptive_retriever = shared_retriever
     advanced_module.adaptive_retriever = shared_retriever
-    print(f"[OK] Retriever pre-built and injected into all tiers")
+    print(f"[OK] Retriever pre-built and injected into all tiers (k_final={k_final})")
     print(f"{'='*80}\n")
 
     # Run Pure Semantic Tier
@@ -630,13 +693,20 @@ def test_architecture_comparison():
     print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_5']:<10.1%} {advanced_metrics['avg_groundedness']:<15.1%} {advanced_metrics['avg_confidence']:<12.1%} {advanced_metrics['avg_retrieval_attempts']:<10.1f}")
     print("=" * 80 + "\n")
 
-    # Save raw results
+    # Save raw results with timestamp
     os.makedirs("evaluation", exist_ok=True)
+
+    # Generate consistent timestamp for both files
+    test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     results_data = {
         "timestamp": datetime.now().isoformat(),
+        "test_type": "architecture_comparison",
+        "dataset_type": dataset_type,
         "model_tier": "BUDGET (gpt-4o-mini)",
         "dataset_size": len(dataset),
+        "k_final": k_final,
+        "quick_mode": quick_mode,
         "tiers": {
             "pure_semantic": {
                 "metrics": pure_semantic_metrics,
@@ -657,21 +727,35 @@ def test_architecture_comparison():
         },
     }
 
-    results_path = "evaluation/architecture_comparison_results.json"
-    with open(results_path, 'w') as f:
+    # Save with timestamp
+    results_path = Path("evaluation") / f"architecture_comparison_results_{dataset_type}_{test_timestamp}.json"
+    latest_results_path = Path("evaluation") / f"architecture_comparison_results_{dataset_type}_latest.json"
+
+    with open(results_path, 'w', encoding='utf-8') as f:
         json.dump(results_data, f, indent=2)
     print(f"[OK] Saved raw results to {results_path}")
+
+    # Create latest copy
+    shutil.copy2(results_path, latest_results_path)
+    print(f"[OK] Latest copy saved to {latest_results_path}")
 
     # Generate and save report
     report = generate_comparison_report(
         pure_semantic_metrics, basic_metrics, intermediate_metrics, advanced_metrics,
-        pure_semantic_results, basic_results, intermediate_results, advanced_results
+        pure_semantic_results, basic_results, intermediate_results, advanced_results,
+        dataset_type, test_timestamp
     )
 
-    report_path = "evaluation/architecture_comparison_report.md"
-    with open(report_path, 'w') as f:
+    report_path = Path("evaluation") / f"architecture_comparison_report_{dataset_type}_{test_timestamp}.md"
+    latest_report_path = Path("evaluation") / f"architecture_comparison_report_{dataset_type}_latest.md"
+
+    with open(report_path, 'w', encoding='utf-8') as f:
         f.write(report)
     print(f"[OK] Saved comparison report to {report_path}")
+
+    # Create latest copy
+    shutil.copy2(report_path, latest_report_path)
+    print(f"[OK] Latest copy saved to {latest_report_path}")
 
     print("\n" + "="*80)
     print("COMPARISON TEST COMPLETE")
@@ -682,4 +766,27 @@ def test_architecture_comparison():
 
 
 if __name__ == "__main__":
-    test_architecture_comparison()
+    parser = argparse.ArgumentParser(description='4-Tier Architecture Comparison Evaluation')
+    parser.add_argument(
+        '--dataset',
+        choices=['standard', 'hard'],
+        default='standard',
+        help='Dataset to evaluate: standard (20 questions, k_final=4) or hard (10 questions, k_final=6)'
+    )
+    parser.add_argument(
+        '--quick',
+        action='store_true',
+        help='Quick mode: evaluate only first 2 examples'
+    )
+    args = parser.parse_args()
+
+    if args.quick:
+        print(f"[*] Running in quick mode (2 examples from {args.dataset} dataset)")
+    else:
+        dataset_size = "20 examples" if args.dataset == "standard" else "10 examples"
+        expected_time = "75-90 minutes" if args.dataset == "standard" else "35-45 minutes"
+        print(f"[*] Running full evaluation on {args.dataset} dataset ({dataset_size})")
+        print(f"[*] This will take approximately {expected_time}")
+        print("[*] Use --quick flag for faster testing (~6-7 minutes)")
+
+    test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset)

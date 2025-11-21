@@ -301,7 +301,7 @@ def rerank_node(state: IntermediateRAGState) -> dict:
     stage1_docs = [doc for doc, score in stage1_results]
 
     # Stage 2: LLM-as-judge (top-4)
-    spec = get_model_for_task("reranking")
+    spec = get_model_for_task("llm_reranking")
     model_kwargs = {}
     if spec.reasoning_effort:
         model_kwargs["reasoning_effort"] = spec.reasoning_effort
@@ -347,7 +347,7 @@ def grade_documents_node(state: IntermediateRAGState) -> dict:
     query = state.get("active_query", state["baseline_query"])
     docs = state.get("unique_docs_list", [])
 
-    spec = get_model_for_task("retrieval_grading")
+    spec = get_model_for_task("retrieval_quality_eval")
     model_kwargs = {}
     if spec.reasoning_effort:
         model_kwargs["reasoning_effort"] = spec.reasoning_effort
@@ -473,7 +473,7 @@ def rewrite_query_node(state: IntermediateRAGState) -> dict:
 
     return {
         "active_query": rewritten,
-        "baseline_query": rewritten,
+        "query_expansions": [],  # Clear stale expansions after rewrite
     }
 
 

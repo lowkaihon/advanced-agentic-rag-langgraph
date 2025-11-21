@@ -505,9 +505,9 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     print(f"Total retrievals: {sum(len(ranks) for ranks in doc_ranks.values())}")
     print(f"Unique docs after RRF: {len(unique_docs)}")
 
-    # Show top-10 chunk IDs with RRF scores
-    print(f"\nTop 10 chunk IDs (RRF scores):")
-    for i, doc_id in enumerate(sorted_doc_ids[:10], 1):
+    # Show ALL chunk IDs with RRF scores (typically 16-22 chunks)
+    print(f"\nAll {len(sorted_doc_ids)} chunk IDs (RRF scores):")
+    for i, doc_id in enumerate(sorted_doc_ids, 1):
         print(f"  {i}. {doc_id} ({rrf_scores[doc_id]:.4f})")
 
     # Show ground truth tracking

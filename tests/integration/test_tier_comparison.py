@@ -514,6 +514,10 @@ def test_tier_comparison(quick_mode: bool = False, dataset_type: str = "standard
     dataset = manager.dataset
     print(f"[OK] Loaded {len(dataset)} examples (k_final={k_final})")
 
+    if not dataset:
+        print("[ERROR] No examples in golden dataset")
+        return
+
     # Pre-build retriever once (tier-independent optimization)
     print("\n[*] Pre-building retriever (tier-independent components)...")
     print("    This avoids re-ingesting 10 PDFs for each tier (saves 50-60% time)")

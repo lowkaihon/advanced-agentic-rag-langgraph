@@ -108,7 +108,7 @@
   {
     "id": "consistency_models_sampling_steps",
     "question": "How many sampling steps do Consistency Models require?",
-    "ground_truth_answer": "Consistency Models are designed to generate high‑quality samples in **one network evaluation**. Their abstract states that they directly map noise to data and support fast one‑step generation, while also allowing multistep sampling to trade compute for sample quality. The self‑consistency property ensures that outputs at different time steps map to the same initial point, so samples can be generated in a single step, with the option of chaining multiple steps for higher quality.",
+    "ground_truth_answer": "Consistency Models require only **one step** for generation. They are designed to support fast one‑step generation by directly mapping noise to data, which overcomes the iterative sampling process of traditional diffusion models. While they can generate samples in a single step, they also allow multistep sampling to trade compute for improved sample quality.",
     "relevant_doc_ids": [
       "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_0"
     ],
@@ -143,8 +143,8 @@
   },
   {
     "id": "bert_wordpiece_tokenization",
-    "question": "Why does BERT use WordPiece tokenization?",
-    "ground_truth_answer": "BERT uses WordPiece embeddings with a 30,000 token vocabulary. The input representation uses WordPiece tokens along with special tokens [CLS] and [SEP] to denote sentence boundaries. Every sequence begins with a [CLS] token whose final hidden state is used as the aggregate sequence representation for classification tasks, and sentences are separated by [SEP] tokens.",
+    "question": "What tokenization method does BERT use and what special tokens are employed?",
+    "ground_truth_answer": "BERT uses WordPiece embeddings with a 30,000 token vocabulary. The input representation employs special tokens to handle various tasks: every sequence begins with a [CLS] token whose final hidden state serves as the aggregate sequence representation for classification tasks, and sentence pairs are separated by [SEP] tokens to differentiate between sentences in a single sequence.",
     "relevant_doc_ids": [
       "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_16"
     ],
@@ -152,11 +152,11 @@
       "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_16": 3
     },
     "source_document": "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf",
-    "difficulty": "medium",
-    "query_type": "conceptual",
+    "difficulty": "easy",
+    "query_type": "factual",
     "domain": "nlp",
-    "expected_strategy": "semantic",
-    "expected_chunks": 2
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
   },
   {
     "id": "vit_scaling_vs_cnns",
