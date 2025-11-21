@@ -73,10 +73,10 @@ def test_baseline_performance():
     """
     Run on golden dataset and assert minimum performance thresholds.
 
-    Baseline thresholds (conservative estimates):
-    - avg_recall_at_5 >= 0.70 (retrieve 70% of relevant docs)
-    - avg_precision_at_5 >= 0.60 (60% of retrieved docs are relevant)
-    - avg_f1_at_5 >= 0.65 (balanced metric)
+    Baseline thresholds (conservative estimates for k=4):
+    - avg_recall_at_k >= 0.70 (retrieve 70% of relevant docs)
+    - avg_precision_at_k >= 0.60 (60% of retrieved docs are relevant)
+    - avg_f1_at_k >= 0.65 (balanced metric)
     - avg_groundedness >= 0.85 (85% of claims supported)
     - hallucination_rate <= 0.15 (max 15% hallucination rate)
     """
@@ -254,8 +254,9 @@ def test_cross_document_retrieval():
     # Check that recall is reasonable for cross-document queries
     recall = results['retrieval_metrics'].get('recall_at_k', 0)
     threshold = 0.60  # Lower threshold for harder cross-document queries
+    k = 4  # k=4 for standard dataset, k=6 for hard dataset
 
-    print(f"\nCross-Document Recall@5: {recall:.2%} (threshold: {threshold:.2%})")
+    print(f"\nCross-Document Recall@{k}: {recall:.2%} (threshold: {threshold:.2%})")
 
     if recall >= threshold:
         print(f"[OK] Cross-document retrieval meets threshold")
@@ -424,20 +425,21 @@ def generate_evaluation_report():
             reverse=True
         )
 
+        k = 4  # k=4 for standard dataset, k=6 for hard dataset
         report += "\n## Top 5 Best Performing Examples\n\n"
         for i, ex in enumerate(sorted_by_f1[:5], 1):
             report += f"{i}. **{ex['example_id']}** (Difficulty: {ex['difficulty']})\n"
-            report += f"   - Recall@5: {ex['retrieval_metrics'].get('recall_at_k', 0):.2%}\n"
-            report += f"   - Precision@5: {ex['retrieval_metrics'].get('precision_at_k', 0):.2%}\n"
-            report += f"   - F1@5: {ex['retrieval_metrics'].get('f1_at_k', 0):.2%}\n"
+            report += f"   - Recall@{k}: {ex['retrieval_metrics'].get('recall_at_k', 0):.2%}\n"
+            report += f"   - Precision@{k}: {ex['retrieval_metrics'].get('precision_at_k', 0):.2%}\n"
+            report += f"   - F1@{k}: {ex['retrieval_metrics'].get('f1_at_k', 0):.2%}\n"
             report += f"   - Groundedness: {ex['groundedness_score']:.2%}\n\n"
 
         report += "\n## Top 5 Worst Performing Examples\n\n"
         for i, ex in enumerate(sorted_by_f1[-5:][::-1], 1):
             report += f"{i}. **{ex['example_id']}** (Difficulty: {ex['difficulty']})\n"
-            report += f"   - Recall@5: {ex['retrieval_metrics'].get('recall_at_k', 0):.2%}\n"
-            report += f"   - Precision@5: {ex['retrieval_metrics'].get('precision_at_k', 0):.2%}\n"
-            report += f"   - F1@5: {ex['retrieval_metrics'].get('f1_at_k', 0):.2%}\n"
+            report += f"   - Recall@{k}: {ex['retrieval_metrics'].get('recall_at_k', 0):.2%}\n"
+            report += f"   - Precision@{k}: {ex['retrieval_metrics'].get('precision_at_k', 0):.2%}\n"
+            report += f"   - F1@{k}: {ex['retrieval_metrics'].get('f1_at_k', 0):.2%}\n"
             report += f"   - Groundedness: {ex['groundedness_score']:.2%}\n\n"
 
     report += """

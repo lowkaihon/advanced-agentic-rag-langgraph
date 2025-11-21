@@ -49,7 +49,7 @@ def load_tier_config(tier: str) -> Dict[str, Any]:
             "models": "All GPT-4o-mini",
             # Metric-specific targets (empirically realistic for cross-domain RAG)
             "targets": {
-                "f1_at_k": (0.20, 0.30),        # 20-30% F1@5 (retrieval quality)
+                "f1_at_k": (0.20, 0.30),        # 20-30% F1@4 (retrieval quality)
                 "groundedness": (0.85, 0.95),   # 85-95% hallucination prevention
                 "confidence": (0.65, 0.80),     # 65-80% answer confidence
             }
@@ -188,7 +188,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     ]
 
     # Calculate key improvements using multi-dimensional metrics
-    # Primary metric: F1@5 (balanced retrieval quality)
+    # Primary metric: F1@4 (balanced retrieval quality)
     budget_f1 = budget["retrieval_metrics"]["f1_at_k"]
     balanced_f1 = balanced["retrieval_metrics"]["f1_at_k"]
     premium_f1 = premium["retrieval_metrics"]["f1_at_k"]
@@ -209,7 +209,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
     premium_vs_balanced_ground = premium_ground - balanced_ground
 
     lines.extend([
-        f"- **Budget Baseline:** F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
+        f"- **Budget Baseline:** F1@4={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
         f"- **Balanced Improvement:** Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts",
         f"- **Premium Improvement:** Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts",
         "",
@@ -217,7 +217,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "",
         "## Tier Configurations",
         "",
-        "| Tier | Models | Daily Cost | Quality Narrative | Retrieval F1@5 | Groundedness |",
+        "| Tier | Models | Daily Cost | Quality Narrative | Retrieval F1@4 | Groundedness |",
         "|------|--------|------------|-------------------|----------------|--------------|",
     ])
 
@@ -277,10 +277,11 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "|--------|--------|----------|---------|-------------------|------------------|",
     ])
 
+    k = 4  # k=4 for standard dataset, k=6 for hard dataset
     retrieval_metrics = [
-        ("recall_at_k", "Recall@5", "%"),
-        ("precision_at_k", "Precision@5", "%"),
-        ("f1_at_k", "F1@5", "%"),
+        ("recall_at_k", f"Recall@{k}", "%"),
+        ("precision_at_k", f"Precision@{k}", "%"),
+        ("f1_at_k", f"F1@{k}", "%"),
         ("ndcg", "nDCG", ""),
         ("mrr", "MRR", ""),
     ]
@@ -320,7 +321,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "",
     ])
 
-    # Calculate cost per quality point (using F1@5 as primary metric)
+    # Calculate cost per quality point (using F1@K as primary metric)
     for tier in ["budget", "balanced", "premium"]:
         result = tier_results[tier]
         config = result["tier_config"]
@@ -331,7 +332,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
 
     lines.extend([
         "",
-        "### Incremental Cost-Benefit (Retrieval F1@5)",
+        "### Incremental Cost-Benefit (Retrieval F1@4)",
         "",
         f"- **Budget → Balanced:** +{balanced_f1_improvement*100:.1f} pts for ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day "
         f"(${(balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']) / (balanced_f1_improvement * 100) if balanced_f1_improvement > 0 else 0:.2f} per point)",
@@ -365,7 +366,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "",
         "### Architecture Value (Budget Tier)",
         "",
-        f"The Budget tier achieves **F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%}** using only GPT-4o-mini models across all components. ",
+        f"The Budget tier achieves **F1@4={budget_f1:.1%}, Groundedness={budget_ground:.1%}** using only GPT-4o-mini models across all components. ",
         "This demonstrates that the Advanced Agentic RAG architecture itself provides substantial value through:",
         "",
         "- Multi-stage query processing and expansion",
@@ -374,19 +375,19 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "- Self-correction loops with quality gates",
         "- NLI-based hallucination detection",
         "",
-        f"**Architecture Contribution:** F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
+        f"**Architecture Contribution:** F1@4={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
         "",
         "### Model Upgrade Impact",
         "",
         f"**Balanced Tier:** Selective GPT-5-mini upgrades for critical reasoning tasks add **Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts** ",
-        f"(F1@5={balanced_f1:.1%}, Groundedness={balanced_ground:.1%}) for an additional ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
+        f"(F1@4={balanced_f1:.1%}, Groundedness={balanced_ground:.1%}) for an additional ${balanced['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
         "",
         f"**Premium Tier:** Full GPT-5.1 deployment adds **Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts** ",
-        f"(F1@5={premium_f1:.1%}, Groundedness={premium_ground:.1%}) for an additional ${premium['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
+        f"(F1@4={premium_f1:.1%}, Groundedness={premium_ground:.1%}) for an additional ${premium['tier_config']['daily_cost'] - budget['tier_config']['daily_cost']:,}/day.",
         "",
         "### Key Findings",
         "",
-        f"1. **Architecture provides the foundation:** F1@5={budget_f1:.1%}, Groundedness={budget_ground:.1%} with budget models",
+        f"1. **Architecture provides the foundation:** F1@4={budget_f1:.1%}, Groundedness={budget_ground:.1%} with budget models",
         f"2. **Balanced tier offers best ROI:** Retrieval +{balanced_f1_improvement*100:.1f} pts, Generation +{balanced_ground_improvement*100:.1f} pts for 50% cost increase",
         f"3. **Premium tier for critical applications:** Retrieval +{premium_f1_improvement*100:.1f} pts, Generation +{premium_ground_improvement*100:.1f} pts justifies 10x cost when quality is paramount",
         "",
@@ -404,13 +405,13 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         config = result["tier_config"]
         targets = config["targets"]
 
-        # Validate F1@5 (retrieval quality)
+        # Validate F1@4 (retrieval quality)
         f1_min, f1_max = targets["f1_at_k"]
         f1_actual = result["retrieval_metrics"]["f1_at_k"]
         f1_status = "[OK]" if f1_min <= f1_actual <= f1_max else "[WARN]"
 
         lines.append(
-            f"| {config['name']} | F1@5 (Retrieval) | {f1_min:.0%}-{f1_max:.0%} | {f1_actual:.1%} | {f1_status} |"
+            f"| {config['name']} | F1@4 (Retrieval) | {f1_min:.0%}-{f1_max:.0%} | {f1_actual:.1%} | {f1_status} |"
         )
 
         # Validate Groundedness (anti-hallucination)
@@ -554,7 +555,7 @@ def test_tier_comparison(quick_mode: bool = False, dataset_type: str = "standard
         f1 = result["retrieval_metrics"]["f1_at_k"]
         groundedness = result["generation_metrics"]["avg_groundedness"]
         config = result["tier_config"]
-        print(f"  {config['name']:10s}: F1@5={f1:5.1f}%, Groundedness={groundedness:5.1f}% (narrative: {config['quality_narrative']})")
+        print(f"  {config['name']:10s}: F1@4={f1:5.1f}%, Groundedness={groundedness:5.1f}% (narrative: {config['quality_narrative']})")
 
     print()
     print("Improvements vs Budget:")

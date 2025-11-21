@@ -9,6 +9,7 @@ class AdaptiveRetriever:
     """Adaptive multi-strategy retrieval with intelligent selection"""
 
     def __init__(self, documents: list[Document], k_final: int = 4):
+        self.k_final = k_final
         self.semantic_retriever = SemanticRetriever(documents)
         self.keyword_retriever = BM25Retriever.from_documents(documents)
         # TwoStageReRanker: CrossEncoder (top-15) then LLM-as-judge (k_final)
@@ -79,5 +80,5 @@ class SemanticRetriever:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
         self.vectorstore = FAISS.from_documents(documents, embeddings)
 
-    def retrieve(self, query: str, k: int = 5) -> list[Document]:
+    def retrieve(self, query: str, k: int) -> list[Document]:
         return self.vectorstore.similarity_search(query, k=k)

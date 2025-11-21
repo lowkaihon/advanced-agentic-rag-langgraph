@@ -22,8 +22,8 @@ import numpy as np
 
 def calculate_retrieval_metrics(
     retrieved_docs: List[Document],
-    ground_truth_doc_ids: Set[str],
-    k: int = 5
+    ground_truth_doc_ids: Set[str] | List[str],
+    k: int
 ) -> Dict[str, float]:
     """
     Calculate standard retrieval metrics for binary relevance.
@@ -43,6 +43,10 @@ def calculate_retrieval_metrics(
             "hit_rate": 0.0,
             "mrr": 0.0,
         }
+
+    # Convert to set if needed (defensive programming for type flexibility)
+    if isinstance(ground_truth_doc_ids, list):
+        ground_truth_doc_ids = set(ground_truth_doc_ids)
 
     retrieved_ids = {
         doc.metadata.get("id", f"doc_{i}")
@@ -81,7 +85,7 @@ def calculate_retrieval_metrics(
 def calculate_ndcg(
     retrieved_docs: List[Document],
     relevance_grades: Dict[str, int],
-    k: int = 5
+    k: int
 ) -> float:
     """
     Calculate Normalized Discounted Cumulative Gain (nDCG@K).
@@ -117,7 +121,7 @@ def calculate_ndcg(
     return ndcg
 
 
-def format_metrics_report(metrics: Dict[str, float], k: int = 5) -> str:
+def format_metrics_report(metrics: Dict[str, float], k: int) -> str:
     """Format retrieval metrics as human-readable report."""
     report = f"""RETRIEVAL METRICS @ K={k}
 {'='*50}

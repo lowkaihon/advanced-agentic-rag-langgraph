@@ -22,7 +22,7 @@ Scoring thresholds:
 
 BASE_PROMPT = """Query: {query}
 
-Retrieved documents (top 5 after reranking):
+Retrieved documents (top-k after reranking):
 {docs_text}
 
 Evaluate retrieval quality to determine if these documents are sufficient for answer generation.
@@ -126,7 +126,7 @@ Return your evaluation as structured data."""
 
 GPT5_PROMPT = """Query: {query}
 
-Retrieved documents (top 5 after reranking):
+Retrieved documents (top-k after reranking):
 {docs_text}
 
 Evaluate if these documents sufficiently answer the query (0-100, threshold 60).

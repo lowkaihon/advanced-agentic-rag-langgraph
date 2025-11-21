@@ -12,7 +12,7 @@ All tiers use BUDGET model tier (gpt-4o-mini) to isolate architectural
 improvements from model quality differences.
 
 Key Metrics:
-- F1@5: Retrieval quality (harmonic mean of precision and recall)
+- F1@K: Retrieval quality (K=4 for standard, K=6 for hard datasets)
 - Groundedness: Anti-hallucination (% claims supported by context)
 - Confidence: Answer quality (LLM confidence score)
 - Avg Retrieval Attempts: Efficiency metric
@@ -105,6 +105,7 @@ def run_tier_on_golden_dataset(
     tier_name: str,
     graph: Any,
     dataset: List[Dict],
+    k_final: int = 4,
     verbose: bool = True
 ) -> List[Dict]:
     """
@@ -145,12 +146,14 @@ def run_tier_on_golden_dataset(
                 initial_state = {
                     "user_question": query,
                     "retrieved_docs": [],  # Will be set by retrieve node
+                    "ground_truth_doc_ids": ground_truth_docs,
                 }
             elif tier_name == "basic":
                 initial_state = {
                     "user_question": query,
                     "query_expansions": [],  # Will be set by first node
                     "retrieved_docs": [],  # Accumulated field
+                    "ground_truth_doc_ids": ground_truth_docs,
                 }
             elif tier_name == "intermediate":
                 initial_state = {
@@ -159,6 +162,7 @@ def run_tier_on_golden_dataset(
                     "messages": [],
                     "retrieved_docs": [],
                     "retrieval_attempts": 0,
+                    "ground_truth_doc_ids": ground_truth_docs,
                 }
             else:  # advanced
                 initial_state = {
@@ -168,6 +172,7 @@ def run_tier_on_golden_dataset(
                     "retrieved_docs": [],
                     "retrieval_attempts": 0,
                     "query_expansions": [],
+                    "ground_truth_doc_ids": ground_truth_docs,
                 }
 
             # Run graph
@@ -189,11 +194,12 @@ def run_tier_on_golden_dataset(
                 if hasattr(doc, 'metadata') and 'id' in doc.metadata:
                     retrieved_doc_ids.append(doc.metadata['id'])
 
-            # Calculate F1@5
-            relevant_retrieved = set(ground_truth_docs[:5]) & set(retrieved_doc_ids[:5])
-            precision = len(relevant_retrieved) / 5 if len(retrieved_doc_ids) >= 5 else 0.0
-            recall = len(relevant_retrieved) / min(len(ground_truth_docs), 5)
-            f1_at_5 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+            # Calculate F1@K (K adapts to dataset complexity)
+            k = k_final
+            relevant_retrieved = set(ground_truth_docs[:k]) & set(retrieved_doc_ids[:k])
+            precision = len(relevant_retrieved) / k if len(retrieved_doc_ids) >= k else 0.0
+            recall = len(relevant_retrieved) / min(len(ground_truth_docs), k)
+            f1_at_k = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
             # Calculate groundedness using NLI
             if retrieved_docs and answer:
@@ -207,7 +213,7 @@ def run_tier_on_golden_dataset(
                 groundedness_score = 0.0
 
             if verbose:
-                print(f"  F1@5: {f1_at_5:.0%} | Groundedness: {groundedness_score:.0%} | Confidence: {confidence:.0%} | Attempts: {retrieval_attempts}")
+                print(f"  F1@{k}: {f1_at_k:.0%} | Groundedness: {groundedness_score:.0%} | Confidence: {confidence:.0%} | Attempts: {retrieval_attempts}")
 
             results.append({
                 "example_id": example.get("id", query[:30]),
@@ -216,9 +222,9 @@ def run_tier_on_golden_dataset(
                 "confidence": confidence,
                 "ground_truth_docs": ground_truth_docs,
                 "retrieved_docs": retrieved_doc_ids,
-                "f1_at_5": f1_at_5,
-                "precision_at_5": precision,
-                "recall_at_5": recall,
+                "f1_at_k": f1_at_k,
+                "precision_at_k": precision,
+                "recall_at_k": recall,
                 "groundedness_score": groundedness_score,
                 "retrieval_attempts": retrieval_attempts,
             })
@@ -229,9 +235,9 @@ def run_tier_on_golden_dataset(
                 "example_id": example.get("id", query[:30]),
                 "query": query,
                 "error": str(e),
-                "f1_at_5": 0.0,
-                "precision_at_5": 0.0,
-                "recall_at_5": 0.0,
+                "f1_at_k": 0.0,
+                "precision_at_k": 0.0,
+                "recall_at_k": 0.0,
                 "groundedness_score": 0.0,
                 "retrieval_attempts": 0,
             })
@@ -254,9 +260,9 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
 
     if not valid_results:
         return {
-            "avg_f1_at_5": 0.0,
-            "avg_precision_at_5": 0.0,
-            "avg_recall_at_5": 0.0,
+            "avg_f1_at_k": 0.0,
+            "avg_precision_at_k": 0.0,
+            "avg_recall_at_k": 0.0,
             "avg_groundedness": 0.0,
             "avg_confidence": 0.0,
             "avg_retrieval_attempts": 0.0,
@@ -266,9 +272,9 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
         }
 
     metrics = {
-        "avg_f1_at_5": sum(r["f1_at_5"] for r in valid_results) / len(valid_results),
-        "avg_precision_at_5": sum(r["precision_at_5"] for r in valid_results) / len(valid_results),
-        "avg_recall_at_5": sum(r["recall_at_5"] for r in valid_results) / len(valid_results),
+        "avg_f1_at_k": sum(r["f1_at_k"] for r in valid_results) / len(valid_results),
+        "avg_precision_at_k": sum(r["precision_at_k"] for r in valid_results) / len(valid_results),
+        "avg_recall_at_k": sum(r["recall_at_k"] for r in valid_results) / len(valid_results),
         "avg_groundedness": sum(r["groundedness_score"] for r in valid_results) / len(valid_results),
         "avg_confidence": sum(r["confidence"] for r in valid_results) / len(valid_results),
         "avg_retrieval_attempts": sum(r["retrieval_attempts"] for r in valid_results) / len(valid_results),
@@ -289,6 +295,7 @@ def generate_comparison_report(
     basic_results: List[Dict],
     intermediate_results: List[Dict],
     advanced_results: List[Dict],
+    k_final: int = 4,
     dataset_type: str = "standard",
     test_timestamp: str = None,
 ) -> str:
@@ -308,11 +315,13 @@ def generate_comparison_report(
         test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    k = k_final  # For display strings
+
     # Calculate deltas (all consecutive pairs + pure semantic to advanced)
-    pure_to_basic_f1 = ((basic_metrics["avg_f1_at_5"] - pure_semantic_metrics["avg_f1_at_5"]) / pure_semantic_metrics["avg_f1_at_5"] * 100) if pure_semantic_metrics["avg_f1_at_5"] > 0 else 0
-    basic_to_inter_f1 = ((intermediate_metrics["avg_f1_at_5"] - basic_metrics["avg_f1_at_5"]) / basic_metrics["avg_f1_at_5"] * 100) if basic_metrics["avg_f1_at_5"] > 0 else 0
-    inter_to_adv_f1 = ((advanced_metrics["avg_f1_at_5"] - intermediate_metrics["avg_f1_at_5"]) / intermediate_metrics["avg_f1_at_5"] * 100) if intermediate_metrics["avg_f1_at_5"] > 0 else 0
-    pure_to_adv_f1 = ((advanced_metrics["avg_f1_at_5"] - pure_semantic_metrics["avg_f1_at_5"]) / pure_semantic_metrics["avg_f1_at_5"] * 100) if pure_semantic_metrics["avg_f1_at_5"] > 0 else 0
+    pure_to_basic_f1 = ((basic_metrics["avg_f1_at_k"] - pure_semantic_metrics["avg_f1_at_k"]) / pure_semantic_metrics["avg_f1_at_k"] * 100) if pure_semantic_metrics["avg_f1_at_k"] > 0 else 0
+    basic_to_inter_f1 = ((intermediate_metrics["avg_f1_at_k"] - basic_metrics["avg_f1_at_k"]) / basic_metrics["avg_f1_at_k"] * 100) if basic_metrics["avg_f1_at_k"] > 0 else 0
+    inter_to_adv_f1 = ((advanced_metrics["avg_f1_at_k"] - intermediate_metrics["avg_f1_at_k"]) / intermediate_metrics["avg_f1_at_k"] * 100) if intermediate_metrics["avg_f1_at_k"] > 0 else 0
+    pure_to_adv_f1 = ((advanced_metrics["avg_f1_at_k"] - pure_semantic_metrics["avg_f1_at_k"]) / pure_semantic_metrics["avg_f1_at_k"] * 100) if pure_semantic_metrics["avg_f1_at_k"] > 0 else 0
 
     pure_to_basic_ground = ((basic_metrics["avg_groundedness"] - pure_semantic_metrics["avg_groundedness"]) / pure_semantic_metrics["avg_groundedness"] * 100) if pure_semantic_metrics["avg_groundedness"] > 0 else 0
     basic_to_inter_ground = ((intermediate_metrics["avg_groundedness"] - basic_metrics["avg_groundedness"]) / basic_metrics["avg_groundedness"] * 100) if basic_metrics["avg_groundedness"] > 0 else 0
@@ -337,24 +346,24 @@ architectural improvements.
 ### Key Findings
 
 **Winner by Metric:**
-- **F1@5 (Retrieval Quality):** {_get_winner(pure_semantic_metrics['avg_f1_at_5'], basic_metrics['avg_f1_at_5'], intermediate_metrics['avg_f1_at_5'], advanced_metrics['avg_f1_at_5'])}
+- **F1@{k} (Retrieval Quality):** {_get_winner(pure_semantic_metrics['avg_f1_at_k'], basic_metrics['avg_f1_at_k'], intermediate_metrics['avg_f1_at_k'], advanced_metrics['avg_f1_at_k'])}
 - **Groundedness (Anti-Hallucination):** {_get_winner(pure_semantic_metrics['avg_groundedness'], basic_metrics['avg_groundedness'], intermediate_metrics['avg_groundedness'], advanced_metrics['avg_groundedness'])}
 - **Confidence (Answer Quality):** {_get_winner(pure_semantic_metrics['avg_confidence'], basic_metrics['avg_confidence'], intermediate_metrics['avg_confidence'], advanced_metrics['avg_confidence'])}
 
 **Overall Improvement (Pure Semantic → Advanced):**
-- F1@5: **{pure_to_adv_f1:+.1f}%**
+- F1@{k}: **{pure_to_adv_f1:+.1f}%**
 - Groundedness: **{pure_to_adv_ground:+.1f}%**
 
 ---
 
 ## Metrics Comparison
 
-| Tier | Features | F1@5 | Groundedness | Confidence | Avg Attempts |
+| Tier | Features | F1@{k} | Groundedness | Confidence | Avg Attempts |
 |------|----------|------|--------------|------------|--------------|
-| **Pure Semantic** | 4 | {pure_semantic_metrics['avg_f1_at_5']:.1%} | {pure_semantic_metrics['avg_groundedness']:.1%} | {pure_semantic_metrics['avg_confidence']:.1%} | {pure_semantic_metrics['avg_retrieval_attempts']:.1f} |
-| **Basic** | 8 | {basic_metrics['avg_f1_at_5']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_confidence']:.1%} | {basic_metrics['avg_retrieval_attempts']:.1f} |
-| **Intermediate** | 18 | {intermediate_metrics['avg_f1_at_5']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_confidence']:.1%} | {intermediate_metrics['avg_retrieval_attempts']:.1f} |
-| **Advanced** | 31 | {advanced_metrics['avg_f1_at_5']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_confidence']:.1%} | {advanced_metrics['avg_retrieval_attempts']:.1f} |
+| **Pure Semantic** | 4 | {pure_semantic_metrics['avg_f1_at_k']:.1%} | {pure_semantic_metrics['avg_groundedness']:.1%} | {pure_semantic_metrics['avg_confidence']:.1%} | {pure_semantic_metrics['avg_retrieval_attempts']:.1f} |
+| **Basic** | 8 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_confidence']:.1%} | {basic_metrics['avg_retrieval_attempts']:.1f} |
+| **Intermediate** | 18 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_confidence']:.1%} | {intermediate_metrics['avg_retrieval_attempts']:.1f} |
+| **Advanced** | 31 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_confidence']:.1%} | {advanced_metrics['avg_retrieval_attempts']:.1f} |
 
 ---
 
@@ -364,20 +373,20 @@ architectural improvements.
 
 | Metric | Delta |
 |--------|-------|
-| F1@5 | {pure_to_basic_f1:+.1f}% |
+| F1@{k} | {pure_to_basic_f1:+.1f}% |
 | Groundedness | {pure_to_basic_ground:+.1f}% |
 
 **Key Features Added:**
 1. Query expansion (3 variants with RRF fusion)
 2. Hybrid retrieval (semantic + BM25 keyword)
-3. CrossEncoder reranking (top-5)
+3. CrossEncoder reranking (top-k, adaptive)
 4. Enhanced answer generation prompting
 
 ### Basic → Intermediate (+10 features)
 
 | Metric | Delta |
 |--------|-------|
-| F1@5 | {basic_to_inter_f1:+.1f}% |
+| F1@{k} | {basic_to_inter_f1:+.1f}% |
 | Groundedness | {basic_to_inter_ground:+.1f}% |
 
 **Key Features Added:**
@@ -396,7 +405,7 @@ architectural improvements.
 
 | Metric | Delta |
 |--------|-------|
-| F1@5 | {inter_to_adv_f1:+.1f}% |
+| F1@{k} | {inter_to_adv_f1:+.1f}% |
 | Groundedness | {inter_to_adv_ground:+.1f}% |
 
 **Key Features Added:**
@@ -418,7 +427,7 @@ architectural improvements.
 
 | Metric | Delta |
 |--------|-------|
-| F1@5 | {pure_to_adv_f1:+.1f}% |
+| F1@{k} | {pure_to_adv_f1:+.1f}% |
 | Groundedness | {pure_to_adv_ground:+.1f}% |
 
 ---
@@ -456,14 +465,14 @@ This comparison demonstrates that **advanced RAG architecture provides measurabl
 independent of model quality**:
 
 1. **Graph architecture provides baseline intelligence:** Even basic conditional routing
-   (Basic → Intermediate) shows {basic_to_inter_f1:.0f}% improvement in F1@5
+   (Basic → Intermediate) shows {basic_to_inter_f1:.0f}% improvement in F1@{k}
 
 2. **Quality gates and limited retry add measurable value:** Simple binary quality checks
    and 1-2 retries (Intermediate) improve results without complex adaptive loops
 
 3. **Full self-correction and adaptation maximize performance:** Advanced features
    (NLI detection, dual-tier switching, root cause analysis) provide additional
-   {inter_to_adv_f1:.0f}% F1@5 improvement
+   {inter_to_adv_f1:.0f}% F1@{k} improvement
 
 4. **The value is in the architecture, not just the model:** All tiers use identical
    BUDGET models (gpt-4o-mini), yet Advanced tier shows {pure_to_adv_f1:.0f}% improvement
@@ -479,13 +488,13 @@ Based on architectural features added at each tier, we expect the following impr
 
 | Transition | Metric | Expected Range | Actual | Status |
 |------------|--------|----------------|--------|--------|
-| Pure→Basic | F1@5 | +10-15% | {pure_to_basic_f1:+.1f}% | {'[OK]' if 10 <= pure_to_basic_f1 <= 15 else '[WARN]'} |
+| Pure→Basic | F1@{k} | +10-15% | {pure_to_basic_f1:+.1f}% | {'[OK]' if 10 <= pure_to_basic_f1 <= 15 else '[WARN]'} |
 | Pure→Basic | Groundedness | +5-10% | {pure_to_basic_ground:+.1f}% | {'[OK]' if 5 <= pure_to_basic_ground <= 10 else '[WARN]'} |
-| Basic→Intermediate | F1@5 | +15-25% | {basic_to_inter_f1:+.1f}% | {'[OK]' if 15 <= basic_to_inter_f1 <= 25 else '[WARN]'} |
+| Basic→Intermediate | F1@{k} | +15-25% | {basic_to_inter_f1:+.1f}% | {'[OK]' if 15 <= basic_to_inter_f1 <= 25 else '[WARN]'} |
 | Basic→Intermediate | Groundedness | +8-15% | {basic_to_inter_ground:+.1f}% | {'[OK]' if 8 <= basic_to_inter_ground <= 15 else '[WARN]'} |
-| Intermediate→Advanced | F1@5 | +20-35% | {inter_to_adv_f1:+.1f}% | {'[OK]' if 20 <= inter_to_adv_f1 <= 35 else '[WARN]'} |
+| Intermediate→Advanced | F1@{k} | +20-35% | {inter_to_adv_f1:+.1f}% | {'[OK]' if 20 <= inter_to_adv_f1 <= 35 else '[WARN]'} |
 | Intermediate→Advanced | Groundedness | +10-20% | {inter_to_adv_ground:+.1f}% | {'[OK]' if 10 <= inter_to_adv_ground <= 20 else '[WARN]'} |
-| Pure→Advanced (Overall) | F1@5 | +45-75% | {pure_to_adv_f1:+.1f}% | {'[OK]' if 45 <= pure_to_adv_f1 <= 75 else '[WARN]'} |
+| Pure→Advanced (Overall) | F1@{k} | +45-75% | {pure_to_adv_f1:+.1f}% | {'[OK]' if 45 <= pure_to_adv_f1 <= 75 else '[WARN]'} |
 | Pure→Advanced (Overall) | Groundedness | +25-40% | {pure_to_adv_ground:+.1f}% | {'[OK]' if 25 <= pure_to_adv_ground <= 40 else '[WARN]'} |
 
 ### Interpretation
@@ -511,7 +520,7 @@ Based on architectural features added at each tier, we expect the following impr
 
 ### Top Performing Examples (Advanced Tier)
 
-{_format_top_examples(advanced_results, n=5)}
+{_format_top_examples(advanced_results, n=5, k=k)}
 
 ### Most Improved Examples (Basic → Advanced)
 
@@ -524,7 +533,7 @@ Based on architectural features added at each tier, we expect the following impr
 **Dataset:** {basic_metrics['total_examples']} validated examples from golden set
 **Model Tier:** BUDGET (gpt-4o-mini) for all tiers
 **Metrics:**
-- **F1@5:** Harmonic mean of Precision@5 and Recall@5 (retrieval quality)
+- **F1@{k}:** Harmonic mean of Precision@{k} and Recall@{k} (retrieval quality)
 - **Groundedness:** NLI-based verification (% claims supported by context)
 - **Confidence:** LLM confidence score (answer quality)
 - **Avg Attempts:** Average retrieval attempts per query (efficiency)
@@ -551,14 +560,14 @@ def _get_winner(pure_semantic: float, basic: float, intermediate: float, advance
     return f"{winner} ({scores[winner]:.1%})"
 
 
-def _format_top_examples(results: List[Dict], n: int = 5) -> str:
+def _format_top_examples(results: List[Dict], n: int = 5, k: int = 4) -> str:
     """Format top N performing examples."""
     valid_results = [r for r in results if "error" not in r]
-    sorted_results = sorted(valid_results, key=lambda x: x["f1_at_5"], reverse=True)[:n]
+    sorted_results = sorted(valid_results, key=lambda x: x["f1_at_k"], reverse=True)[:n]
 
     lines = []
     for i, r in enumerate(sorted_results, 1):
-        lines.append(f"{i}. **{r['example_id']}**: F1@5={r['f1_at_5']:.0%}, Ground={r['groundedness_score']:.0%}")
+        lines.append(f"{i}. **{r['example_id']}**: F1@{k}={r['f1_at_k']:.0%}, Ground={r['groundedness_score']:.0%}")
 
     return "\n".join(lines) if lines else "*No successful examples*"
 
@@ -571,12 +580,12 @@ def _format_most_improved(basic_results: List[Dict], advanced_results: List[Dict
         if "error" in basic_r or "error" in adv_r:
             continue
 
-        delta_f1 = adv_r["f1_at_5"] - basic_r["f1_at_5"]
+        delta_f1 = adv_r["f1_at_k"] - basic_r["f1_at_k"]
         improvements.append({
             "example_id": adv_r["example_id"],
             "delta_f1": delta_f1,
-            "basic_f1": basic_r["f1_at_5"],
-            "adv_f1": adv_r["f1_at_5"],
+            "basic_f1": basic_r["f1_at_k"],
+            "adv_f1": adv_r["f1_at_k"],
         })
 
     sorted_improvements = sorted(improvements, key=lambda x: x["delta_f1"], reverse=True)[:n]
@@ -657,40 +666,41 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     print(f"\n{'='*80}")
     print("[1/4] Running PURE SEMANTIC tier (4 features)...")
     print(f"{'='*80}")
-    pure_semantic_results = run_tier_on_golden_dataset("pure_semantic", pure_semantic_rag_graph, dataset)
+    pure_semantic_results = run_tier_on_golden_dataset("pure_semantic", pure_semantic_rag_graph, dataset, k_final=k_final)
     pure_semantic_metrics = calculate_tier_metrics(pure_semantic_results)
 
     # Run Basic Tier
     print(f"\n{'='*80}")
     print("[2/4] Running BASIC tier (8 features)...")
     print(f"{'='*80}")
-    basic_results = run_tier_on_golden_dataset("basic", basic_rag_graph, dataset)
+    basic_results = run_tier_on_golden_dataset("basic", basic_rag_graph, dataset, k_final=k_final)
     basic_metrics = calculate_tier_metrics(basic_results)
 
     # Run Intermediate Tier
     print(f"\n{'='*80}")
     print("[3/4] Running INTERMEDIATE tier (18 features)...")
     print(f"{'='*80}")
-    intermediate_results = run_tier_on_golden_dataset("intermediate", intermediate_rag_graph, dataset)
+    intermediate_results = run_tier_on_golden_dataset("intermediate", intermediate_rag_graph, dataset, k_final=k_final)
     intermediate_metrics = calculate_tier_metrics(intermediate_results)
 
     # Run Advanced Tier
     print(f"\n{'='*80}")
     print("[4/4] Running ADVANCED tier (31 features)...")
     print(f"{'='*80}")
-    advanced_results = run_tier_on_golden_dataset("advanced", advanced_rag_graph, dataset)
+    advanced_results = run_tier_on_golden_dataset("advanced", advanced_rag_graph, dataset, k_final=k_final)
     advanced_metrics = calculate_tier_metrics(advanced_results)
 
     # Print summary
+    k = k_final
     print(f"\n{'='*80}")
     print("SUMMARY")
     print(f"{'='*80}")
-    print(f"\n{'Tier':<15} {'F1@5':<10} {'Groundedness':<15} {'Confidence':<12} {'Attempts':<10}")
+    print(f"\n{'Tier':<15} {f'F1@{k}':<10} {'Groundedness':<15} {'Confidence':<12} {'Attempts':<10}")
     print("-" * 80)
-    print(f"{'Pure Semantic':<15} {pure_semantic_metrics['avg_f1_at_5']:<10.1%} {pure_semantic_metrics['avg_groundedness']:<15.1%} {pure_semantic_metrics['avg_confidence']:<12.1%} {pure_semantic_metrics['avg_retrieval_attempts']:<10.1f}")
-    print(f"{'Basic':<15} {basic_metrics['avg_f1_at_5']:<10.1%} {basic_metrics['avg_groundedness']:<15.1%} {basic_metrics['avg_confidence']:<12.1%} {basic_metrics['avg_retrieval_attempts']:<10.1f}")
-    print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_5']:<10.1%} {intermediate_metrics['avg_groundedness']:<15.1%} {intermediate_metrics['avg_confidence']:<12.1%} {intermediate_metrics['avg_retrieval_attempts']:<10.1f}")
-    print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_5']:<10.1%} {advanced_metrics['avg_groundedness']:<15.1%} {advanced_metrics['avg_confidence']:<12.1%} {advanced_metrics['avg_retrieval_attempts']:<10.1f}")
+    print(f"{'Pure Semantic':<15} {pure_semantic_metrics['avg_f1_at_k']:<10.1%} {pure_semantic_metrics['avg_groundedness']:<15.1%} {pure_semantic_metrics['avg_confidence']:<12.1%} {pure_semantic_metrics['avg_retrieval_attempts']:<10.1f}")
+    print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<10.1%} {basic_metrics['avg_groundedness']:<15.1%} {basic_metrics['avg_confidence']:<12.1%} {basic_metrics['avg_retrieval_attempts']:<10.1f}")
+    print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<10.1%} {intermediate_metrics['avg_groundedness']:<15.1%} {intermediate_metrics['avg_confidence']:<12.1%} {intermediate_metrics['avg_retrieval_attempts']:<10.1f}")
+    print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<10.1%} {advanced_metrics['avg_groundedness']:<15.1%} {advanced_metrics['avg_confidence']:<12.1%} {advanced_metrics['avg_retrieval_attempts']:<10.1f}")
     print("=" * 80 + "\n")
 
     # Save raw results with timestamp
@@ -743,7 +753,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     report = generate_comparison_report(
         pure_semantic_metrics, basic_metrics, intermediate_metrics, advanced_metrics,
         pure_semantic_results, basic_results, intermediate_results, advanced_results,
-        dataset_type, test_timestamp
+        k_final, dataset_type, test_timestamp
     )
 
     report_path = Path("evaluation") / f"architecture_comparison_report_{dataset_type}_{test_timestamp}.md"

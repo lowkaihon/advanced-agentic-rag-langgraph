@@ -56,7 +56,7 @@ class AdvancedRAGState(TypedDict):
     retrieval_caused_hallucination: Optional[bool]  # Poor retrieval + SEVERE -> re-retrieval with strategy switch
 
     # === EVALUATION METRICS (Golden Dataset Support) ===
-    ground_truth_doc_ids: Optional[set]  # Relevant document IDs from test set
+    ground_truth_doc_ids: Optional[list]  # Relevant document IDs from test set
     relevance_grades: Optional[dict[str, int]]  # Graded relevance per doc (0-3 scale for nDCG)
     retrieval_metrics: Optional[dict[str, float]]  # Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 

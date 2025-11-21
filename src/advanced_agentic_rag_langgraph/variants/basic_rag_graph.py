@@ -8,7 +8,7 @@ Features (8):
 1. Hybrid retrieval (semantic + keyword combined)
 2. Basic query expansion (always generate 3 variants)
 3. RRF fusion for multiple query variants
-4. CrossEncoder reranking (stage 1 only, top-5)
+4. CrossEncoder reranking (stage 1 only, top-k)
 5. Basic answer generation with context
 6. Simple state management (TypedDict)
 7. Linear graph structure (no conditional routing)
@@ -46,6 +46,7 @@ class BasicRAGState(TypedDict):
     unique_docs_list: Optional[list]
     final_answer: Optional[str]
     confidence_score: Optional[float]
+    ground_truth_doc_ids: Optional[list]
 
 
 # ========== GLOBALS ==========
@@ -107,13 +108,28 @@ def retrieve_node(state: BasicRAGState) -> dict:
     sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
     unique_docs = [doc_objects[doc_id] for doc_id in sorted_doc_ids]
 
+    # Extract ground truth for debugging (if available)
+    ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
+
     print(f"\n{'='*60}")
     print(f"HYBRID RETRIEVAL WITH RRF FUSION")
     print(f"Strategy: hybrid (always)")
     print(f"Query variants: {len(expansions)}")
+    print(f"Total retrievals: {sum(len(ranks) for ranks in doc_ranks.values())}")
     print(f"Unique docs after RRF: {len(unique_docs)}")
-    if sorted_doc_ids[:3]:
-        print(f"Top 3 RRF scores: {[f'{rrf_scores[doc_id]:.4f}' for doc_id in sorted_doc_ids[:3]]}")
+
+    # Show ALL chunk IDs with RRF scores
+    print(f"\nAll {len(sorted_doc_ids)} chunk IDs (RRF scores):")
+    for i, doc_id in enumerate(sorted_doc_ids, 1):
+        print(f"  {i}. {doc_id} ({rrf_scores[doc_id]:.4f})")
+
+    # Show ground truth tracking
+    if ground_truth_doc_ids:
+        found_chunks = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in sorted_doc_ids]
+        missing_chunks = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in sorted_doc_ids]
+        print(f"\nExpected chunks: {ground_truth_doc_ids}")
+        print(f"Found: {found_chunks if found_chunks else '[]'} | Missing: {missing_chunks if missing_chunks else '[]'}")
+
     print(f"{'='*60}\n")
 
     return {
@@ -123,18 +139,54 @@ def retrieve_node(state: BasicRAGState) -> dict:
 
 
 def rerank_node(state: BasicRAGState) -> dict:
-    """CrossEncoder reranking only (stage 1, top-5)."""
+    """CrossEncoder reranking only (stage 1, top-k)."""
+    global adaptive_retriever
     query = state["user_question"]
     docs = state.get("unique_docs_list", [])
 
+    # Extract ground truth for debugging (if available)
+    ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
+
     # Single-stage reranking with CrossEncoder
     ranked_results = cross_encoder.rank(query, docs[:15])
-    reranked_docs = [doc for doc, score in ranked_results[:5]]
+    k_final = adaptive_retriever.k_final if adaptive_retriever else 4
+    reranked_docs = [doc for doc, score in ranked_results[:k_final]]
 
     print(f"\n{'='*60}")
     print(f"CROSSENCODER RERANKING")
     print(f"Input: {len(docs)} documents")
-    print(f"Output: {len(reranked_docs)} documents")
+
+    # Show chunk IDs going into reranking
+    reranking_chunk_ids = [doc.metadata.get("id", "unknown") for doc in docs[:15]]
+    print(f"\nChunk IDs sent to reranking (top-15):")
+    for i, chunk_id in enumerate(reranking_chunk_ids[:10], 1):
+        print(f"  {i}. {chunk_id}")
+    if len(reranking_chunk_ids) > 10:
+        print(f"  ... and {len(reranking_chunk_ids) - 10} more")
+
+    # Track ground truth in reranking input
+    if ground_truth_doc_ids:
+        found_in_reranking = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in reranking_chunk_ids]
+        missing_in_reranking = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in reranking_chunk_ids]
+        print(f"\nExpected chunks in reranking input:")
+        print(f"Found: {found_in_reranking if found_in_reranking else '[]'} | Missing: {missing_in_reranking if missing_in_reranking else '[]'}")
+
+    print(f"\nOutput: {len(reranked_docs)} documents after CrossEncoder reranking")
+
+    # Show final chunk IDs with reranking scores
+    print(f"\nFinal chunk IDs (after CrossEncoder reranking):")
+    for i, (doc, score) in enumerate(ranked_results[:k_final], 1):
+        chunk_id = doc.metadata.get("id", "unknown")
+        print(f"  {i}. {chunk_id} (score: {score:.4f})")
+
+    # Track ground truth in final results
+    if ground_truth_doc_ids:
+        final_chunk_ids = [doc.metadata.get("id", "unknown") for doc in reranked_docs]
+        found_in_final = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in final_chunk_ids]
+        missing_in_final = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in final_chunk_ids]
+        print(f"\nExpected chunks in final results:")
+        print(f"Found: {found_in_final if found_in_final else '[]'} | Missing: {missing_in_final if missing_in_final else '[]'}")
+
     print(f"{'='*60}\n")
 
     return {"unique_docs_list": reranked_docs}

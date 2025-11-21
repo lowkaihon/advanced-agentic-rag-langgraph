@@ -6,7 +6,7 @@ Just semantic search + answer generation, no optimizations.
 
 Features (4):
 1. Pure semantic search (vector similarity only)
-2. Top-4 retrieval (no reranking)
+2. Top-k retrieval (adaptive, no reranking)
 3. Simple answer generation
 4. Basic state management (TypedDict)
 
@@ -16,7 +16,7 @@ Graph Structure: 2 nodes, linear flow
 No query expansion - uses original query only.
 No hybrid search - semantic/vector search only.
 No RRF fusion - single query, single retrieval.
-No reranking - directly uses top 4 chunks.
+No reranking - directly uses top-k chunks (adaptive).
 No quality gates - assumes results are good enough.
 No retry logic - single pass only.
 
@@ -38,8 +38,10 @@ class PureSemanticRAGState(TypedDict):
     """Minimal state for pure semantic RAG."""
     user_question: str
     retrieved_docs: list
+    unique_docs_list: Optional[list]
     final_answer: Optional[str]
     confidence_score: Optional[float]
+    ground_truth_doc_ids: Optional[list]
 
 
 # ========== GLOBALS ==========
@@ -50,7 +52,7 @@ adaptive_retriever = None
 # ========== NODES ==========
 
 def retrieve_node(state: PureSemanticRAGState) -> dict:
-    """Pure semantic retrieval - top 4 chunks, no reranking."""
+    """Pure semantic retrieval - top-k chunks, no reranking."""
     global adaptive_retriever
 
     if adaptive_retriever is None:
@@ -59,16 +61,38 @@ def retrieve_node(state: PureSemanticRAGState) -> dict:
     query = state["user_question"]
 
     # Single semantic search, no RRF, no reranking
-    docs = adaptive_retriever.retrieve_without_reranking(query, strategy="semantic", k_total=4)
+    k_final = adaptive_retriever.k_final if adaptive_retriever else 4
+    docs = adaptive_retriever.retrieve_without_reranking(query, strategy="semantic", k_total=k_final)
+
+    # Extract ground truth for debugging (if available)
+    ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
 
     print(f"\n{'='*60}")
     print(f"PURE SEMANTIC RETRIEVAL")
     print(f"Strategy: semantic only (vector similarity)")
-    print(f"Top-K: 4 chunks (no reranking)")
+    print(f"Top-K: {k_final} chunks (no reranking)")
     print(f"Retrieved: {len(docs)} documents")
+
+    # Show ALL chunk IDs (rank order = quality indicator for pure semantic)
+    print(f"\nAll {len(docs)} chunk IDs (rank order):")
+    for i, doc in enumerate(docs, 1):
+        chunk_id = doc.metadata.get("id", "unknown")
+        print(f"  {i}. {chunk_id}")
+
+    # Show ground truth tracking
+    if ground_truth_doc_ids:
+        retrieved_chunk_ids = [doc.metadata.get("id", "unknown") for doc in docs]
+        found_chunks = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in retrieved_chunk_ids]
+        missing_chunks = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in retrieved_chunk_ids]
+        print(f"\nExpected chunks: {ground_truth_doc_ids}")
+        print(f"Found: {found_chunks if found_chunks else '[]'} | Missing: {missing_chunks if missing_chunks else '[]'}")
+
     print(f"{'='*60}\n")
 
-    return {"retrieved_docs": docs}
+    return {
+        "retrieved_docs": docs,
+        "unique_docs_list": docs,
+    }
 
 
 def generate_node(state: PureSemanticRAGState) -> dict:

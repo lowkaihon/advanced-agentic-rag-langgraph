@@ -362,7 +362,7 @@ def evaluate_on_golden_dataset(
             })
 
             if verbose:
-                print(f"    Recall@5: {retrieval_metrics.get('recall_at_k', 0):.2%}")
+                print(f"    Recall@K: {retrieval_metrics.get('recall_at_k', 0):.2%}")
                 print(f"    Groundedness: {groundedness_score:.2%}")
 
         except Exception as e:

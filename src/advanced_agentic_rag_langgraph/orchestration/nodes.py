@@ -602,26 +602,27 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         retrieval_metrics = calculate_retrieval_metrics(
             unique_docs,
             ground_truth_doc_ids,
-            k=5
+            k=adaptive_retriever.k_final
         )
 
         if relevance_grades:
-            retrieval_metrics["ndcg_at_5"] = calculate_ndcg(
+            retrieval_metrics["ndcg_at_k"] = calculate_ndcg(
                 unique_docs,
                 relevance_grades,
-                k=5
+                k=adaptive_retriever.k_final
             )
 
+        k = adaptive_retriever.k_final
         print(f"\n{'='*60}")
         print(f"RETRIEVAL METRICS (Golden Dataset Evaluation)")
         print(f"{'='*60}")
-        print(f"Recall@5:    {retrieval_metrics.get('recall_at_k', 0):.2%}")
-        print(f"Precision@5: {retrieval_metrics.get('precision_at_k', 0):.2%}")
-        print(f"F1@5:        {retrieval_metrics.get('f1_at_k', 0):.2%}")
+        print(f"Recall@{k}:    {retrieval_metrics.get('recall_at_k', 0):.2%}")
+        print(f"Precision@{k}: {retrieval_metrics.get('precision_at_k', 0):.2%}")
+        print(f"F1@{k}:        {retrieval_metrics.get('f1_at_k', 0):.2%}")
         print(f"Hit Rate:    {retrieval_metrics.get('hit_rate', 0):.2%}")
         print(f"MRR:         {retrieval_metrics.get('mrr', 0):.4f}")
-        if "ndcg_at_5" in retrieval_metrics:
-            print(f"nDCG@5:      {retrieval_metrics['ndcg_at_5']:.4f}")
+        if "ndcg_at_k" in retrieval_metrics:
+            print(f"nDCG@{k}:      {retrieval_metrics['ndcg_at_k']:.4f}")
         print(f"{'='*60}\n")
 
     return {

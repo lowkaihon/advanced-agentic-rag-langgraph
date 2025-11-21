@@ -36,7 +36,11 @@ def load_all_documents() -> Dict[str, List]:
     return all_chunks_by_doc
 
 def search_chunks(query: str, chunks: List, top_k: int = 5):
-    """Simple keyword-based search to find relevant chunks."""
+    """Simple keyword-based search to find relevant chunks.
+
+    Note: top_k=5 is a helper tool default for manual dataset creation,
+    not used in production retrieval (which uses adaptive k_final).
+    """
     query_terms = query.lower().split()
 
     scored_chunks = []
@@ -58,7 +62,7 @@ def find_relevant_chunks(question: str, all_chunks_by_doc: Dict, source_doc: str
         return []
 
     chunks = all_chunks_by_doc[source_doc]
-    relevant = search_chunks(question, chunks, top_k=5)
+    relevant = search_chunks(question, chunks, top_k=5)  # Helper tool default for manual review
 
     print(f"\n{'='*80}")
     print(f"Question: {question}")
