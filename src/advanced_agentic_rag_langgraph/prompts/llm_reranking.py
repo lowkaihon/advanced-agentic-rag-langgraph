@@ -81,9 +81,12 @@ IMPORTANT:
 - Judge ONLY the intrinsic quality and appropriateness for THIS specific query
 - Prioritize documents whose TYPE matches the query intent (e.g., tutorial for "how to" questions)
 
-Provide:
-- scores: List of relevance scores (0-100) for each document, in order
-- reasoning: 1-2 sentence explanation of your overall ranking approach"""
+Return a structured response with:
+- scored_documents: List of objects, one per document, each containing:
+  - document_id: The document identifier string (e.g., "doc_0", "doc_1", "doc_2")
+  - relevance_score: Score from 0-100
+  - reasoning: 1-2 sentences explaining why this specific document received this score
+- overall_reasoning: 1-2 sentence explanation of your overall ranking approach"""
 
 
 GPT5_PROMPT = """Query: "{query}"
@@ -121,5 +124,8 @@ SCORING:
 - 0-19: Not relevant (wrong topic/type)
 
 Return:
-- scores: List of 0-100 scores for each document, in order
-- reasoning: 1-2 sentences on ranking approach"""
+- scored_documents: List with one entry per document containing:
+  - document_id: Document identifier string (e.g., "doc_0", "doc_1")
+  - relevance_score: 0-100 score
+  - reasoning: Brief explanation for this document's score
+- overall_reasoning: Brief summary of ranking approach"""

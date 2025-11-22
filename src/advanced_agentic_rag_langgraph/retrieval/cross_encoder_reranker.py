@@ -41,7 +41,7 @@ class CrossEncoderReRanker:
         self,
         query: str,
         documents: List[Document],
-        truncate_content: int = 1000  # Allows full table content (945 chars) while staying under 512 token limit
+        truncate_content: int = 1000  # Allows full table content (<1000 chars) while staying under 512 token limit
     ) -> List[Tuple[Document, float]]:
         if not documents:
             return []

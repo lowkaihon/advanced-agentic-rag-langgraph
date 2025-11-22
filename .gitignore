@@ -145,3 +145,4 @@ architecture_comparison_report*.md
 architecture_comparison_results*.json
 test_log*.txt
 scripts
+Comprehensive Report - Prompt Engineering Best Practices for LLM-Based Reranking with Metadata.md

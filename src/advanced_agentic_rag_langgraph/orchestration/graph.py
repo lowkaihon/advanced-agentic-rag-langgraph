@@ -93,6 +93,37 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
 
 # ========== ANSWER GENERATION ROUTING ==========
 
+def route_after_answer_generation(state: AdvancedRAGState) -> Literal["groundedness_check", "evaluate_answer"]:
+    """
+    Pure router: Skip groundedness check when retrieval quality is low.
+
+    When retrieval_quality_score <= 0.6, the answer generation prompt instructs
+    the LLM to say "context does not contain enough information." Running NLI
+    groundedness check on this response creates guaranteed false positives.
+
+    Routing logic:
+    - retrieval_quality > 0.6: Run groundedness check (LLM had good context)
+    - retrieval_quality <= 0.6: Skip to evaluation (problem is retrieval-side, not hallucination)
+
+    When skipping, set safe defaults for groundedness state fields to prevent
+    downstream None errors in evaluate_answer_with_retrieval_node.
+    """
+    retrieval_quality = state.get("retrieval_quality_score", 0.7)
+
+    if retrieval_quality <= 0.6:
+        print(f"\n{'='*60}")
+        print(f"GROUNDEDNESS CHECK SKIPPED")
+        print(f"Retrieval quality: {retrieval_quality:.0%} (<=60% threshold)")
+        print(f"Reason: LLM instructed to refuse when context insufficient")
+        print(f"Action: Skipping NLI check to avoid false positive hallucination detection")
+        print(f"Note: Problem is retrieval-side, not generation-side")
+        print(f"{'='*60}\n")
+
+        return "evaluate_answer"
+    else:
+        return "groundedness_check"
+
+
 def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generation", "evaluate_answer"]:
     """
     Pure router: Route based on groundedness with retrieval quality awareness and false positive protection.
@@ -234,7 +265,15 @@ def build_advanced_rag_graph():
     )
 
     builder.add_edge("rewrite_and_refine", "query_expansion")
-    builder.add_edge("answer_generation", "groundedness_check")
+
+    builder.add_conditional_edges(
+        "answer_generation",
+        route_after_answer_generation,
+        {
+            "groundedness_check": "groundedness_check",
+            "evaluate_answer": "evaluate_answer",
+        }
+    )
 
     builder.add_conditional_edges(
         "groundedness_check",

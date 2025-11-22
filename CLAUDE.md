@@ -1,6 +1,6 @@
 # Advanced Agentic RAG using LangGraph
 
-An advanced agentic RAG system implementing the "Dynamic Planning and Execution Agents" pattern. The LangGraph StateGraph itself IS the agent—decision-making is distributed across 4 specialized routing functions rather than centralized in a single LLM orchestrator. Autonomous adaptation through quality-driven conditional routing at every stage.
+A portfolio project showcasing advanced RAG and LangGraph capabilities through an intelligent, adaptive retrieval pipeline. The system analyzes both corpus characteristics (document types, technical density, content patterns) and query context (intent, conversational history, complexity) to dynamically select optimal retrieval strategies. Built-in quality gates, self-correction loops, and automatic strategy switching ensure retrieved documents meet relevance thresholds. While demonstrated using research papers, the architecture generalizes to diverse document types and use cases, making it a foundation for production-grade RAG systems.
 
 **Architecture**: 9-node StateGraph with distributed intelligence, not linear pipeline
 **Pattern**: Dynamic Planning and Execution Agents (graph structure encodes planning logic)
@@ -8,6 +8,8 @@ An advanced agentic RAG system implementing the "Dynamic Planning and Execution 
 **Requirements**: Python 3.11+
 
 ## Agentic Architecture
+
+The agentic RAG system implements the "Dynamic Planning and Execution Agents" pattern. The LangGraph StateGraph itself IS the agent — decision-making is distributed across 4 specialized routing functions rather than centralized in a single LLM orchestrator. Autonomous adaptation through quality-driven conditional routing at every stage.
 
 **No Central Agent Orchestrator**: The StateGraph itself provides autonomous decision-making through:
 - **4 routing functions** with specialized logic: retrieval quality assessment, groundedness routing, answer evaluation, strategy selection
@@ -57,7 +59,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Two-stage reranking applied to RRF-fused results for final relevance scoring
 
 **Evaluation & Quality Assurance**
-- Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-15) → LLM-as-judge (stage 2, top-4)
+- Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
 - NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification → hallucination feedback lists specific unsupported claims for targeted regeneration
 - Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
 - RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy

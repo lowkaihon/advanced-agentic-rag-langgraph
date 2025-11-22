@@ -8,8 +8,8 @@ the incremental value of advanced features:
 - Intermediate: Enhanced RAG (18 features, conditional routing)
 - Advanced: Full Agentic RAG (31 features, adaptive loops)
 
-All tiers use BUDGET model tier (gpt-4o-mini) to isolate architectural
-improvements from model quality differences.
+Model tier controlled by MODEL_TIER environment variable (budget/balanced/premium).
+Set MODEL_TIER in .env.local to compare architectures at different quality/cost points.
 
 Key Metrics:
 - F1@K: Retrieval quality (K=4 for standard, K=6 for hard datasets)
@@ -67,6 +67,7 @@ from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
     calculate_retrieval_metrics,
 )
 from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.core.model_config import get_current_tier, TIER_METADATA
 
 
 # ========== TIER CONFIGURATION ==========
@@ -298,6 +299,8 @@ def generate_comparison_report(
     k_final: int = 4,
     dataset_type: str = "standard",
     test_timestamp: str = None,
+    current_tier = None,
+    tier_info: Dict = None,
 ) -> str:
     """
     Generate markdown comparison report with delta analysis.
@@ -329,10 +332,16 @@ def generate_comparison_report(
     pure_to_adv_ground = ((advanced_metrics["avg_groundedness"] - pure_semantic_metrics["avg_groundedness"]) / pure_semantic_metrics["avg_groundedness"] * 100) if pure_semantic_metrics["avg_groundedness"] > 0 else 0
 
     dataset_label = "Standard" if dataset_type == "standard" else "Hard"
+
+    # Get tier info if not provided
+    if current_tier is None or tier_info is None:
+        current_tier = get_current_tier()
+        tier_info = TIER_METADATA[current_tier]
+
     report = f"""# 4-Tier RAG Architecture Comparison Report
 
 **Generated:** {timestamp}
-**Model Tier:** BUDGET (gpt-4o-mini for all tiers)
+**Model Tier:** {current_tier.value.upper()} ({tier_info['description']})
 **Dataset:** {dataset_label} ({pure_semantic_metrics['total_examples']} examples)
 
 ---
@@ -619,7 +628,9 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     print("\n" + "="*80)
     print("4-TIER ARCHITECTURE COMPARISON TEST")
     print("="*80)
-    print("Model Tier: BUDGET (gpt-4o-mini for all tiers)")
+    current_tier = get_current_tier()
+    tier_info = TIER_METADATA[current_tier]
+    print(f"Model Tier: {current_tier.value.upper()} ({tier_info['description']})")
     print("Tiers: Pure Semantic (4), Basic (8), Intermediate (18), Advanced (31 features)")
     print(f"Dataset: {dataset_type}")
     print(f"Mode: {'Quick (2 examples)' if quick_mode else 'Full'}")
@@ -713,7 +724,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
         "timestamp": datetime.now().isoformat(),
         "test_type": "architecture_comparison",
         "dataset_type": dataset_type,
-        "model_tier": "BUDGET (gpt-4o-mini)",
+        "model_tier": f"{current_tier.value.upper()} ({tier_info['description']})",
         "dataset_size": len(dataset),
         "k_final": k_final,
         "quick_mode": quick_mode,
@@ -753,7 +764,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     report = generate_comparison_report(
         pure_semantic_metrics, basic_metrics, intermediate_metrics, advanced_metrics,
         pure_semantic_results, basic_results, intermediate_results, advanced_results,
-        k_final, dataset_type, test_timestamp
+        k_final, dataset_type, test_timestamp, current_tier, tier_info
     )
 
     report_path = Path("evaluation") / f"architecture_comparison_report_{dataset_type}_{test_timestamp}.md"

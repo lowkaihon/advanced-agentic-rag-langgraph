@@ -21,7 +21,7 @@ class TwoStageReRanker:
     """
     Two-stage hybrid reranking: CrossEncoder then LLM-as-judge.
 
-    Stage 1: CrossEncoder semantic filtering to top-15 (~375ms, ~$0.0001)
+    Stage 1: CrossEncoder semantic filtering to top-10 (~375ms, ~$0.0001)
     Stage 2: LLM-as-judge metadata-aware scoring to final top-4 (~400ms, ~$0.005)
     Total: ~775ms, ~$0.006 per query
 
@@ -34,10 +34,9 @@ class TwoStageReRanker:
 
     def __init__(
         self,
-        k_cross_encoder: int = 15,
+        k_cross_encoder: int = 10,
         k_final: int = 4,
         cross_encoder_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
-        llm_model: str = "gpt-4o-mini"
     ):
         """Initialize two-stage hybrid reranker."""
         self.k_cross_encoder = k_cross_encoder
@@ -61,9 +60,13 @@ class TwoStageReRanker:
         if not documents:
             return []
 
+        # Stage 1: CrossEncoder ranking
         cross_encoder_ranked = self.cross_encoder.rank(query, documents)
         intermediate_docs = [doc for doc, score in cross_encoder_ranked]
-        final_ranked = self.llm_judge.rank(query, intermediate_docs)
+        cross_encoder_scores = [score for doc, score in cross_encoder_ranked]
+
+        # Stage 2: LLM reranking with CrossEncoder scores as fallback
+        final_ranked = self.llm_judge.rank(query, intermediate_docs, fallback_scores=cross_encoder_scores)
 
         return final_ranked
 
@@ -85,9 +88,13 @@ class TwoStageReRanker:
                 "stage1_ranked": []
             }
 
+        # Stage 1: CrossEncoder ranking
         stage1_ranked = self.cross_encoder.rank(query, documents)
         intermediate_docs = [doc for doc, score in stage1_ranked]
-        final_ranked = self.llm_judge.rank(query, intermediate_docs)
+        cross_encoder_scores = [score for doc, score in stage1_ranked]
+
+        # Stage 2: LLM reranking with CrossEncoder scores as fallback
+        final_ranked = self.llm_judge.rank(query, intermediate_docs, fallback_scores=cross_encoder_scores)
 
         return {
             "final_ranked": final_ranked,

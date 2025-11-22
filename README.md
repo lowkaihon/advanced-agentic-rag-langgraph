@@ -107,7 +107,7 @@ What elevates this from "agentic RAG" to "advanced agentic RAG":
 **RAG-Fusion**: Multi-query retrieval with RRF ranking fusion (3-5% MRR improvement)
 - Strategy-agnostic expansions → select best strategy → apply to ALL variants
 - RRF aggregates rankings across query variants BEFORE reranking
-- Two-stage reranking: CrossEncoder (top-15) → LLM-as-judge (top-4)
+- Two-stage reranking: CrossEncoder (top-10) → LLM-as-judge (top-4)
 
 **vRAG-Eval**: Answer quality evaluation with adaptive thresholds
 - 8 issue types for content-driven routing (incomplete_synthesis, lacks_specificity, missing_details, unsupported_claims, partial_answer, wrong_focus, retrieval_limited, contextual_gaps)
@@ -206,7 +206,7 @@ Each issue maps to specific rewriting instructions or strategy changes, ensuring
 
 ### 11. Two-Stage Reranking
 - Applied AFTER RRF multi-query fusion to the fused candidate pool
-- Stage 1: CrossEncoder (ms-marco-MiniLM-L-6-v2) filters to top-15
+- Stage 1: CrossEncoder (ms-marco-MiniLM-L-6-v2) filters to top-10
 - Stage 2: LLM-as-judge scores each document 0-100 for relevance, selects top-4
 - Temperature 0 for consistency, metadata-aware scoring
 - 3-5x faster than pure LLM reranking
@@ -277,7 +277,7 @@ This system follows the **Dynamic Planning and Execution Agents** pattern, where
 - **Hybrid**: Combines both approaches with RRF-based fusion (replaces naive set deduplication)
 - **RRF Multi-Query Fusion**: Aggregates rankings across query variants BEFORE reranking using formula: score(doc) = sum(1/(rank + 60))
 - **Two-Stage Reranking** (applied AFTER RRF fusion):
-  - Stage 1: CrossEncoder (`cross_encoder_reranker.py`) filters to top-15 (200-300ms)
+  - Stage 1: CrossEncoder (`cross_encoder_reranker.py`) filters to top-10 (200-300ms)
   - Stage 2: LLM-as-judge (`llm_metadata_reranker.py`) selects top-4 with metadata awareness
 
 **5. LangGraph Orchestration** (`orchestration/graph.py`, `orchestration/nodes.py`)
@@ -499,7 +499,7 @@ Original: "What is self-attention?"
 ```
 - Search with all 3 query variations
 - RRF fusion: Documents appearing in multiple results get higher scores → 8 unique documents
-- Two-stage reranking: CrossEncoder filters to top-15, then LLM-as-judge selects top-4
+- Two-stage reranking: CrossEncoder filters to top-10, then LLM-as-judge selects top-4
 ```
 
 **5. Quality Check**
@@ -614,7 +614,7 @@ Not a linear pipeline—the graph structure itself encodes planning logic throug
 │ • Keyword: BM25 lexical search                                 │
 │ • Hybrid: combines both                                        │
 │ • RRF fusion FIRST: Ranks docs by cross-query consensus (3-5% MRR gain) │
-│ • Two-stage reranking AFTER RRF: CrossEncoder filters to top-15, LLM selects top-4 │
+│ • Two-stage reranking AFTER RRF: CrossEncoder filters to top-10, LLM selects top-4 │
 │ • Integrated metadata analysis: evaluates retrieval quality (0-100 score) and detects issues │
 └────────────────────────────┬────────────────────────────────────┘
                              ↓
