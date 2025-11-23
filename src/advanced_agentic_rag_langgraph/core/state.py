@@ -20,8 +20,9 @@ class AdvancedRAGState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]  # Conversation history with automatic deduplication
 
     # === QUERY LIFECYCLE ===
-    active_query: Optional[str]  # Current working query (evolves through rewrites)
-    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (regenerated, not accumulated)
+    active_query: Optional[str]  # Current working query (semantic, human-readable, evolves through rewrites)
+    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval ONLY (keyword/semantic optimization)
+    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from retrieval_query if set, else active_query)
 
     # === STRATEGY SELECTION & ADAPTATION ===
     retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]

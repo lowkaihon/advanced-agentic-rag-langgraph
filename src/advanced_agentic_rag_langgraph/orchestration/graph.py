@@ -54,9 +54,18 @@ def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_stra
     """
     if state.get("strategy_changed", False):
         # Strategy changed, skip decide_strategy (already set in route_after_evaluation)
+        print(f"\n{'='*60}")
+        print(f"ROUTER: query_expansion -> retrieve_with_expansion")
+        print(f"Reason: Strategy changed (skip decide_strategy)")
+        print(f"{'='*60}\n")
         return "retrieve_with_expansion"
     else:
         # Initial flow, proceed to strategy selection
+        print(f"\n{'='*60}")
+        print(f"ROUTER: query_expansion -> decide_strategy")
+        print(f"Reason: Initial flow (strategy selection needed)")
+        print(f"Expansions ready: {len(state.get('query_expansions', []))} variant(s)")
+        print(f"{'='*60}\n")
         return "decide_strategy"
 
 
@@ -79,15 +88,30 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
 
+    print(f"\n{'='*60}")
+    print(f"ROUTER: AFTER RETRIEVAL")
+    print(f"Quality: {quality:.0%} (threshold: >=60%)")
+    print(f"Attempts: {attempts}/3")
+    if issues:
+        print(f"Issues: {', '.join(issues)}")
+
     if quality >= 0.6:
+        print(f"Decision: answer_generation (quality acceptable)")
+        print(f"{'='*60}\n")
         return "answer_generation"
 
     if attempts >= 3:
+        print(f"Decision: answer_generation (max attempts reached)")
+        print(f"{'='*60}\n")
         return "answer_generation"
 
     if "off_topic" in issues or "wrong_domain" in issues:
+        print(f"Decision: query_expansion (early strategy switch)")
+        print(f"{'='*60}\n")
         return "query_expansion"
     else:
+        print(f"Decision: rewrite_and_refine (semantic rewrite)")
+        print(f"{'='*60}\n")
         return "rewrite_and_refine"
 
 

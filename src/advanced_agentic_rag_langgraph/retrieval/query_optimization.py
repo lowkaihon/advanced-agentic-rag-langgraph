@@ -184,6 +184,8 @@ CRITICAL GUIDELINES:
     print(f"Strategy switch: {old_strategy} -> {new_strategy}")
     print(f"Original query: {query}")
     print(f"Optimized query: {optimized}")
+    if issues:
+        print(f"Issues triggering optimization: {', '.join(issues)}")
     print(f"{'='*60}\n")
 
     return optimized

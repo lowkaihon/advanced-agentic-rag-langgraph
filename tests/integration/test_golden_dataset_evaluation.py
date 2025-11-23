@@ -10,6 +10,11 @@ import json
 import os
 import warnings
 import logging
+import argparse
+import shutil
+import time
+from datetime import datetime
+from pathlib import Path
 
 # Suppress LangSmith warnings
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -22,15 +27,80 @@ logging.getLogger("langchain").setLevel(logging.WARNING)
 
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, evaluate_on_golden_dataset
 from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+from advanced_agentic_rag_langgraph.core.model_config import get_current_tier, TIER_METADATA
 
 
-def test_dataset_loading():
+def get_expected_ranges(dataset_type: str, tier: str) -> dict:
+    """
+    Get expected performance ranges based on dataset difficulty and model tier.
+
+    Args:
+        dataset_type: Dataset type ('standard' or 'hard')
+        tier: Model tier ('budget', 'balanced', or 'premium')
+
+    Returns:
+        Dictionary with expected ranges for each metric
+    """
+    if dataset_type == "standard":
+        ranges = {
+            "budget": {
+                "recall_at_k": (0.65, 0.75),
+                "precision_at_k": (0.55, 0.65),
+                "f1_at_k": (0.60, 0.70),
+                "avg_groundedness": (0.80, 0.90),
+                "hallucination_rate": (0.10, 0.20),
+            },
+            "balanced": {
+                "recall_at_k": (0.70, 0.80),
+                "precision_at_k": (0.60, 0.70),
+                "f1_at_k": (0.65, 0.75),
+                "avg_groundedness": (0.85, 0.95),
+                "hallucination_rate": (0.05, 0.15),
+            },
+            "premium": {
+                "recall_at_k": (0.75, 0.85),
+                "precision_at_k": (0.65, 0.75),
+                "f1_at_k": (0.70, 0.80),
+                "avg_groundedness": (0.90, 0.98),
+                "hallucination_rate": (0.02, 0.10),
+            },
+        }
+    else:  # hard dataset - lower expectations for harder questions
+        ranges = {
+            "budget": {
+                "recall_at_k": (0.55, 0.65),
+                "precision_at_k": (0.45, 0.55),
+                "f1_at_k": (0.50, 0.60),
+                "avg_groundedness": (0.75, 0.85),
+                "hallucination_rate": (0.15, 0.25),
+            },
+            "balanced": {
+                "recall_at_k": (0.60, 0.70),
+                "precision_at_k": (0.50, 0.60),
+                "f1_at_k": (0.55, 0.65),
+                "avg_groundedness": (0.80, 0.90),
+                "hallucination_rate": (0.10, 0.20),
+            },
+            "premium": {
+                "recall_at_k": (0.65, 0.75),
+                "precision_at_k": (0.55, 0.65),
+                "f1_at_k": (0.60, 0.70),
+                "avg_groundedness": (0.85, 0.95),
+                "hallucination_rate": (0.05, 0.15),
+            },
+        }
+
+    return ranges.get(tier, ranges["budget"])
+
+
+def test_dataset_loading(dataset_type: str = "standard"):
     """Test that golden dataset loads correctly."""
     print("\n" + "="*70)
     print("TEST: Dataset Loading")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    manager = GoldenDatasetManager(dataset_path)
 
     assert len(manager.dataset) > 0, "Dataset should not be empty"
     print(f"[OK] Loaded {len(manager.dataset)} examples")
@@ -41,13 +111,14 @@ def test_dataset_loading():
     print("[OK] Dataset loading test PASSED\n")
 
 
-def test_dataset_validation():
+def test_dataset_validation(dataset_type: str = "standard"):
     """Test that all examples pass validation."""
     print("\n" + "="*70)
     print("TEST: Dataset Validation")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    manager = GoldenDatasetManager(dataset_path)
 
     validation_errors = []
     for example in manager.dataset:
@@ -69,7 +140,7 @@ def test_dataset_validation():
     print("[OK] Dataset validation test PASSED\n")
 
 
-def test_baseline_performance():
+def test_baseline_performance(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Run on golden dataset and assert minimum performance thresholds.
 
@@ -84,12 +155,32 @@ def test_baseline_performance():
     print("TEST: Baseline Performance")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    # Detect and display model tier
+    current_tier = get_current_tier()
+    tier_info = TIER_METADATA[current_tier]
+    print(f"Model Tier: {current_tier.value.upper()} ({tier_info['description']})")
+    print(f"Cost/Day: ${tier_info['cost_per_day']:,}")
+    print("="*70)
+
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    if dataset_type == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
+    dataset = manager.dataset
+
+    # Apply quick mode if requested
+    if quick_mode:
+        dataset = dataset[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
 
     # Run evaluation
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
-        manager.dataset,
+        dataset,
+        k_final=k_final,
         verbose=True
     )
 
@@ -139,15 +230,57 @@ def test_baseline_performance():
         if not passed:
             generation_passed = False
 
+    # Validation against expected ranges
+    print("\nValidation Against Expected Ranges:")
+    print(f"| {'Metric':<20s} | {'Target':<13s} | {'Actual':<8s} | {'Status':<6s} |")
+    print("|" + "-"*20 + "|" + "-"*13 + "|" + "-"*8 + "|" + "-"*6 + "|")
+
+    expected_ranges = get_expected_ranges(dataset_type, current_tier.value)
+
+    for metric in ['recall_at_k', 'precision_at_k', 'f1_at_k']:
+        min_val, max_val = expected_ranges[metric]
+        actual = retrieval_metrics.get(metric, 0.0)
+        status = "[OK]" if min_val <= actual <= max_val else "[WARN]"
+        print(f"| {metric:<20s} | {min_val:.0%}-{max_val:.0%} | {actual:6.1%} | {status:6s} |")
+
+    # Groundedness
+    min_val, max_val = expected_ranges['avg_groundedness']
+    actual = generation_metrics.get('avg_groundedness', 0.0)
+    status = "[OK]" if min_val <= actual <= max_val else "[WARN]"
+    print(f"| {'avg_groundedness':<20s} | {min_val:.0%}-{max_val:.0%} | {actual:6.1%} | {status:6s} |")
+
+    # Hallucination rate (lower is better)
+    max_val = expected_ranges['hallucination_rate'][1]
+    actual = generation_metrics.get('hallucination_rate', 0.0)
+    status = "[OK]" if actual <= max_val else "[WARN]"
+    print(f"| {'hallucination_rate':<20s} | {'<' + f'{max_val:.0%}':<13s} | {actual:6.1%} | {status:6s} |")
+
     # Save baseline for future regression tests
-    baseline_path = "evaluation/baseline_metrics.json"
+    test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    baseline_path = Path("evaluation") / f"baseline_metrics_{dataset_type}_{test_timestamp}.json"
+    latest_baseline_path = Path("evaluation") / f"baseline_metrics_{dataset_type}_latest.json"
+
     baseline_data = {
+        'timestamp': datetime.now().isoformat(),
+        'test_type': 'golden_dataset_baseline',
+        'dataset_type': dataset_type,
+        'dataset_size': len(dataset),
+        'k_final': k_final,
+        'quick_mode': quick_mode,
+        'model_tier': current_tier.value,
+        'tier_description': tier_info['description'],
+        'tier_cost_per_day': tier_info['cost_per_day'],
         'retrieval_metrics': retrieval_metrics,
         'generation_metrics': generation_metrics,
     }
     with open(baseline_path, 'w') as f:
         json.dump(baseline_data, f, indent=2)
+
+    # Create latest copy
+    shutil.copy2(baseline_path, latest_baseline_path)
+
     print(f"\n[OK] Saved baseline metrics to {baseline_path}")
+    print(f"[OK] Latest copy saved to {latest_baseline_path}")
 
     # Assert all thresholds met
     assert retrieval_passed, "Retrieval metrics below threshold"
@@ -157,7 +290,7 @@ def test_baseline_performance():
     return results
 
 
-def test_regression():
+def test_regression(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Compare current performance against saved baseline.
 
@@ -170,7 +303,7 @@ def test_regression():
     print("TEST: Regression Detection")
     print("="*70)
 
-    baseline_path = "evaluation/baseline_metrics.json"
+    baseline_path = Path("evaluation") / f"baseline_metrics_{dataset_type}_latest.json"
 
     if not os.path.exists(baseline_path):
         print("[WARN] No baseline found - run test_baseline_performance() first")
@@ -181,11 +314,26 @@ def test_regression():
     with open(baseline_path, 'r') as f:
         baseline = json.load(f)
 
+    # Setup dataset
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    if dataset_type == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
+    dataset = manager.dataset
+
+    # Apply quick mode if requested
+    if quick_mode:
+        dataset = dataset[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
+
     # Run current evaluation
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
-        manager.dataset,
+        dataset,
+        k_final=k_final,
         verbose=False
     )
 
@@ -228,13 +376,19 @@ def test_regression():
     print("\n[OK] Regression test PASSED (no significant degradation)\n")
 
 
-def test_cross_document_retrieval():
+def test_cross_document_retrieval(quick_mode: bool = False, dataset_type: str = "standard"):
     """Test accuracy on cross-document examples."""
     print("\n" + "="*70)
     print("TEST: Cross-Document Retrieval")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    if dataset_type == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
     cross_doc_examples = manager.get_cross_document_examples()
 
     if not cross_doc_examples:
@@ -244,17 +398,23 @@ def test_cross_document_retrieval():
 
     print(f"Found {len(cross_doc_examples)} cross-document examples")
 
+    # Apply quick mode if requested
+    if quick_mode:
+        cross_doc_examples = cross_doc_examples[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
+
     # Run evaluation on cross-document examples only
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
         cross_doc_examples,
+        k_final=k_final,
         verbose=False
     )
 
     # Check that recall is reasonable for cross-document queries
     recall = results['retrieval_metrics'].get('recall_at_k', 0)
     threshold = 0.60  # Lower threshold for harder cross-document queries
-    k = 4  # k=4 for standard dataset, k=6 for hard dataset
+    k = k_final
 
     print(f"\nCross-Document Recall@{k}: {recall:.2%} (threshold: {threshold:.2%})")
 
@@ -268,7 +428,7 @@ def test_cross_document_retrieval():
     print("\n[OK] Cross-document retrieval test PASSED\n")
 
 
-def test_difficulty_correlation():
+def test_difficulty_correlation(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Verify harder questions have appropriate metrics.
 
@@ -281,12 +441,25 @@ def test_difficulty_correlation():
     print("TEST: Difficulty Correlation")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    if dataset_type == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
+    dataset = manager.dataset
+
+    # Apply quick mode if requested
+    if quick_mode:
+        dataset = dataset[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
 
     # Run full evaluation
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
-        manager.dataset,
+        dataset,
+        k_final=k_final,
         verbose=False
     )
 
@@ -329,7 +502,7 @@ def test_difficulty_correlation():
     print("\n[OK] Difficulty correlation test COMPLETED\n")
 
 
-def generate_evaluation_report():
+def generate_evaluation_report(quick_mode: bool = False, dataset_type: str = "standard"):
     """
     Generate comprehensive markdown report.
 
@@ -345,12 +518,29 @@ def generate_evaluation_report():
     print("GENERATING EVALUATION REPORT")
     print("="*70)
 
-    manager = GoldenDatasetManager("evaluation/golden_set.json")
+    # Detect model tier
+    current_tier = get_current_tier()
+    tier_info = TIER_METADATA[current_tier]
+
+    dataset_path = f"evaluation/golden_set_{dataset_type}.json"
+    if dataset_type == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    manager = GoldenDatasetManager(dataset_path)
+    dataset = manager.dataset
+
+    # Apply quick mode if requested
+    if quick_mode:
+        dataset = dataset[:2]
+        print(f"[*] Quick mode: Using first 2 examples\n")
 
     # Run full evaluation
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
-        manager.dataset,
+        dataset,
+        k_final=k_final,
         verbose=True
     )
 
@@ -359,6 +549,8 @@ def generate_evaluation_report():
 
 ## Overview
 
+- **Model Tier**: {current_tier.value.upper()} ({tier_info['description']})
+- **Cost/Day**: ${tier_info['cost_per_day']:,}
 - **Total Examples**: {results['total_examples']}
 - **Successful Evaluations**: {results['successful_evaluations']}
 - **Success Rate**: {(results['successful_evaluations'] / results['total_examples'] * 100):.1f}%
@@ -425,7 +617,7 @@ def generate_evaluation_report():
             reverse=True
         )
 
-        k = 4  # k=4 for standard dataset, k=6 for hard dataset
+        k = k_final
         report += "\n## Top 5 Best Performing Examples\n\n"
         for i, ex in enumerate(sorted_by_f1[:5], 1):
             report += f"{i}. **{ex['example_id']}** (Difficulty: {ex['difficulty']})\n"
@@ -455,28 +647,94 @@ def generate_evaluation_report():
 *Generated by Advanced Agentic RAG - Golden Dataset Evaluation Suite*
 """
 
-    # Save report
-    report_path = "evaluation/evaluation_report.md"
+    # Save report with timestamping
+    test_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = Path("evaluation") / f"evaluation_report_{dataset_type}_{test_timestamp}.md"
+    latest_report_path = Path("evaluation") / f"evaluation_report_{dataset_type}_latest.md"
+
     with open(report_path, 'w', encoding='utf-8') as f:
         f.write(report)
 
+    # Create latest copy
+    shutil.copy2(report_path, latest_report_path)
+
     print(f"\n[OK] Saved evaluation report to {report_path}")
+    print(f"[OK] Latest copy saved to {latest_report_path}")
     print(f"\n[OK] Report generation COMPLETED\n")
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Golden Dataset Offline Evaluation Suite')
+    parser.add_argument(
+        '--dataset',
+        choices=['standard', 'hard'],
+        default='standard',
+        help='Dataset to evaluate: standard (20 questions, k_final=4) or hard (10 questions, k_final=6)'
+    )
+    parser.add_argument(
+        '--quick',
+        action='store_true',
+        help='Quick mode: evaluate only first 2 examples'
+    )
+    args = parser.parse_args()
+
+    # Print runtime estimate
+    if args.quick:
+        print(f"[*] Running in quick mode (2 examples from {args.dataset} dataset)")
+    else:
+        dataset_size = "20 examples" if args.dataset == "standard" else "10 examples"
+        expected_time = "10-15 minutes" if args.dataset == "standard" else "5-7 minutes"
+        print(f"[*] Running full evaluation on {args.dataset} dataset ({dataset_size})")
+        print(f"[*] This will take approximately {expected_time}")
+        print("[*] Use --quick flag for faster testing (~1-2 minutes)")
+
+    # PRE-BUILD RETRIEVER ONCE (optimization to avoid re-ingesting PDFs)
+    print("\n" + "="*80)
+    print("PRE-BUILD: Initializing retriever once for all test runs")
+    print("="*80)
+    print("    This avoids re-ingesting PDFs multiple times (saves 50-60% time)")
+
+    if args.dataset == "standard":
+        k_final = 4  # Optimal for 1-3 chunk questions
+    else:  # hard
+        k_final = 6  # Adaptive retrieval for 3-5 chunk questions
+
+    from advanced_agentic_rag_langgraph.core import setup_retriever
+    import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
+    retriever_instance = setup_retriever(k_final=k_final)
+    nodes.adaptive_retriever = retriever_instance
+    print(f"[OK] Retriever pre-built and injected (k_final={k_final})")
+    print("="*80 + "\n")
+
     print("\n" + "="*70)
     print("GOLDEN DATASET OFFLINE EVALUATION SUITE")
     print("="*70)
+    print(f"Dataset: {args.dataset}")
+    print(f"Mode: {'Quick (2 examples)' if args.quick else 'Full'}")
+    print("="*70 + "\n")
 
-    # Run all tests
-    test_dataset_loading()
-    test_dataset_validation()
-    test_baseline_performance()
-    test_regression()
-    test_cross_document_retrieval()
-    test_difficulty_correlation()
-    generate_evaluation_report()
+    # Start timing
+    overall_start = time.time()
+
+    # Run all tests with args
+    test_dataset_loading(dataset_type=args.dataset)
+    test_dataset_validation(dataset_type=args.dataset)
+    test_baseline_performance(quick_mode=args.quick, dataset_type=args.dataset)
+    test_regression(quick_mode=args.quick, dataset_type=args.dataset)
+    test_cross_document_retrieval(quick_mode=args.quick, dataset_type=args.dataset)
+    test_difficulty_correlation(quick_mode=args.quick, dataset_type=args.dataset)
+    generate_evaluation_report(quick_mode=args.quick, dataset_type=args.dataset)
+
+    # Calculate total execution time
+    overall_time = time.time() - overall_start
+
+    # Display execution summary
+    print("\n" + "="*80)
+    print("EXECUTION SUMMARY")
+    print("="*80)
+    print(f"Total time: {overall_time:.1f}s ({overall_time/60:.1f} min)")
+    print(f"Dataset: {args.dataset} ({'quick mode' if args.quick else 'full'})")
+    print("="*80 + "\n")
 
     print("\n" + "="*70)
     print("ALL TESTS COMPLETED")
