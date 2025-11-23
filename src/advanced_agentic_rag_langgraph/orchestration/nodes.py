@@ -401,16 +401,24 @@ def query_expansion_node(state: dict) -> dict:
         print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
         if strategy_changed_flag:
             print(f"Strategy changed: Query optimized and will regenerate expansions")
+        else:
+            print(f"No strategy change: Keeping current strategy and query")
         print(f"{'='*60}\n")
 
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-            "retrieval_strategy": next_strategy,
-            "refinement_history": [refinement],
-            "query_expansions": [],
-            "strategy_changed": True,
-        }
+        if strategy_changed_flag:
+            query = optimized_query
+            updates = {
+                "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
+                "retrieval_strategy": next_strategy,
+                "refinement_history": [refinement],
+                "query_expansions": [],
+                "strategy_changed": True,
+            }
+        else:
+            updates = {
+                "refinement_history": [refinement],
+                "query_expansions": [],
+            }
         state.update(updates)
 
     # Prioritize retrieval_query (algorithm-optimized) if set, else active_query (semantic)
@@ -460,7 +468,6 @@ def query_expansion_node(state: dict) -> dict:
 
         result.update({
             "query_expansions": [query],
-            "active_query": query,
         })
         return result
 
@@ -472,13 +479,12 @@ def query_expansion_node(state: dict) -> dict:
     print(f"{'='*60}\n")
 
     print(f"\nQuery expansion complete:")
-    print(f"  active_query set to: {query}")
     print(f"  query_expansions: {len(expansions)} variant(s)")
     print(f"  Note: Expansions regenerated from {'retrieval_query' if state.get('retrieval_query') else 'active_query'}")
+    print(f"  active_query preserved (not contaminated with algorithm-optimized query)")
 
     result.update({
         "query_expansions": expansions,
-        "active_query": query,
     })
     return result
 
