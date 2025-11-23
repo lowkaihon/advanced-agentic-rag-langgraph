@@ -188,25 +188,17 @@ def run_tier_on_golden_dataset(
             retrieved_docs = result.get("unique_docs_list", [])
             retrieval_attempts = result.get("retrieval_attempts", 1)
 
-            # Calculate retrieval metrics
-            retrieved_doc_ids = []
-            for doc in retrieved_docs:
-                # Extract chunk ID from metadata - fixed: use 'id' not 'chunk_id'
-                if hasattr(doc, 'metadata') and 'id' in doc.metadata:
-                    retrieved_doc_ids.append(doc.metadata['id'])
+            # Calculate retrieval metrics using shared function
+            metrics = calculate_retrieval_metrics(retrieved_docs, ground_truth_docs, k_final)
+            f1_at_k = metrics["f1_at_k"]
+            precision = metrics["precision_at_k"]
+            recall = metrics["recall_at_k"]
 
-            # Calculate F1@K (K adapts to dataset complexity)
-            k = k_final
-            relevant_retrieved = set(ground_truth_docs[:k]) & set(retrieved_doc_ids[:k])
-            precision = len(relevant_retrieved) / k if len(retrieved_doc_ids) >= k else 0.0
-            recall = len(relevant_retrieved) / min(len(ground_truth_docs), k)
-            f1_at_k = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
-
-            # Calculate groundedness using NLI
+            # Calculate groundedness using NLI (independent verification with graph-matching format)
             if retrieved_docs and answer:
-                context = "\n\n".join([
-                    doc.page_content if hasattr(doc, 'page_content') else str(doc)
-                    for doc in retrieved_docs[:4]
+                context = "\n---\n".join([
+                    f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content}"
+                    for doc in retrieved_docs[:k_final]
                 ])
                 groundedness_result = nli_detector.verify_groundedness(answer, context)
                 groundedness_score = groundedness_result["groundedness_score"]
@@ -214,7 +206,13 @@ def run_tier_on_golden_dataset(
                 groundedness_score = 0.0
 
             if verbose:
-                print(f"  F1@{k}: {f1_at_k:.0%} | Groundedness: {groundedness_score:.0%} | Confidence: {confidence:.0%} | Attempts: {retrieval_attempts}")
+                print(f"  F1@{k_final}: {f1_at_k:.0%} | Groundedness: {groundedness_score:.0%} | Confidence: {confidence:.0%} | Attempts: {retrieval_attempts}")
+
+            # Extract doc IDs for storage (using same logic as shared function)
+            retrieved_doc_ids = [
+                doc.metadata.get('id', f'doc_{i}')
+                for i, doc in enumerate(retrieved_docs[:k_final])
+            ]
 
             results.append({
                 "example_id": example.get("id", query[:30]),

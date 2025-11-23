@@ -79,10 +79,10 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
 
-    if quality > 0.6:
+    if quality >= 0.6:
         return "answer_generation"
 
-    if attempts >= 2:
+    if attempts >= 3:
         return "answer_generation"
 
     if "off_topic" in issues or "wrong_domain" in issues:
@@ -110,10 +110,10 @@ def route_after_answer_generation(state: AdvancedRAGState) -> Literal["groundedn
     """
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
 
-    if retrieval_quality <= 0.6:
+    if retrieval_quality < 0.6:
         print(f"\n{'='*60}")
         print(f"GROUNDEDNESS CHECK SKIPPED")
-        print(f"Retrieval quality: {retrieval_quality:.0%} (<=60% threshold)")
+        print(f"Retrieval quality: {retrieval_quality:.0%} (<60% threshold)")
         print(f"Reason: LLM instructed to refuse when context insufficient")
         print(f"Action: Skipping NLI check to avoid false positive hallucination detection")
         print(f"Note: Problem is retrieval-side, not generation-side")
@@ -147,7 +147,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
     groundedness_score = state.get("groundedness_score", 1.0)
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
 
-    if retry_count >= 2:
+    if retry_count >= 1:
         return "evaluate_answer"
 
     if 0.6 <= groundedness_score < 0.8:
@@ -159,7 +159,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
         print(f"{'='*60}\n")
         return "evaluate_answer"
 
-    if retry_needed and retry_count < 2:
+    if retry_needed and retry_count < 1:
         if retrieval_quality >= 0.6:
             print(f"\n{'='*60}")
             print(f"GROUNDEDNESS RETRY (LLM Hallucination)")
@@ -167,7 +167,7 @@ def route_after_groundedness(state: AdvancedRAGState) -> Literal["answer_generat
             print(f"Retrieval quality: {retrieval_quality:.0%} (GOOD)")
             print(f"Root cause: LLM invented facts despite good context")
             print(f"Action: Regenerating with stricter grounding")
-            print(f"Retry count: {retry_count + 1}/2")
+            print(f"Retry count: {retry_count + 1}/1")
             print(f"{'='*60}\n")
 
             return "answer_generation"

@@ -41,7 +41,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Conditional routing: route_after_query_expansion distinguishes initial vs retry paths for proper expansion regeneration
 
 **Self-Correction Loops**
-- Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 2 rewrites)
+- Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 3 attempts)
 - Hallucination correction loop (three-tier with root cause detection):
   - MODERATE (0.6-0.8): Likely NLI false positive → log warning, proceed without retry (protects against over-conservative zero-shot NLI)
   - SEVERE + good retrieval (>0.6): LLM hallucination → regenerate with strict grounding → retry (max 2)
@@ -370,7 +370,7 @@ https://docs.langchain.com/oss/python/langgraph/thinking-in-langgraph#handle-err
 Code Pattern:
 ```python
 # Quality-driven routing (not exception handling)
-if state["retrieval_quality_score"] < 0.6 and state["retrieval_attempts"] < 2:
+if state["retrieval_quality_score"] < 0.6 and state["retrieval_attempts"] < 3:
     return "rewrite"  # Poor retrieval -> retry
 return "generate"
 ```

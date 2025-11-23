@@ -33,7 +33,7 @@ class AdvancedRAGState(TypedDict):
     # === RETRIEVAL EXECUTION ===
     retrieved_docs: Annotated[list[str], operator.add]  # Accumulated document content across retrieval attempts
     unique_docs_list: Optional[list]  # Deduplicated Document objects with metadata (for reranking/analysis)
-    retrieval_attempts: Optional[int]  # Retry counter (max 2 rewrites before strategy switch)
+    retrieval_attempts: Optional[int]  # Retrieval attempt counter: tracks attempts across rewrites/strategy switches (max 3, resets per user question)
 
     # === QUALITY ASSESSMENT ===
     # Retrieval Quality (LLM-as-judge evaluation)
@@ -52,7 +52,7 @@ class AdvancedRAGState(TypedDict):
     unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
     groundedness_severity: Optional[Literal["NONE", "MODERATE", "SEVERE"]]  # Routing severity: <0.6 SEVERE, 0.6-0.8 MODERATE, >=0.8 NONE
     retry_needed: Optional[bool]  # SEVERE hallucination triggers regeneration with strict grounding instructions
-    groundedness_retry_count: Optional[int]  # Regeneration attempt counter (max 2)
+    groundedness_retry_count: Optional[int]  # Regeneration attempt counter (max 1 per retrieval, resets on new retrieval)
     retrieval_caused_hallucination: Optional[bool]  # Poor retrieval + SEVERE -> re-retrieval with strategy switch
 
     # === EVALUATION METRICS (Golden Dataset Support) ===

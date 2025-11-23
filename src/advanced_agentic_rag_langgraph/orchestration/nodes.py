@@ -152,6 +152,8 @@ def conversational_rewrite_node(state: dict) -> dict:
         "user_question": question,
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
+        "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
+        "groundedness_retry_count": 0,  # Reset counter for new user question (fixes multi-turn hallucination retry bug)
     }
 
 # ============ QUERY OPTIMIZATION STAGE ============
@@ -227,8 +229,8 @@ def query_expansion_node(state: dict) -> dict:
     retrieval_caused_hallucination = state.get("retrieval_caused_hallucination", False)
     is_answer_sufficient = state.get("is_answer_sufficient", True)
 
-    early_switch = (quality <= 0.6 and
-                    attempts < 2 and
+    early_switch = (quality < 0.6 and
+                    attempts < 3 and
                     not strategy_changed and
                     ("off_topic" in issues or "wrong_domain" in issues))
 
@@ -326,15 +328,24 @@ def query_expansion_node(state: dict) -> dict:
                 next_strategy = "hybrid"
                 reasoning = "Content-driven: Keyword insufficient, trying hybrid for balance"
         else:
-            if current_strategy == "hybrid":
-                next_strategy = "semantic"
-                reasoning = "Fallback: hybrid to semantic"
-            elif current_strategy == "semantic":
-                next_strategy = "keyword"
-                reasoning = "Fallback: semantic to keyword"
+            # Only switch if retrieval quality is poor (<60%)
+            # Good quality with insufficient answer indicates answer generation issue, not retrieval issue
+            if retrieval_quality_score < 0.6:
+                # Poor quality without specific issues - try blind fallback as last resort
+                if current_strategy == "hybrid":
+                    next_strategy = "semantic"
+                    reasoning = f"Fallback: hybrid to semantic (low quality {retrieval_quality_score:.0%}, no specific issues)"
+                elif current_strategy == "semantic":
+                    next_strategy = "keyword"
+                    reasoning = f"Fallback: semantic to keyword (low quality {retrieval_quality_score:.0%}, no specific issues)"
+                else:
+                    next_strategy = current_strategy
+                    reasoning = f"No strategy change (low quality {retrieval_quality_score:.0%}, exhausted options)"
             else:
+                # Good quality (>=60%) with no specific issues - don't switch strategies
+                # Problem is likely in answer generation, not retrieval
                 next_strategy = current_strategy
-                reasoning = "No strategy change (exhausted options)"
+                reasoning = f"No strategy change (good quality {retrieval_quality_score:.0%}, answer generation issue)"
 
         refinement = {
             "iteration": attempts,
@@ -569,7 +580,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
 
     docs_text = "\n---\n".join([
         f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content}"
-        for doc in unique_docs[:5]
+        for doc in unique_docs
     ])
 
     spec = get_model_for_task("retrieval_quality_eval")
@@ -581,7 +592,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     )
     structured_quality_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
-    quality_prompt = get_prompt("retrieval_quality_eval", query=state['baseline_query'], docs_text=docs_text)
+    quality_prompt = get_prompt("retrieval_quality_eval", query=state.get('active_query', state['baseline_query']), docs_text=docs_text)
 
     try:
         evaluation = structured_quality_llm.invoke(quality_prompt)
@@ -631,6 +642,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         "retrieval_quality_reasoning": quality_reasoning,
         "retrieval_quality_issues": quality_issues,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
+        "groundedness_retry_count": 0,  # Reset for new retrieval (each retrieval gets fresh groundedness budget)
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
@@ -721,7 +733,7 @@ def answer_generation_with_quality_node(state: dict) -> dict:
     retry_count = state.get("groundedness_retry_count", 0)
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
 
-    if retry_needed and retry_count < 2 and retrieval_quality >= 0.6 and groundedness_score < 0.6:
+    if retry_needed and retry_count < 1 and retrieval_quality >= 0.6 and groundedness_score < 0.6:
         retry_count = retry_count + 1
 
     if not context or context == "No context":
@@ -872,7 +884,7 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
 
     result_updates = {}
 
-    if retry_needed and retry_count < 2 and retrieval_quality < 0.6 and groundedness_score < 0.6:
+    if retry_needed and retry_count < 1 and retrieval_quality < 0.6 and groundedness_score < 0.6:
         result_updates["retrieval_caused_hallucination"] = True
         result_updates["is_answer_sufficient"] = False
 

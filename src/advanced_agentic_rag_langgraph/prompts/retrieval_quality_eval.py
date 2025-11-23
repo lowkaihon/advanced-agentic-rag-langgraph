@@ -56,7 +56,7 @@ SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
   * Sufficient information for complete answer
   * Most documents relevant, minimal noise
 
-- 40-59: FAIR - Requires query rewriting [THRESHOLD: Will retry if attempts < 2]
+- 40-59: FAIR - Requires query rewriting [THRESHOLD: Will retry if attempts < 3]
   * Partial coverage, key information missing
   * Incomplete information, gaps in answer
   * Documents tangential or only partially relevant
