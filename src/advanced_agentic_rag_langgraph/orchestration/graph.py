@@ -15,31 +15,6 @@ from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize
 from typing import Literal
 
 
-# ========== HELPER FUNCTIONS ==========
-
-def select_next_strategy(current: str, issues: list[str]) -> str:
-    """
-    Content-driven strategy selection for early switching.
-
-    Maps retrieval quality issues to optimal strategies based on CRAG patterns.
-    Called when route_after_retrieval detects fundamental strategy mismatch.
-
-    Args:
-        current: Current retrieval strategy ("semantic", "keyword", or "hybrid")
-        issues: List of detected retrieval quality issues
-
-    Returns:
-        Next strategy to try based on content analysis
-    """
-    if "off_topic" in issues or "wrong_domain" in issues:
-        # Off-topic results indicate need for precision → keyword search
-        # If already using keyword, try hybrid for balance
-        return "keyword" if current != "keyword" else "hybrid"
-
-    # Default fallback (shouldn't normally reach here, but safe fallback)
-    return "semantic" if current == "hybrid" else "hybrid"
-
-
 # ========== QUERY OPTIMIZATION ROUTING ==========
 
 def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:

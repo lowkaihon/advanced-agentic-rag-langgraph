@@ -21,15 +21,6 @@ import re
 import json
 
 
-def _get_answer_generation_llm():
-    """Get LLM for answer generation with tier-based configuration."""
-    spec = get_model_for_task("answer_generation")
-    return ChatOpenAI(
-        model=spec.name,
-        temperature=spec.temperature,
-        reasoning_effort=spec.reasoning_effort,
-        verbosity=spec.verbosity
-    )
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
@@ -68,6 +59,19 @@ class AnswerQualityEvaluation(TypedDict):
     confidence_score: float
     reasoning: str
     issues: list[str]
+
+
+# ========== HELPER FUNCTIONS ==========
+
+def _get_answer_generation_llm():
+    """Get LLM for answer generation with tier-based configuration."""
+    spec = get_model_for_task("answer_generation")
+    return ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
+    )
 
 
 # ============ CONVERSATIONAL QUERY REWRITING ============
@@ -127,7 +131,7 @@ def conversational_rewrite_node(state: dict) -> dict:
     This node runs before query expansion to ensure queries have proper context.
     Extracts conversation from messages field (LangGraph best practice).
     """
-    question = state.get("user_question", state.get("baseline_query", ""))
+    question = state.get("user_question", "")
 
     # Extract conversation from messages (LangGraph best practice)
     messages = state.get("messages", [])
@@ -150,7 +154,7 @@ def conversational_rewrite_node(state: dict) -> dict:
 
     return {
         "baseline_query": rewritten_query,
-        "user_question": question,
+        "active_query": rewritten_query,
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
         "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
@@ -244,25 +248,21 @@ def query_expansion_node(state: dict) -> dict:
                     ("off_topic" in issues or "wrong_domain" in issues))
 
     if early_switch:
-        # NOTE: Import inside function to avoid circular import (graph.py imports from nodes.py)
-        from advanced_agentic_rag_langgraph.orchestration.graph import select_next_strategy
-
-        next_strategy = select_next_strategy(current_strategy, issues)
+        # Off-topic results indicate need for precision → keyword search
+        next_strategy = "keyword" if current_strategy != "keyword" else "hybrid"
+        
+        print(f"\n{'='*60}")
+        print(f"EARLY STRATEGY SWITCH")
+        print(f"From: {current_strategy} to {next_strategy}")
+        print(f"Reason: {', '.join(issues)}")
+        print(f"{'='*60}\n")       
+        
         optimized_query = optimize_query_for_strategy(
             query=state.get("active_query", state["baseline_query"]),
             new_strategy=next_strategy,
             old_strategy=current_strategy,
             issues=issues
         )
-
-        print(f"\n{'='*60}")
-        print(f"EARLY STRATEGY SWITCH")
-        print(f"From: {current_strategy} to {next_strategy}")
-        print(f"Reason: {', '.join(issues)}")
-        print(f"Attempt: {attempts + 1}")
-        print(f"Quality score: {quality:.0%}")
-        print(f"Note: Query optimized for {next_strategy} strategy")
-        print(f"{'='*60}\n")
 
         query = optimized_query
         updates = {
@@ -432,7 +432,7 @@ def query_expansion_node(state: dict) -> dict:
     print(f"State details:")
     print(f"  retrieval_query (algorithm-optimized): {state.get('retrieval_query') or 'None'}")
     print(f"  active_query (semantic): {state.get('active_query') or 'None'}")
-    print(f"  baseline_query (conversational): {state.get('baseline_query')}")
+    print(f"  baseline_query (conversational): {state['baseline_query']}")
     print(f"{'='*60}\n")
 
     result = {}
@@ -460,12 +460,6 @@ def query_expansion_node(state: dict) -> dict:
         })
 
     if _should_skip_expansion_llm(query):
-        print(f"\n{'='*60}")
-        print(f"EXPANSION SKIPPED")
-        print(f"Query: {query}")
-        print(f"Reason: LLM determined query is clear/specific enough")
-        print(f"{'='*60}\n")
-
         result.update({
             "query_expansions": [query],
         })
@@ -478,11 +472,6 @@ def query_expansion_node(state: dict) -> dict:
     print(f"Expansions: {expansions[1:]}")
     print(f"{'='*60}\n")
 
-    print(f"\nQuery expansion complete:")
-    print(f"  query_expansions: {len(expansions)} variant(s)")
-    print(f"  Note: Expansions regenerated from {'retrieval_query' if state.get('retrieval_query') else 'active_query'}")
-    print(f"  active_query preserved (not contaminated with algorithm-optimized query)")
-
     result.update({
         "query_expansions": expansions,
     })
@@ -494,11 +483,8 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
 
     Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
     """
-    query = state["active_query"]
+    query = state["baseline_query"]
     corpus_stats = state.get("corpus_stats", {})
-
-    print(f"Query source for strategy selection: active_query")
-    print(f"  (Note: Semantic rewriting determines strategy, not algorithm-optimized retrieval_query)\n")
 
     strategy, confidence, reasoning = strategy_selector.select_strategy(
         query,
@@ -545,14 +531,12 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     print(f"Using {expansions_count} query expansion(s)")
     print(f"Expansions generated from: {expansion_source}")
     print(f"Retrieval strategy: {strategy}")
-    if expansions_count > 0:
-        print(f"First expansion: {state.get('query_expansions', ['N/A'])[0]}")
     print(f"{'='*60}\n")
 
     for query in state.get("query_expansions", []):
         docs = adaptive_retriever.retrieve_without_reranking(query, strategy=strategy)
 
-        for rank, doc in enumerate(docs):
+        for rank, doc in enumerate(docs, start=1):
             doc_id = doc.metadata.get("id", doc.page_content[:50])
             if doc_id not in doc_ranks:
                 doc_ranks[doc_id] = []
@@ -612,13 +596,13 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         print(f"\nExpected chunks in reranking input:")
         print(f"Found: {found_in_reranking if found_in_reranking else '[]'} | Missing: {missing_in_reranking if missing_in_reranking else '[]'}")
 
-    query_for_reranking = state.get('active_query', state.get('baseline_query', ''))
+    query_for_reranking = state.get('active_query', state['baseline_query'])
 
+    query_source = "active_query" if state.get("active_query") else "baseline_query"
     print(f"\n{'='*60}")
     print(f"RERANKING QUERY SOURCE")
-    print(f"Using: active_query (semantic, human-readable)")
+    print(f"Using: {query_source} (semantic, human-readable)")
     print(f"Query: {query_for_reranking}")
-    print(f"Input docs: {len(reranking_input)}")
     print(f"Note: Reranking uses semantic query, NOT algorithm-optimized retrieval_query")
     print(f"{'='*60}\n")
 
