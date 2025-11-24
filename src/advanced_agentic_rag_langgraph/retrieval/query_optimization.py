@@ -105,12 +105,19 @@ Return ONLY the rewritten query."""
 
 def optimize_query_for_strategy(
     query: str,
-    new_strategy: str,
-    old_strategy: str,
+    strategy: str,
+    old_strategy: str = None,
     issues: list[str] = None
 ) -> str:
     """
     Optimize query for specific retrieval strategy.
+
+    Args:
+        query: Query to optimize
+        strategy: Target retrieval strategy (semantic/keyword/hybrid)
+        old_strategy: Previous strategy (only when switching strategies)
+        issues: Issues from previous retrieval (only when switching)
+
     Research-backed pattern from CRAG and PreQRAG.
     """
     issue_context = ""
@@ -160,18 +167,28 @@ Example transformations:
 """
     }
 
-    optimization_prompt = f"""You are optimizing a query for {new_strategy} retrieval after {old_strategy} retrieval did not work well.
+    # Adjust prompt based on whether we're switching strategies
+    if old_strategy:
+        # Strategy switch scenario (early switch)
+        prompt_context = f"You are optimizing a query for {strategy} retrieval after {old_strategy} retrieval did not work well."
+        log_header = f"Strategy switch: {old_strategy} -> {strategy}"
+    else:
+        # Initial optimization or retry with same strategy
+        prompt_context = f"You are optimizing a query for {strategy} retrieval."
+        log_header = f"Strategy: {strategy}"
+
+    optimization_prompt = f"""{prompt_context}
 
 Original query: "{query}"{issue_context}
 
-{strategy_guidance.get(new_strategy, strategy_guidance["hybrid"])}
+{strategy_guidance.get(strategy, strategy_guidance["hybrid"])}
 
-TASK: Rewrite the query to be optimized for {new_strategy} retrieval while preserving the user's intent.
+TASK: Rewrite the query to be optimized for {strategy} retrieval while preserving the user's intent.
 
 CRITICAL GUIDELINES:
 - Preserve all technical terms, acronyms, and proper nouns EXACTLY as written
 - Keep the core user intent unchanged
-- Adjust phrasing and terminology to match {new_strategy} characteristics
+- Adjust phrasing and terminology to match {strategy} characteristics
 - Be concise but complete
 - Return ONLY the optimized query, no explanation"""
 
@@ -181,7 +198,7 @@ CRITICAL GUIDELINES:
 
     print(f"\n{'='*60}")
     print(f"STRATEGY-SPECIFIC QUERY OPTIMIZATION")
-    print(f"Strategy switch: {old_strategy} -> {new_strategy}")
+    print(f"{log_header}")
     print(f"Original query: {query}")
     print(f"Optimized query: {optimized}")
     if issues:

@@ -21,8 +21,8 @@ class AdvancedRAGState(TypedDict):
 
     # === QUERY LIFECYCLE ===
     active_query: Optional[str]  # Current working query (semantic, human-readable, evolves through rewrites)
-    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval (set on initial turn + all strategy switches)
-    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from retrieval_query if set, else active_query)
+    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval (set by query_expansion_node for ALL paths)
+    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from optimized retrieval_query)
 
     # === STRATEGY SELECTION & ADAPTATION ===
     retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]
@@ -51,10 +51,10 @@ class AdvancedRAGState(TypedDict):
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)
     has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder NLI
     unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
-    groundedness_severity: Optional[Literal["NONE", "MODERATE", "SEVERE"]]  # Routing severity: <0.6 SEVERE, 0.6-0.8 MODERATE, >=0.8 NONE
-    retry_needed: Optional[bool]  # SEVERE hallucination triggers regeneration with strict grounding instructions
-    groundedness_retry_count: Optional[int]  # Regeneration attempt counter (max 1 per retrieval, resets on new retrieval)
-    retrieval_caused_hallucination: Optional[bool]  # Poor retrieval + SEVERE -> re-retrieval with strategy switch
+
+    # === GENERATION RETRY (Unified retry handling) ===
+    generation_retry_count: Optional[int]  # Unified generation retry counter (max 3, resets per user question)
+    retry_feedback: Optional[str]  # Combined groundedness + quality feedback for regeneration
 
     # === EVALUATION METRICS (Golden Dataset Support) ===
     ground_truth_doc_ids: Optional[list]  # Relevant document IDs from test set

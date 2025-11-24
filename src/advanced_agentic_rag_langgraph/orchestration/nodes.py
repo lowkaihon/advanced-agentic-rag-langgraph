@@ -158,7 +158,8 @@ def conversational_rewrite_node(state: dict) -> dict:
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
         "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
-        "groundedness_retry_count": 0,  # Reset counter for new user question (fixes multi-turn hallucination retry bug)
+        "generation_retry_count": 0,  # Reset for new user question (unified retry counter)
+        "retry_feedback": None,  # Clear feedback for new user question
     }
 
 # ============ QUERY OPTIMIZATION STAGE ============
@@ -223,260 +224,85 @@ Return your decision ('yes' or 'no') with brief reasoning."""
 
 def query_expansion_node(state: dict) -> dict:
     """
-    Conditionally expand queries using LLM to assess expansion benefit.
+    Optimize query for strategy, then conditionally expand.
 
-    Architecture: Strategy selection happens BEFORE expansion (decide_strategy node upstream).
-    Initial turn: Uses retrieval_query (optimized by decide_strategy) for expansion.
-    Retry paths: Handle strategy switches and regenerate expansions with optimized queries.
+    ALL queries passing through this node get strategy-specific optimization.
+    This consolidates optimization logic in a single location.
 
-    Three retry scenarios handled here:
-    1. Early switch: route_after_retrieval detected strategy mismatch (off_topic/wrong_domain)
-    2. Re-retrieval: route_after_evaluation triggered retrieval-caused hallucination fix
-    3. Late switch: route_after_evaluation determined answer insufficient
+    Entry paths:
+    1. Initial turn: From decide_strategy (first question) - optimizes for selected strategy
+    2. Early switch: From route_after_retrieval (off_topic/wrong_domain detected) - switches strategy then optimizes
+    3. Query rewrite: From rewrite_and_refine (semantic query improvement) - optimizes rewritten query
 
-    All scenarios apply optimize_query_for_strategy and regenerate expansions for consistency.
+    NO LONGER HANDLES:
+    - Late strategy switching (removed - no re-retrieval after answer_generation)
+    - Hallucination-triggered re-retrieval (removed - unreachable code)
     """
 
     quality = state.get("retrieval_quality_score", 1.0)
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
-    strategy_changed = state.get("strategy_changed", False)
     current_strategy = state.get("retrieval_strategy", "hybrid")
-    retrieval_caused_hallucination = state.get("retrieval_caused_hallucination", False)
-    is_answer_sufficient = state.get("is_answer_sufficient", True)
 
+    # Check for early strategy switch
     early_switch = (quality < 0.6 and
                     attempts == 1 and
                     ("off_topic" in issues or "wrong_domain" in issues))
 
+    old_strategy = None
+    strategy_updates = {}
+
     if early_switch:
-        # Off-topic results indicate need for precision → keyword search
+        # Off-topic results indicate need for precision -> keyword search
+        old_strategy = current_strategy
         next_strategy = "keyword" if current_strategy != "keyword" else "hybrid"
-        
+
         print(f"\n{'='*60}")
         print(f"EARLY STRATEGY SWITCH")
         print(f"From: {current_strategy} to {next_strategy}")
         print(f"Reason: {', '.join(issues)}")
-        print(f"{'='*60}\n")       
-        
-        optimized_query = optimize_query_for_strategy(
-            query=state.get("active_query", state["baseline_query"]),
-            new_strategy=next_strategy,
-            old_strategy=current_strategy,
-            issues=issues
-        )
+        print(f"{'='*60}\n")
 
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
+        current_strategy = next_strategy  # Use new strategy for optimization
+
+        strategy_updates = {
             "retrieval_strategy": next_strategy,
             "strategy_switch_reason": f"Early detection: {', '.join(issues)}",
             "strategy_changed": True,
-            "query_expansions": [],
-        }
-        print(f"\nState update summary:")
-        print(f"  baseline_query: {state.get('baseline_query')} (unchanged)")
-        print(f"  active_query: {state.get('active_query', state['baseline_query'])} (input for optimization)")
-        print(f"  retrieval_query: {optimized_query} (algorithm-optimized)")
-        print(f"  strategy_changed: True (triggers expansion regeneration)")
-        state.update(updates)
-
-    elif retrieval_caused_hallucination and attempts < 3:
-        if current_strategy == "semantic":
-            next_strategy = "keyword"
-        elif current_strategy == "keyword":
-            next_strategy = "hybrid"
-        else:
-            next_strategy = "semantic"
-
-        source_query = state.get('active_query', state['baseline_query'])
-        print(f"Query source for optimization: {source_query}")
-        print(f"(priority: active_query > baseline_query)")
-
-        optimized_query = optimize_query_for_strategy(
-            query=source_query,
-            new_strategy=next_strategy,
-            old_strategy=current_strategy,
-            issues=["retrieval_caused_hallucination"]
-        )
-
-        print(f"\n{'='*60}")
-        print(f"RE-RETRIEVAL (Hallucination Mitigation)")
-        print(f"Trigger: Poor retrieval caused hallucination")
-        print(f"Strategy: {current_strategy} to {next_strategy}")
-        print(f"Attempt: {attempts + 1}/3")
-        print(f"Research: Re-retrieval > regeneration for context gaps")
-        print(f"Note: Query optimized for {next_strategy} strategy")
-        print(f"{'='*60}\n")
-
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-            "retrieval_strategy": next_strategy,
-            "strategy_changed": True,
-            "query_expansions": [],
-            "retrieval_caused_hallucination": False,
-        }
-        state.update(updates)
-
-    elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
-        retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-        retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
-
-        if "missing_key_info" in retrieval_quality_issues and retrieval_quality_score < 0.6:
-            if current_strategy != "semantic":
-                next_strategy = "semantic"
-                reasoning = f"Content-driven: Missing key information detected, switching to semantic search for better conceptual coverage"
-            else:
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Semantic failed to find key information, trying hybrid for broader coverage"
-        elif "off_topic" in retrieval_quality_issues or "wrong_domain" in retrieval_quality_issues:
-            if current_strategy != "keyword":
-                next_strategy = "keyword"
-                reasoning = f"Content-driven: Off-topic results detected, switching to keyword search for precision"
-            else:
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Keyword search not precise enough, trying hybrid"
-        elif "partial_coverage" in retrieval_quality_issues or "incomplete_context" in retrieval_quality_issues:
-            if current_strategy == "hybrid":
-                next_strategy = "semantic"
-                reasoning = "Content-driven: Partial coverage with hybrid, trying semantic for depth"
-            elif current_strategy == "semantic":
-                next_strategy = "keyword"
-                reasoning = "Content-driven: Semantic incomplete, trying keyword for specificity"
-            else:
-                next_strategy = "hybrid"
-                reasoning = "Content-driven: Keyword insufficient, trying hybrid for balance"
-        else:
-            # Only switch if retrieval quality is poor (<60%)
-            # Good quality with insufficient answer indicates answer generation issue, not retrieval issue
-            if retrieval_quality_score < 0.6:
-                # Poor quality without specific issues - try blind fallback as last resort
-                if current_strategy == "hybrid":
-                    next_strategy = "semantic"
-                    reasoning = f"Fallback: hybrid to semantic (low quality {retrieval_quality_score:.0%}, no specific issues)"
-                elif current_strategy == "semantic":
-                    next_strategy = "keyword"
-                    reasoning = f"Fallback: semantic to keyword (low quality {retrieval_quality_score:.0%}, no specific issues)"
-                else:
-                    next_strategy = current_strategy
-                    reasoning = f"No strategy change (low quality {retrieval_quality_score:.0%}, exhausted options)"
-            else:
-                # Good quality (>=60%) with no specific issues - don't switch strategies
-                # Problem is likely in answer generation, not retrieval
-                next_strategy = current_strategy
-                reasoning = f"No strategy change (good quality {retrieval_quality_score:.0%}, answer generation issue)"
-
-        refinement = {
-            "iteration": attempts,
-            "from_strategy": current_strategy,
-            "to_strategy": next_strategy,
-            "reasoning": reasoning,
-            "retrieval_quality_issues": retrieval_quality_issues,
-            "retrieval_quality_score": retrieval_quality_score,
         }
 
-        strategy_changed_flag = (next_strategy != current_strategy)
-        optimized_query = state.get("active_query", state["baseline_query"])
+    # ALWAYS optimize query for current strategy (consolidated optimization logic)
+    source_query = state.get("active_query", state["baseline_query"])
 
-        if strategy_changed_flag:
-            answer_quality_issues = state.get("answer_quality_issues", [])
-            combined_issues = list(set(retrieval_quality_issues + answer_quality_issues))
+    optimized_query = optimize_query_for_strategy(
+        query=source_query,
+        strategy=current_strategy,
+        old_strategy=old_strategy,  # Only set during early switch
+        issues=issues if early_switch else []
+    )
 
-            source_query = state.get('active_query', state['baseline_query'])
-            print(f"Query input for optimization: {source_query}")
-            print(f"(active_query preferred: {bool(state.get('active_query'))})")
-
-            optimized_query = optimize_query_for_strategy(
-                query=source_query,
-                new_strategy=next_strategy,
-                old_strategy=current_strategy,
-                issues=combined_issues
-            )
-
-        print(f"\n{'='*60}")
-        print(f"STRATEGY REFINEMENT")
-        print(f"Iteration: {refinement['iteration']}")
-        print(f"Switch: {current_strategy} to {next_strategy}")
-        print(f"Reasoning: {reasoning}")
-        print(f"Retrieval quality: {retrieval_quality_score:.0%}")
-        print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
-        if strategy_changed_flag:
-            print(f"Strategy changed: Query optimized and will regenerate expansions")
-        else:
-            print(f"No strategy change: Keeping current strategy and query")
-        print(f"{'='*60}\n")
-
-        if strategy_changed_flag:
-            query = optimized_query
-            updates = {
-                "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-                "retrieval_strategy": next_strategy,
-                "refinement_history": [refinement],
-                "query_expansions": [],
-                "strategy_changed": True,
-            }
-        else:
-            updates = {
-                "refinement_history": [refinement],
-                "query_expansions": [],
-            }
-        state.update(updates)
-
-    # Prioritize retrieval_query (algorithm-optimized) if set, else active_query (semantic)
-    query = state.get("retrieval_query") or state.get("active_query", state["baseline_query"])
-
-    query_source = "retrieval_query" if state.get("retrieval_query") else ("active_query" if state.get("active_query") else "baseline_query")
-    print(f"\n{'='*60}")
-    print(f"QUERY SOURCE SELECTION (Pre-Expansion)")
-    print(f"Selected: {query_source}")
-    print(f"Value: {query}")
-    print(f"State details:")
-    print(f"  retrieval_query (algorithm-optimized): {state.get('retrieval_query') or 'None'}")
-    print(f"  active_query (semantic): {state.get('active_query') or 'None'}")
-    print(f"  baseline_query (conversational): {state['baseline_query']}")
-    print(f"{'='*60}\n")
-
-    result = {}
-
-    if early_switch:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "strategy_switch_reason": state.get("strategy_switch_reason", ""),
-            "strategy_changed": state["strategy_changed"],
-        })
-    elif retrieval_caused_hallucination and attempts < 3:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "strategy_changed": state["strategy_changed"],
-            "retrieval_caused_hallucination": state["retrieval_caused_hallucination"],
-        })
-    elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "refinement_history": [state["refinement_history"][-1]] if state.get("refinement_history") else [],
-            "strategy_changed": state["strategy_changed"],
-        })
-
-    if _should_skip_expansion_llm(query):
-        result.update({
-            "query_expansions": [query],
-        })
+    # Decide whether to expand optimized query
+    if _should_skip_expansion_llm(optimized_query):
+        result = {
+            "retrieval_query": optimized_query,
+            "query_expansions": [optimized_query],
+            **strategy_updates
+        }
         return result
 
-    expansions = expand_query(query)
+    # Expand optimized query
+    expansions = expand_query(optimized_query)
     print(f"\n{'='*60}")
     print(f"QUERY EXPANDED")
-    print(f"Original: {query}")
+    print(f"Optimized query: {optimized_query}")
     print(f"Expansions: {expansions[1:]}")
     print(f"{'='*60}\n")
 
-    result.update({
+    result = {
+        "retrieval_query": optimized_query,
         "query_expansions": expansions,
-    })
+        **strategy_updates
+    }
     return result
 
 def decide_retrieval_strategy_node(state: dict) -> dict:
@@ -484,7 +310,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
     Decide which retrieval strategy to use based on query and corpus characteristics.
 
     Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
-    Now includes query optimization for the selected strategy (initial turn consistency).
+    Query optimization happens downstream in query_expansion_node (consolidates all optimization logic).
     """
     query = state["baseline_query"]
     corpus_stats = state.get("corpus_stats", {})
@@ -500,23 +326,11 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
     print(f"Selected: {strategy.upper()}")
     print(f"Confidence: {confidence:.0%}")
     print(f"Reasoning: {reasoning}")
+    print(f"Note: Query optimization will happen in query_expansion_node")
     print(f"{'='*60}\n")
-
-    optimized_query = optimize_query_for_strategy(
-        query=query,
-        new_strategy=strategy,
-        old_strategy=None,
-        issues=[]
-    )
-
-    print(f"Initial turn query optimization applied:")
-    print(f"  baseline_query: {query} (input)")
-    print(f"  retrieval_query: {optimized_query} (algorithm-optimized for {strategy})")
-    print(f"  Strategy: {strategy}\n")
 
     return {
         "retrieval_strategy": strategy,
-        "retrieval_query": optimized_query,
         "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
 
@@ -714,7 +528,6 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         "retrieval_quality_reasoning": quality_reasoning,
         "retrieval_quality_issues": quality_issues,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
-        "groundedness_retry_count": 0,  # Reset for new retrieval (each retrieval gets fresh groundedness budget)
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
@@ -792,34 +605,27 @@ def rewrite_and_refine_node(state: dict) -> dict:
 
 # ============ ANSWER GENERATION & EVALUATION ============
 
-def answer_generation_with_quality_node(state: dict) -> dict:
+def answer_generation_node(state: dict) -> dict:
     """
-    Generate answer using structured RAG prompt with quality-aware instructions.
+    Generate answer using structured RAG prompt with unified retry handling.
 
-    Implements RAG best practices: quality-aware thresholds, XML markup, groundedness feedback.
-    Handles retry counter increment (moved from router for purity).
+    Implements RAG best practices: quality-aware thresholds, XML markup, unified feedback.
+    Handles both initial generation and retries from combined evaluation.
     """
 
     question = state["baseline_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
-    quality_score = state.get("retrieval_quality_score", 0)
-    retry_needed = state.get("retry_needed", False)
-    unsupported_claims = state.get("unsupported_claims", [])
-    groundedness_score = state.get("groundedness_score", 1.0)
-
-    retry_count = state.get("groundedness_retry_count", 0)
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
+    generation_retry = state.get("generation_retry_count", 0)
+    retry_feedback = state.get("retry_feedback", "")
 
     print(f"\n{'='*60}")
-    print(f"ANSWER GENERATION INPUT")
-    print(f"Question (baseline_query): {question}")
-    print(f"Context source: retrieved_docs (RRF-fused, reranked)")
+    print(f"ANSWER GENERATION")
+    print(f"Question: {question}")
     print(f"Context size: {len(context)} chars")
-    print(f"Groundedness retry: {retry_count}/1")
+    print(f"Retrieval quality: {retrieval_quality:.0%}")
+    print(f"Generation attempt: {generation_retry + 1}/3")
     print(f"{'='*60}\n")
-
-    if retry_needed and retry_count < 1 and retrieval_quality >= 0.6 and groundedness_score < 0.6:
-        retry_count = retry_count + 1
 
     if not context or context == "No context":
         return {
@@ -829,48 +635,36 @@ def answer_generation_with_quality_node(state: dict) -> dict:
 
     formatted_context = context
 
-    hallucination_feedback = ""
-    if retry_needed and unsupported_claims:
-        hallucination_feedback = f"""CRITICAL - GROUNDEDNESS ISSUE DETECTED:
-Your previous answer had a groundedness score of {groundedness_score:.0%}, indicating it contained claims that were NOT supported by the retrieved documents.
+    # Determine quality instruction based on retry scenario
+    if generation_retry > 0 and retry_feedback:
+        # Unified retry with combined feedback from evaluation
+        quality_instruction = f"""RETRY GENERATION (Attempt {generation_retry + 1}/3)
 
-Unsupported claims from previous attempt:
-{chr(10).join(f"  {i+1}. {claim}" for i, claim in enumerate(unsupported_claims))}
+Previous attempt had issues:
+{retry_feedback}
 
-REGENERATION REQUIREMENTS:
-1. Use ONLY information that is explicitly stated in the retrieved context below
-2. For each of the unsupported claims listed above, either:
-   - Find direct supporting evidence in the context and rephrase the claim accurately with that evidence
-   - Completely omit the claim if no supporting evidence exists in the context
-3. When helpful for verification, you may reference the documents (e.g., "According to the retrieved information..." or "The documents indicate that...")
-4. Be conservative: If you cannot find explicit support for a claim, do not include it
-5. If the context is insufficient to answer the question fully, clearly state: "The provided context does not contain enough information to answer this question completely."
+Generate improved answer addressing ALL issues above while using the same retrieved context."""
 
-Your goal is to be factually grounded, not comprehensive. Quality over completeness.
-
-"""
-        print(f"\n{'='*60}")
-        print(f"GROUNDEDNESS FEEDBACK PROVIDED")
-        print(f"Previous groundedness: {groundedness_score:.0%}")
-        print(f"Unsupported claims: {len(unsupported_claims)}")
-        print(f"Regenerating with hallucination-specific instructions")
-        print(f"{'='*60}\n")
-
-    if quality_score > 0.8:
-        quality_instruction = f"""High Confidence Retrieval (Score: {quality_score:.0%})
-The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
-    elif quality_score > 0.6:
-        quality_instruction = f"""Medium Confidence Retrieval (Score: {quality_score:.0%})
-The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
+        print(f"RETRY MODE:")
+        print(f"Feedback:\n{retry_feedback}\n")
     else:
-        quality_instruction = f"""Low Confidence Retrieval (Score: {quality_score:.0%})
+        # First generation - use quality-aware instructions
+        if retrieval_quality > 0.8:
+            quality_instruction = f"""High Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
+        elif retrieval_quality > 0.6:
+            quality_instruction = f"""Medium Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
+        else:
+            quality_instruction = f"""Low Confidence Retrieval (Score: {retrieval_quality:.0%})
 The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
-    # Detect if this is a retry after hallucination detection
-    is_retry_after_hallucination = retry_needed and unsupported_claims and len(unsupported_claims) > 0
+    # For unified retry, hallucination feedback is already in retry_feedback
+    hallucination_feedback = retry_feedback if (generation_retry > 0 and retry_feedback) else ""
+    is_retry_after_hallucination = "HALLUCINATION DETECTED" in retry_feedback if retry_feedback else False
 
     system_prompt, user_message = get_answer_generation_prompts(
         hallucination_feedback=hallucination_feedback,
@@ -879,7 +673,7 @@ The retrieved documents may not fully address the question. Only answer what can
         question=question,
         is_gpt5=is_gpt5,
         is_retry_after_hallucination=is_retry_after_hallucination,
-        unsupported_claims=unsupported_claims if is_retry_after_hallucination else None
+        unsupported_claims=None  # Claims already in retry_feedback
     )
 
     llm = _get_answer_generation_llm()
@@ -890,89 +684,82 @@ The retrieved documents may not fully address the question. Only answer what can
 
     result = {
         "final_answer": response.content,
+        "generation_retry_count": generation_retry + 1,
         "messages": [response],
     }
 
-    if retry_needed and retrieval_quality >= 0.6 and groundedness_score < 0.6:
-        result["groundedness_retry_count"] = retry_count
-
     return result
 
-def groundedness_check_node(state: dict) -> dict:
-    """
-    Verify answer is factually grounded in retrieved context.
+def get_quality_fix_guidance(issues: list[str]) -> str:
+    """Generate fix guidance based on quality issues."""
+    guidance_map = {
+        "incomplete_synthesis": "Extract and synthesize key points from ALL documents",
+        "lacks_specificity": "Include specific details (numbers, dates, names, technical terms)",
+        "unsupported_claims": "Remove claims not explicitly stated in context",
+        "wrong_focus": "Re-read question and address the primary intent",
+        "partial_answer": "Ensure all question parts are answered completely",
+        "missing_details": "Add sufficient depth and explanation",
+        "contextual_gaps": "Provide necessary background context",
+        "retrieval_limited": "Work with available information, state limitations if needed",
+    }
+    return "; ".join([guidance_map.get(issue, issue) for issue in issues])
 
-    Uses NLI-based claim verification (0.83 F1 vs 0.70 F1).
-    Three-tier severity: <0.6 severe (retry), 0.6-0.8 moderate (warn), >=0.8 good (proceed).
+
+def evaluate_answer_node(state: dict) -> dict:
+    """
+    Combined groundedness + quality evaluation (single decision point).
+
+    Performs both checks in sequence:
+    1. NLI-based hallucination detection (factuality)
+    2. LLM-as-judge quality assessment (sufficiency)
+
+    Returns unified decision: is answer good enough to return?
     """
     answer = state.get("final_answer", "")
     context = state.get("retrieved_docs", [""])[-1]
-
-    evaluation = nli_detector.verify_groundedness(answer, context)
-
-    groundedness_score = evaluation.get("groundedness_score", 1.0)
-    unsupported_claims = evaluation.get("unsupported_claims", [])
-    claims = evaluation.get("claims", [])
-
-    if groundedness_score < 0.6:
-        has_hallucination = True
-        retry_needed = True
-        severity = "SEVERE"
-    elif groundedness_score < 0.8:
-        has_hallucination = True
-        retry_needed = False
-        severity = "MODERATE"
-    else:
-        has_hallucination = False
-        retry_needed = False
-        severity = "NONE"
-
-    if has_hallucination:
-        print(f"\n{'='*60}")
-        print(f"HALLUCINATION DETECTED - Severity: {severity}")
-        print(f"Groundedness Score: {groundedness_score:.0%}")
-        print(f"Total Claims: {len(claims)}")
-        print(f"Unsupported Claims ({len(unsupported_claims)}):")
-        for claim in unsupported_claims:
-            print(f"  - {claim}")
-        print(f"Action: {'RETRY GENERATION' if retry_needed else 'FLAG WARNING'}")
-        print(f"{'='*60}\n")
-
-    current_retry_count = state.get("groundedness_retry_count", 0)
-    new_retry_count = current_retry_count + 1 if retry_needed else current_retry_count
-
-    return {
-        "groundedness_score": groundedness_score,
-        "has_hallucination": has_hallucination,
-        "unsupported_claims": unsupported_claims,
-        "retry_needed": retry_needed,
-        "groundedness_severity": severity,
-        "groundedness_retry_count": new_retry_count,
-        "messages": [AIMessage(content=f"Groundedness: {groundedness_score:.0%} ({severity})")],
-    }
-
-
-def evaluate_answer_with_retrieval_node(state: dict) -> dict:
-    """
-    Evaluate answer quality considering retrieval quality.
-
-    Handles re-retrieval flag setting (moved from router for purity).
-    Uses vRAG-Eval framework with adaptive thresholds.
-    """
     question = state["baseline_query"]
-    answer = state.get("final_answer", "")
-    retrieval_quality = state.get("retrieval_quality_score", 0)
+    retrieval_quality = state.get("retrieval_quality_score", 0.7)
+    generation_retry = state.get("generation_retry_count", 0)
+
+    print(f"\n{'='*60}")
+    print(f"ANSWER EVALUATION (Combined Groundedness + Quality)")
+    print(f"Generation attempt: {generation_retry + 1}")
+    print(f"Retrieval quality: {retrieval_quality:.0%}")
+
+    # ==== 1. GROUNDEDNESS CHECK (NLI) ====
+
+    # Handle proper refusal when retrieval poor
+    has_hallucination = False
+    groundedness_score = 1.0
+    unsupported_claims = []
+
+    if retrieval_quality < 0.6:
+        refusal_patterns = [
+            "context does not contain enough information",
+            "provided context is insufficient",
+            "cannot answer based on the context",
+        ]
+        if any(p in answer.lower() for p in refusal_patterns):
+            print(f"Groundedness: PASS (proper refusal)")
+            groundedness_score = 1.0
+        else:
+            # Poor retrieval but LLM tried to answer -> check groundedness
+            groundedness_result = nli_detector.verify_groundedness(answer, context)
+            groundedness_score = groundedness_result.get("groundedness_score", 1.0)
+            has_hallucination = groundedness_score < 0.8
+            unsupported_claims = groundedness_result.get("unsupported_claims", [])
+            print(f"Groundedness: {groundedness_score:.0%} (poor retrieval, checked anyway)")
+    else:
+        # Normal groundedness check
+        groundedness_result = nli_detector.verify_groundedness(answer, context)
+        groundedness_score = groundedness_result.get("groundedness_score", 1.0)
+        has_hallucination = groundedness_score < 0.8
+        unsupported_claims = groundedness_result.get("unsupported_claims", [])
+        print(f"Groundedness: {groundedness_score:.0%}")
+
+    # ==== 2. QUALITY CHECK (LLM-as-judge) ====
+
     retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-    retry_needed = state.get("retry_needed", False)
-    retry_count = state.get("groundedness_retry_count", 0)
-    groundedness_score = state.get("groundedness_score", 1.0)
-
-    result_updates = {}
-
-    if retry_needed and retry_count < 1 and retrieval_quality < 0.6 and groundedness_score < 0.6:
-        result_updates["retrieval_caused_hallucination"] = True
-        result_updates["is_answer_sufficient"] = False
-
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
     quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
@@ -1001,7 +788,7 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
         evaluation = structured_answer_llm.invoke(evaluation_prompt)
         confidence = evaluation["confidence_score"] / 100
         reasoning = evaluation["reasoning"]
-        issues = evaluation["issues"]
+        quality_issues = evaluation["issues"]
     except Exception as e:
         print(f"Warning: Answer evaluation failed: {e}. Using conservative fallback.")
         evaluation = {
@@ -1014,23 +801,51 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
         }
         confidence = 0.5
         reasoning = evaluation["reasoning"]
-        issues = evaluation["issues"]
+        quality_issues = evaluation["issues"]
 
-    is_sufficient = (
+    is_quality_sufficient = (
         evaluation["is_relevant"] and
         evaluation["is_complete"] and
         evaluation["is_accurate"] and
         confidence >= quality_threshold
     )
 
-    final_result = {
-        "is_answer_sufficient": is_sufficient,
+    print(f"Quality: {confidence:.0%} ({'sufficient' if is_quality_sufficient else 'insufficient'})")
+    if quality_issues:
+        print(f"Issues: {', '.join(quality_issues)}")
+
+    # ==== 3. COMBINED DECISION ====
+
+    has_issues = has_hallucination or not is_quality_sufficient
+
+    # Build unified feedback for retry
+    retry_feedback_parts = []
+    if has_hallucination:
+        retry_feedback_parts.append(
+            f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
+            f"Unsupported claims: {', '.join(unsupported_claims)}\n"
+            f"Fix: ONLY state facts explicitly in retrieved context."
+        )
+    if not is_quality_sufficient:
+        retry_feedback_parts.append(
+            f"QUALITY ISSUES:\n"
+            f"Problems: {', '.join(quality_issues)}\n"
+            f"Fix: {get_quality_fix_guidance(quality_issues)}"
+        )
+
+    retry_feedback = "\n\n".join(retry_feedback_parts) if retry_feedback_parts else ""
+
+    print(f"Combined decision: {'RETRY' if has_issues else 'SUFFICIENT'}")
+    print(f"{'='*60}\n")
+
+    return {
+        "is_answer_sufficient": not has_issues,
+        "groundedness_score": groundedness_score,
+        "has_hallucination": has_hallucination,
+        "unsupported_claims": unsupported_claims,
         "confidence_score": confidence,
         "answer_quality_reasoning": reasoning,
-        "answer_quality_issues": issues,
-        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}")],
+        "answer_quality_issues": quality_issues,
+        "retry_feedback": retry_feedback,
+        "messages": [AIMessage(content=f"Evaluation: {groundedness_score:.0%} grounded, {confidence:.0%} quality")],
     }
-
-    final_result.update(result_updates)
-
-    return final_result

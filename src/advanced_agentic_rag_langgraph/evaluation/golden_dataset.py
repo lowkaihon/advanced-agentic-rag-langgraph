@@ -99,8 +99,6 @@ class GoldenDatasetManager:
         answer = example.get("ground_truth_answer", "")
         if len(answer) < 50:
             errors.append("Ground truth answer too short (< 50 chars)")
-        if len(answer) > 2000:
-            errors.append("Ground truth answer too long (> 2000 chars)")
 
         if not isinstance(example.get("relevant_doc_ids"), list):
             errors.append("relevant_doc_ids must be a list")

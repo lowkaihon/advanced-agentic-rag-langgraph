@@ -147,3 +147,4 @@ test_log*.txt
 scripts
 perplexity answer.md
 When Strategy Switching is Actually Beneficial in Dynamic RAG Pipelines.md
+When Re-Retrieval is Actually Beneficial.md
