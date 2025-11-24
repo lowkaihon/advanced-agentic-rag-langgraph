@@ -21,7 +21,7 @@ class AdvancedRAGState(TypedDict):
 
     # === QUERY LIFECYCLE ===
     active_query: Optional[str]  # Current working query (semantic, human-readable, evolves through rewrites)
-    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval ONLY (keyword/semantic optimization)
+    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval (set on initial turn + all strategy switches)
     query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from retrieval_query if set, else active_query)
 
     # === STRATEGY SELECTION & ADAPTATION ===

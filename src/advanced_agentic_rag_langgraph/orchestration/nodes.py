@@ -225,13 +225,16 @@ def query_expansion_node(state: dict) -> dict:
     """
     Conditionally expand queries using LLM to assess expansion benefit.
 
-    Also handles early strategy switch state updates (moved from route_after_retrieval
-    to maintain router purity per LangGraph best practices).
+    Architecture: Strategy selection happens BEFORE expansion (decide_strategy node upstream).
+    Initial turn: Uses retrieval_query (optimized by decide_strategy) for expansion.
+    Retry paths: Handle strategy switches and regenerate expansions with optimized queries.
 
-    Three routing scenarios:
-    1. Early switch: route_after_retrieval detected strategy mismatch
+    Three retry scenarios handled here:
+    1. Early switch: route_after_retrieval detected strategy mismatch (off_topic/wrong_domain)
     2. Re-retrieval: route_after_evaluation triggered retrieval-caused hallucination fix
     3. Late switch: route_after_evaluation determined answer insufficient
+
+    All scenarios apply optimize_query_for_strategy and regenerate expansions for consistency.
     """
 
     quality = state.get("retrieval_quality_score", 1.0)
@@ -243,8 +246,7 @@ def query_expansion_node(state: dict) -> dict:
     is_answer_sufficient = state.get("is_answer_sufficient", True)
 
     early_switch = (quality < 0.6 and
-                    attempts < 3 and
-                    not strategy_changed and
+                    attempts == 1 and
                     ("off_topic" in issues or "wrong_domain" in issues))
 
     if early_switch:
@@ -482,6 +484,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
     Decide which retrieval strategy to use based on query and corpus characteristics.
 
     Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
+    Now includes query optimization for the selected strategy (initial turn consistency).
     """
     query = state["baseline_query"]
     corpus_stats = state.get("corpus_stats", {})
@@ -499,8 +502,21 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
     print(f"Reasoning: {reasoning}")
     print(f"{'='*60}\n")
 
+    optimized_query = optimize_query_for_strategy(
+        query=query,
+        new_strategy=strategy,
+        old_strategy=None,
+        issues=[]
+    )
+
+    print(f"Initial turn query optimization applied:")
+    print(f"  baseline_query: {query} (input)")
+    print(f"  retrieval_query: {optimized_query} (algorithm-optimized for {strategy})")
+    print(f"  Strategy: {strategy}\n")
+
     return {
         "retrieval_strategy": strategy,
+        "retrieval_query": optimized_query,
         "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
 
@@ -599,11 +615,13 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     query_for_reranking = state.get('active_query', state['baseline_query'])
 
     query_source = "active_query" if state.get("active_query") else "baseline_query"
+    query_type = "semantic, human-readable" if query_source == "active_query" else "conversational, self-contained"
+    query_type_description = "semantic query" if query_source == "active_query" else "conversational query"
     print(f"\n{'='*60}")
     print(f"RERANKING QUERY SOURCE")
-    print(f"Using: {query_source} (semantic, human-readable)")
+    print(f"Using: {query_source} ({query_type})")
     print(f"Query: {query_for_reranking}")
-    print(f"Note: Reranking uses semantic query, NOT algorithm-optimized retrieval_query")
+    print(f"Note: Reranking uses {query_type_description}, NOT algorithm-optimized retrieval_query")
     print(f"{'='*60}\n")
 
     ranked_results = adaptive_retriever.reranker.rank(

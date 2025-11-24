@@ -15,35 +15,6 @@ from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize
 from typing import Literal
 
 
-# ========== QUERY OPTIMIZATION ROUTING ==========
-
-def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
-    """
-    Route based on whether this is initial expansion or retry with strategy change.
-
-    RAG-Fusion pattern: Strategy-agnostic expansions generated first, then decide optimal strategy.
-
-    Routing logic:
-    - Initial flow: No strategy yet → route to decide_strategy
-    - Retry flow: Strategy already changed upstream → bypass decide_strategy, go straight to retrieve
-    """
-    if state.get("strategy_changed", False):
-        # Strategy changed, skip decide_strategy (already set in route_after_evaluation)
-        print(f"\n{'='*60}")
-        print(f"ROUTER: query_expansion -> retrieve_with_expansion")
-        print(f"Reason: Strategy changed (skip decide_strategy)")
-        print(f"{'='*60}\n")
-        return "retrieve_with_expansion"
-    else:
-        # Initial flow, proceed to strategy selection
-        print(f"\n{'='*60}")
-        print(f"ROUTER: query_expansion -> decide_strategy")
-        print(f"Reason: Initial flow (strategy selection needed)")
-        print(f"Expansions ready: {len(state.get('query_expansions', []))} variant(s)")
-        print(f"{'='*60}\n")
-        return "decide_strategy"
-
-
 # ========== RETRIEVAL ROUTING ==========
 
 def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
@@ -80,8 +51,8 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         print(f"{'='*60}\n")
         return "answer_generation"
 
-    if "off_topic" in issues or "wrong_domain" in issues:
-        print(f"Decision: query_expansion (early strategy switch)")
+    if ("off_topic" in issues or "wrong_domain" in issues) and (attempts == 1):
+        print(f"Decision: query_expansion (early strategy switch on first poor attempt)")
         print(f"{'='*60}\n")
         return "query_expansion"
     else:
@@ -240,18 +211,9 @@ def build_advanced_rag_graph():
     builder.add_node("evaluate_answer", evaluate_answer_with_retrieval_node)
 
     builder.add_edge(START, "conversational_rewrite")
-    builder.add_edge("conversational_rewrite", "query_expansion")
-
-    builder.add_conditional_edges(
-        "query_expansion",
-        route_after_query_expansion,
-        {
-            "decide_strategy": "decide_strategy",
-            "retrieve_with_expansion": "retrieve_with_expansion",
-        }
-    )
-
-    builder.add_edge("decide_strategy", "retrieve_with_expansion")
+    builder.add_edge("conversational_rewrite", "decide_strategy")
+    builder.add_edge("decide_strategy", "query_expansion")
+    builder.add_edge("query_expansion", "retrieve_with_expansion")
 
     builder.add_conditional_edges(
         "retrieve_with_expansion",
