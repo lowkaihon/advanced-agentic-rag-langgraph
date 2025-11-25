@@ -21,15 +21,16 @@ class AdvancedRAGState(TypedDict):
 
     # === QUERY LIFECYCLE ===
     active_query: Optional[str]  # Current working query (semantic, human-readable, evolves through rewrites)
-    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval ONLY (keyword/semantic optimization)
-    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from retrieval_query if set, else active_query)
+    retrieval_query: Optional[str]  # Algorithm-optimized query for retrieval (set by query_expansion_node for ALL paths)
+    query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from optimized retrieval_query)
 
     # === STRATEGY SELECTION & ADAPTATION ===
     retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]
     corpus_stats: Optional[dict[str, Any]]  # Document profiling: technical_density, domain_distribution, has_code/math
-    strategy_changed: Optional[bool]  # Signals retry path should skip decide_strategy node
+    strategy_changed: Optional[bool]  # Signals early switch happened (for revert validation)
     strategy_switch_reason: Optional[str]  # Content-driven explanation (e.g., "off_topic detected -> keyword")
-    refinement_history: Annotated[list[dict[str, Any]], operator.add]  # Accumulated log of strategy switches with reasoning
+    previous_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]  # Strategy before early switch (for revert)
+    previous_quality_score: Optional[float]  # Quality score before early switch (for revert comparison)
 
     # === RETRIEVAL EXECUTION ===
     retrieved_docs: Annotated[list[str], operator.add]  # Accumulated document content across retrieval attempts
@@ -46,15 +47,16 @@ class AdvancedRAGState(TypedDict):
     answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation
     answer_quality_issues: Optional[list[str]]  # Issues: incomplete_synthesis, lacks_specificity, missing_details, etc.
     is_answer_sufficient: Optional[bool]  # Quality gate: proceed to output or retry
+    is_refusal: Optional[bool]  # Whether LLM refused to answer due to insufficient context (terminal state)
 
     # === GROUNDEDNESS & HALLUCINATION (NLI-based detection) ===
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)
     has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder NLI
     unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
-    groundedness_severity: Optional[Literal["NONE", "MODERATE", "SEVERE"]]  # Routing severity: <0.6 SEVERE, 0.6-0.8 MODERATE, >=0.8 NONE
-    retry_needed: Optional[bool]  # SEVERE hallucination triggers regeneration with strict grounding instructions
-    groundedness_retry_count: Optional[int]  # Regeneration attempt counter (max 1 per retrieval, resets on new retrieval)
-    retrieval_caused_hallucination: Optional[bool]  # Poor retrieval + SEVERE -> re-retrieval with strategy switch
+
+    # === GENERATION RETRY (Unified retry handling) ===
+    generation_attempts: Optional[int]  # Generation attempt counter (max 3 total attempts = initial + 2 retries, resets per user question)
+    retry_feedback: Optional[str]  # Combined groundedness + quality feedback for regeneration
 
     # === EVALUATION METRICS (Golden Dataset Support) ===
     ground_truth_doc_ids: Optional[list]  # Relevant document IDs from test set

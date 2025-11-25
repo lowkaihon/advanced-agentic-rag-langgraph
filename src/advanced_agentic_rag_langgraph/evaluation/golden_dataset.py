@@ -99,8 +99,6 @@ class GoldenDatasetManager:
         answer = example.get("ground_truth_answer", "")
         if len(answer) < 50:
             errors.append("Ground truth answer too short (< 50 chars)")
-        if len(answer) > 2000:
-            errors.append("Ground truth answer too long (> 2000 chars)")
 
         if not isinstance(example.get("relevant_doc_ids"), list):
             errors.append("relevant_doc_ids must be a list")
@@ -364,6 +362,9 @@ def evaluate_on_golden_dataset(
             if verbose:
                 print(f"    Recall@K: {retrieval_metrics.get('recall_at_k', 0):.2%}")
                 print(f"    Groundedness: {groundedness_score:.2%}")
+                print(f"    Semantic Similarity: {answer_comparison.get('semantic_similarity', 0):.2%}")
+                print(f"    Factual Accuracy: {answer_comparison.get('factual_accuracy', 0):.2%}")
+                print(f"    Completeness: {answer_comparison.get('completeness', 0):.2%}")
 
         except Exception as e:
             print(f"  ERROR: {str(e)}")

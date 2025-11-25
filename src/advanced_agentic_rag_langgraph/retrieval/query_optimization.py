@@ -105,12 +105,19 @@ Return ONLY the rewritten query."""
 
 def optimize_query_for_strategy(
     query: str,
-    new_strategy: str,
-    old_strategy: str,
+    strategy: str,
+    old_strategy: str = None,
     issues: list[str] = None
 ) -> str:
     """
     Optimize query for specific retrieval strategy.
+
+    Args:
+        query: Query to optimize
+        strategy: Target retrieval strategy (semantic/keyword/hybrid)
+        old_strategy: Previous strategy (only when switching strategies)
+        issues: Issues from previous retrieval (only when switching)
+
     Research-backed pattern from CRAG and PreQRAG.
     """
     issue_context = ""
@@ -130,7 +137,7 @@ KEYWORD SEARCH (BM25) OPTIMIZATION:
 Example transformations:
 - "benefits" -> "specific quantitative benefits and advantages"
 - "how it works" -> "implementation mechanism and technical process"
-- "AI techniques" -> "machine learning algorithms and neural network architectures"
+- "platform features" -> "specific platform capabilities and feature implementations"
 """,
         "semantic": """
 SEMANTIC SEARCH (Vector) OPTIMIZATION:
@@ -142,7 +149,7 @@ SEMANTIC SEARCH (Vector) OPTIMIZATION:
 - Focus on meaning and intent over exact terms
 
 Example transformations:
-- "BERT implementation" -> "understanding BERT architecture and how it's applied"
+- "system architecture" -> "understanding how the system is structured and deployed"
 - "specific metrics" -> "approaches to measuring and evaluating performance"
 - "version 2.0 features" -> "new capabilities and improvements in recent versions"
 """,
@@ -155,23 +162,33 @@ HYBRID SEARCH (BM25 + Vector) OPTIMIZATION:
 - Aim for queries that work well with both matching styles
 
 Example transformations:
-- "transformer attention" -> "transformer attention mechanism: how it works and implementation details"
+- "authentication system" -> "authentication mechanism: how it works and implementation details"
 - "performance issues" -> "specific performance bottlenecks and optimization strategies"
 """
     }
 
-    optimization_prompt = f"""You are optimizing a query for {new_strategy} retrieval after {old_strategy} retrieval did not work well.
+    # Adjust prompt based on whether we're switching strategies
+    if old_strategy:
+        # Strategy switch scenario (early switch)
+        prompt_context = f"You are optimizing a query for {strategy} retrieval after {old_strategy} retrieval did not work well."
+        log_header = f"Strategy switch: {old_strategy} -> {strategy}"
+    else:
+        # Initial optimization or retry with same strategy
+        prompt_context = f"You are optimizing a query for {strategy} retrieval."
+        log_header = f"Strategy: {strategy}"
+
+    optimization_prompt = f"""{prompt_context}
 
 Original query: "{query}"{issue_context}
 
-{strategy_guidance.get(new_strategy, strategy_guidance["hybrid"])}
+{strategy_guidance.get(strategy, strategy_guidance["hybrid"])}
 
-TASK: Rewrite the query to be optimized for {new_strategy} retrieval while preserving the user's intent.
+TASK: Rewrite the query to be optimized for {strategy} retrieval while preserving the user's intent.
 
 CRITICAL GUIDELINES:
 - Preserve all technical terms, acronyms, and proper nouns EXACTLY as written
 - Keep the core user intent unchanged
-- Adjust phrasing and terminology to match {new_strategy} characteristics
+- Adjust phrasing and terminology to match {strategy} characteristics
 - Be concise but complete
 - Return ONLY the optimized query, no explanation"""
 
@@ -181,7 +198,7 @@ CRITICAL GUIDELINES:
 
     print(f"\n{'='*60}")
     print(f"STRATEGY-SPECIFIC QUERY OPTIMIZATION")
-    print(f"Strategy switch: {old_strategy} -> {new_strategy}")
+    print(f"{log_header}")
     print(f"Original query: {query}")
     print(f"Optimized query: {optimized}")
     if issues:

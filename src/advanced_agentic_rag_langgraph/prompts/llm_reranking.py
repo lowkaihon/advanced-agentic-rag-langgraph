@@ -14,7 +14,7 @@ Evaluation dimensions:
 - Technical level match: Complexity matches query sophistication?
 - Domain alignment: Document domain matches query topic?
 
-Applied after first-stage cross-encoder reranking to top-15 candidates.
+Applied after first-stage cross-encoder reranking to top-10 candidates.
 """
 
 BASE_PROMPT = """Query: "{query}"

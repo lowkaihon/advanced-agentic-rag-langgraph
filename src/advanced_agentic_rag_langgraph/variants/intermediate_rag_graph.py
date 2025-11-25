@@ -29,7 +29,7 @@ NEW (10):
 
 Graph Structure: 7 nodes, 2 routing functions
 - conversational_rewrite → query_expansion → decide_strategy → retrieve → rerank → grade → generate
-- route_after_retrieval: quality >0.6 OR attempts >=2 → generate, else rewrite
+- route_after_retrieval: quality >=0.6 OR attempts >=2 → generate, else rewrite
 - route_after_generation: sufficient → END, else rewrite (max 1)
 
 All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
@@ -543,7 +543,7 @@ def route_after_retrieval(state: IntermediateRAGState) -> Literal["answer_genera
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
 
-    if quality > 0.6 or attempts >= 2:
+    if quality >= 0.6 or attempts >= 2:
         return "answer_generation"
     else:
         return "rewrite_query"

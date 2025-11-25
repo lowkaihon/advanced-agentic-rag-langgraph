@@ -90,7 +90,7 @@ def retrieve_node(state: BasicRAGState) -> dict:
     for q in expansions:
         docs = adaptive_retriever.retrieve_without_reranking(q, strategy="hybrid")
 
-        for rank, doc in enumerate(docs):
+        for rank, doc in enumerate(docs, start=1):
             doc_id = doc.metadata.get("id", doc.page_content[:50])
             if doc_id not in doc_ranks:
                 doc_ranks[doc_id] = []

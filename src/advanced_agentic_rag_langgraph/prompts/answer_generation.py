@@ -45,10 +45,10 @@ STEP 2: LOCATE RELEVANT INFORMATION
 - Identify which documents contain key information
 - Note if information spans multiple documents
 
-STEP 3: VERIFY SUFFICIENCY
-- Check if context contains enough information to fully answer
-- If insufficient, respond: "The provided context does not contain enough information to answer this question."
-- Do NOT proceed if context is inadequate
+STEP 3: ASSESS CONTEXT COVERAGE
+- Check which aspects of the question can be answered from context
+- Identify any gaps or missing information
+- Follow the quality-aware instructions in the system prompt based on retrieval confidence level
 
 STEP 4: SYNTHESIZE ANSWER
 - Combine information from relevant passages
@@ -76,7 +76,7 @@ GPT5_USER_MESSAGE = """<retrieved_context>
 
 <instructions>
 1. Answer the question using ONLY information from the <retrieved_context> section above
-2. If the context is insufficient, respond: "The provided context does not contain enough information to answer this question."
+2. Follow the quality-aware instructions in the system prompt based on retrieval confidence level
 3. Provide a direct, accurate answer that synthesizes the relevant information
 4. If multiple documents contain relevant information, combine insights appropriately
 5. Do not make assumptions or inferences beyond what is explicitly stated
@@ -117,9 +117,9 @@ STEP 2: LOCATE RELEVANT INFORMATION
 
 STEP 3: STRICT VERIFICATION
 - Check if EVERY claim can be directly supported by the context
-- If ANY required information is missing or uncertain, respond: "The provided context does not contain enough information to answer this question."
+- Assess which aspects of the question can be answered from context
+- Follow the quality-aware instructions in the system prompt based on retrieval confidence level (strict grounding required)
 - Do NOT make any assumptions or inferences beyond explicit statements
-- Do NOT proceed if context is inadequate
 
 STEP 4: SYNTHESIZE GROUNDED ANSWER
 - Combine ONLY information explicitly stated in retrieved passages
@@ -155,7 +155,7 @@ Your previous answer contained unsupported claims. Regenerate with STRICT ground
 
 <instructions>
 1. Answer ONLY from <retrieved_context> - absolutely no external knowledge, assumptions, or inferences
-2. If context insufficient or ANY claim cannot be directly supported: "The provided context does not contain enough information to answer this question."
+2. Follow the quality-aware instructions in the system prompt based on retrieval confidence level (STRICT grounding required)
 3. Provide a direct, accurate answer that synthesizes ONLY explicitly stated information
 4. Maintain natural explanatory style (no forced citations)
 5. Be explicit about any limitations in the available information

@@ -21,15 +21,6 @@ import re
 import json
 
 
-def _get_answer_generation_llm():
-    """Get LLM for answer generation with tier-based configuration."""
-    spec = get_model_for_task("answer_generation")
-    return ChatOpenAI(
-        model=spec.name,
-        temperature=spec.temperature,
-        reasoning_effort=spec.reasoning_effort,
-        verbosity=spec.verbosity
-    )
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
@@ -70,94 +61,16 @@ class AnswerQualityEvaluation(TypedDict):
     issues: list[str]
 
 
-# ============ CONVERSATIONAL QUERY REWRITING ============
+class RefusalCheck(TypedDict):
+    """Structured output schema for refusal detection.
 
-def extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
+    Detects when LLM refuses to answer due to insufficient context.
     """
-    Extract conversation history from messages list (LangGraph best practice).
-
-    Pairs HumanMessage/AIMessage to create conversation turns in the format
-    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
-
-    Only includes complete pairs (ignores trailing unpaired messages).
-
-    Args:
-        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
-
-    Returns:
-        List of conversation turns in format: [{"user": str, "assistant": str}]
-
-    Example:
-        >>> messages = [
-        ...     HumanMessage(content="What is RAG?"),
-        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
-        ...     HumanMessage(content="How does it work?"),
-        ...     AIMessage(content="It works by...")
-        ... ]
-        >>> extract_conversation_history(messages)
-        [
-            {"user": "What is RAG?", "assistant": "RAG is..."},
-            {"user": "How does it work?", "assistant": "It works by..."}
-        ]
-    """
-    if not messages or len(messages) < 2:
-        return []
-
-    conversation = []
-    i = 0
-
-    while i < len(messages) - 1:
-        # Look for HumanMessage followed by AIMessage
-        if isinstance(messages[i], HumanMessage) and isinstance(messages[i+1], AIMessage):
-            conversation.append({
-                "user": messages[i].content,
-                "assistant": messages[i+1].content
-            })
-            i += 2
-        else:
-            i += 1
-
-    return conversation
+    refused: bool
+    reasoning: str
 
 
-def conversational_rewrite_node(state: dict) -> dict:
-    """
-    Rewrite query using conversation history to make it self-contained.
-
-    This node runs before query expansion to ensure queries have proper context.
-    Extracts conversation from messages field (LangGraph best practice).
-    """
-    question = state.get("user_question", state.get("baseline_query", ""))
-
-    # Extract conversation from messages (LangGraph best practice)
-    messages = state.get("messages", [])
-    conversation_history = extract_conversation_history(messages)
-
-    rewritten_query, reasoning = conversational_rewriter.rewrite(
-        question,
-        conversation_history
-    )
-
-    if rewritten_query != question:
-        print(f"\n{'='*60}")
-        print(f"CONVERSATIONAL REWRITE")
-        print(f"Original: {question}")
-        print(f"Rewritten: {rewritten_query}")
-        print(f"Reasoning: {reasoning}")
-        print(f"Conversation turns used: {len(conversation_history)}")
-        print(f"State transition: user_question={question}, baseline_query={rewritten_query}")
-        print(f"{'='*60}\n")
-
-    return {
-        "baseline_query": rewritten_query,
-        "user_question": question,
-        "corpus_stats": get_corpus_stats(),
-        "messages": [HumanMessage(content=question)],
-        "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
-        "groundedness_retry_count": 0,  # Reset counter for new user question (fixes multi-turn hallucination retry bug)
-    }
-
-# ============ QUERY OPTIMIZATION STAGE ============
+# ========== HELPER FUNCTIONS ==========
 
 def _should_skip_expansion_llm(query: str) -> bool:
     """
@@ -217,282 +130,122 @@ Return your decision ('yes' or 'no') with brief reasoning."""
         return False
 
 
-def query_expansion_node(state: dict) -> dict:
+# ============ CONVERSATIONAL QUERY REWRITING ============
+
+def extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
     """
-    Conditionally expand queries using LLM to assess expansion benefit.
+    Extract conversation history from messages list (LangGraph best practice).
 
-    Also handles early strategy switch state updates (moved from route_after_retrieval
-    to maintain router purity per LangGraph best practices).
+    Pairs HumanMessage/AIMessage to create conversation turns in the format
+    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
 
-    Three routing scenarios:
-    1. Early switch: route_after_retrieval detected strategy mismatch
-    2. Re-retrieval: route_after_evaluation triggered retrieval-caused hallucination fix
-    3. Late switch: route_after_evaluation determined answer insufficient
+    Only includes complete pairs (ignores trailing unpaired messages).
+
+    Args:
+        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
+
+    Returns:
+        List of conversation turns in format: [{"user": str, "assistant": str}]
+
+    Example:
+        >>> messages = [
+        ...     HumanMessage(content="What is RAG?"),
+        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
+        ...     HumanMessage(content="How does it work?"),
+        ...     AIMessage(content="It works by...")
+        ... ]
+        >>> extract_conversation_history(messages)
+        [
+            {"user": "What is RAG?", "assistant": "RAG is..."},
+            {"user": "How does it work?", "assistant": "It works by..."}
+        ]
     """
+    if not messages or len(messages) < 2:
+        return []
 
-    quality = state.get("retrieval_quality_score", 1.0)
-    attempts = state.get("retrieval_attempts", 0)
-    issues = state.get("retrieval_quality_issues", [])
-    strategy_changed = state.get("strategy_changed", False)
-    current_strategy = state.get("retrieval_strategy", "hybrid")
-    retrieval_caused_hallucination = state.get("retrieval_caused_hallucination", False)
-    is_answer_sufficient = state.get("is_answer_sufficient", True)
+    conversation = []
+    i = 0
 
-    early_switch = (quality < 0.6 and
-                    attempts < 3 and
-                    not strategy_changed and
-                    ("off_topic" in issues or "wrong_domain" in issues))
-
-    if early_switch:
-        # NOTE: Import inside function to avoid circular import (graph.py imports from nodes.py)
-        from advanced_agentic_rag_langgraph.orchestration.graph import select_next_strategy
-
-        next_strategy = select_next_strategy(current_strategy, issues)
-        optimized_query = optimize_query_for_strategy(
-            query=state.get("active_query", state["baseline_query"]),
-            new_strategy=next_strategy,
-            old_strategy=current_strategy,
-            issues=issues
-        )
-
-        print(f"\n{'='*60}")
-        print(f"EARLY STRATEGY SWITCH")
-        print(f"From: {current_strategy} to {next_strategy}")
-        print(f"Reason: {', '.join(issues)}")
-        print(f"Attempt: {attempts + 1}")
-        print(f"Quality score: {quality:.0%}")
-        print(f"Note: Query optimized for {next_strategy} strategy")
-        print(f"{'='*60}\n")
-
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-            "retrieval_strategy": next_strategy,
-            "strategy_switch_reason": f"Early detection: {', '.join(issues)}",
-            "strategy_changed": True,
-            "query_expansions": [],
-        }
-        print(f"\nState update summary:")
-        print(f"  baseline_query: {state.get('baseline_query')} (unchanged)")
-        print(f"  active_query: {state.get('active_query', state['baseline_query'])} (input for optimization)")
-        print(f"  retrieval_query: {optimized_query} (algorithm-optimized)")
-        print(f"  strategy_changed: True (triggers expansion regeneration)")
-        state.update(updates)
-
-    elif retrieval_caused_hallucination and attempts < 3:
-        if current_strategy == "semantic":
-            next_strategy = "keyword"
-        elif current_strategy == "keyword":
-            next_strategy = "hybrid"
+    while i < len(messages) - 1:
+        # Look for HumanMessage followed by AIMessage
+        if isinstance(messages[i], HumanMessage) and isinstance(messages[i+1], AIMessage):
+            conversation.append({
+                "user": messages[i].content,
+                "assistant": messages[i+1].content
+            })
+            i += 2
         else:
-            next_strategy = "semantic"
+            i += 1
 
-        source_query = state.get('active_query', state['baseline_query'])
-        print(f"Query source for optimization: {source_query}")
-        print(f"(priority: active_query > baseline_query)")
+    return conversation
 
-        optimized_query = optimize_query_for_strategy(
-            query=source_query,
-            new_strategy=next_strategy,
-            old_strategy=current_strategy,
-            issues=["retrieval_caused_hallucination"]
-        )
 
+def conversational_rewrite_node(state: dict) -> dict:
+    """
+    Rewrite query using conversation history to make it self-contained.
+
+    This node runs before query expansion to ensure queries have proper context.
+    Extracts conversation from messages field (LangGraph best practice).
+    """
+    question = state.get("user_question", "")
+
+    # Extract conversation from messages (LangGraph best practice)
+    messages = state.get("messages", [])
+    conversation_history = extract_conversation_history(messages)
+
+    rewritten_query, reasoning = conversational_rewriter.rewrite(
+        question,
+        conversation_history
+    )
+
+    if rewritten_query != question:
         print(f"\n{'='*60}")
-        print(f"RE-RETRIEVAL (Hallucination Mitigation)")
-        print(f"Trigger: Poor retrieval caused hallucination")
-        print(f"Strategy: {current_strategy} to {next_strategy}")
-        print(f"Attempt: {attempts + 1}/3")
-        print(f"Research: Re-retrieval > regeneration for context gaps")
-        print(f"Note: Query optimized for {next_strategy} strategy")
-        print(f"{'='*60}\n")
-
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-            "retrieval_strategy": next_strategy,
-            "strategy_changed": True,
-            "query_expansions": [],
-            "retrieval_caused_hallucination": False,
-        }
-        state.update(updates)
-
-    elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
-        retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-        retrieval_quality_score = state.get("retrieval_quality_score", 0.7)
-
-        if "missing_key_info" in retrieval_quality_issues and retrieval_quality_score < 0.6:
-            if current_strategy != "semantic":
-                next_strategy = "semantic"
-                reasoning = f"Content-driven: Missing key information detected, switching to semantic search for better conceptual coverage"
-            else:
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Semantic failed to find key information, trying hybrid for broader coverage"
-        elif "off_topic" in retrieval_quality_issues or "wrong_domain" in retrieval_quality_issues:
-            if current_strategy != "keyword":
-                next_strategy = "keyword"
-                reasoning = f"Content-driven: Off-topic results detected, switching to keyword search for precision"
-            else:
-                next_strategy = "hybrid"
-                reasoning = f"Content-driven: Keyword search not precise enough, trying hybrid"
-        elif "partial_coverage" in retrieval_quality_issues or "incomplete_context" in retrieval_quality_issues:
-            if current_strategy == "hybrid":
-                next_strategy = "semantic"
-                reasoning = "Content-driven: Partial coverage with hybrid, trying semantic for depth"
-            elif current_strategy == "semantic":
-                next_strategy = "keyword"
-                reasoning = "Content-driven: Semantic incomplete, trying keyword for specificity"
-            else:
-                next_strategy = "hybrid"
-                reasoning = "Content-driven: Keyword insufficient, trying hybrid for balance"
-        else:
-            # Only switch if retrieval quality is poor (<60%)
-            # Good quality with insufficient answer indicates answer generation issue, not retrieval issue
-            if retrieval_quality_score < 0.6:
-                # Poor quality without specific issues - try blind fallback as last resort
-                if current_strategy == "hybrid":
-                    next_strategy = "semantic"
-                    reasoning = f"Fallback: hybrid to semantic (low quality {retrieval_quality_score:.0%}, no specific issues)"
-                elif current_strategy == "semantic":
-                    next_strategy = "keyword"
-                    reasoning = f"Fallback: semantic to keyword (low quality {retrieval_quality_score:.0%}, no specific issues)"
-                else:
-                    next_strategy = current_strategy
-                    reasoning = f"No strategy change (low quality {retrieval_quality_score:.0%}, exhausted options)"
-            else:
-                # Good quality (>=60%) with no specific issues - don't switch strategies
-                # Problem is likely in answer generation, not retrieval
-                next_strategy = current_strategy
-                reasoning = f"No strategy change (good quality {retrieval_quality_score:.0%}, answer generation issue)"
-
-        refinement = {
-            "iteration": attempts,
-            "from_strategy": current_strategy,
-            "to_strategy": next_strategy,
-            "reasoning": reasoning,
-            "retrieval_quality_issues": retrieval_quality_issues,
-            "retrieval_quality_score": retrieval_quality_score,
-        }
-
-        strategy_changed_flag = (next_strategy != current_strategy)
-        optimized_query = state.get("active_query", state["baseline_query"])
-
-        if strategy_changed_flag:
-            answer_quality_issues = state.get("answer_quality_issues", [])
-            combined_issues = list(set(retrieval_quality_issues + answer_quality_issues))
-
-            source_query = state.get('active_query', state['baseline_query'])
-            print(f"Query input for optimization: {source_query}")
-            print(f"(active_query preferred: {bool(state.get('active_query'))})")
-
-            optimized_query = optimize_query_for_strategy(
-                query=source_query,
-                new_strategy=next_strategy,
-                old_strategy=current_strategy,
-                issues=combined_issues
-            )
-
-        print(f"\n{'='*60}")
-        print(f"STRATEGY REFINEMENT")
-        print(f"Iteration: {refinement['iteration']}")
-        print(f"Switch: {current_strategy} to {next_strategy}")
+        print(f"CONVERSATIONAL REWRITE")
+        print(f"Original: {question}")
+        print(f"Rewritten: {rewritten_query}")
         print(f"Reasoning: {reasoning}")
-        print(f"Retrieval quality: {retrieval_quality_score:.0%}")
-        print(f"Detected issues: {', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None'}")
-        if strategy_changed_flag:
-            print(f"Strategy changed: Query optimized and will regenerate expansions")
+        print(f"Conversation turns used: {len(conversation_history)}")
+        print(f"State transition: user_question={question}, baseline_query={rewritten_query}")
         print(f"{'='*60}\n")
 
-        query = optimized_query
-        updates = {
-            "retrieval_query": optimized_query,  # Algorithm-optimized (not active_query)
-            "retrieval_strategy": next_strategy,
-            "refinement_history": [refinement],
-            "query_expansions": [],
-            "strategy_changed": True,
-        }
-        state.update(updates)
+    return {
+        "baseline_query": rewritten_query,
+        "active_query": rewritten_query,
+        "corpus_stats": get_corpus_stats(),
+        "messages": [HumanMessage(content=question)],
 
-    # Prioritize retrieval_query (algorithm-optimized) if set, else active_query (semantic)
-    query = state.get("retrieval_query") or state.get("active_query", state["baseline_query"])
+        # Reset attempt counters and feedback
+        "retrieval_attempts": 0,  # Reset counter for new user question
+        "generation_attempts": 0,  # Reset for new user question (0 = no attempts yet)
+        "retry_feedback": None,  # Clear feedback for new user question
 
-    query_source = "retrieval_query" if state.get("retrieval_query") else ("active_query" if state.get("active_query") else "baseline_query")
-    print(f"\n{'='*60}")
-    print(f"QUERY SOURCE SELECTION (Pre-Expansion)")
-    print(f"Selected: {query_source}")
-    print(f"Value: {query}")
-    print(f"State details:")
-    print(f"  retrieval_query (algorithm-optimized): {state.get('retrieval_query') or 'None'}")
-    print(f"  active_query (semantic): {state.get('active_query') or 'None'}")
-    print(f"  baseline_query (conversational): {state.get('baseline_query')}")
-    print(f"{'='*60}\n")
+        # Reset answer evaluation state (prevents state leakage across turns)
+        "is_refusal": None,  # CRITICAL: Prevents routing logic treating new turn as refusal
+        "is_answer_sufficient": None,
+        "answer_quality_reasoning": None,
+        "answer_quality_issues": None,
 
-    result = {}
+        # Reset groundedness/hallucination detection
+        "groundedness_score": None,
+        "has_hallucination": None,
+        "unsupported_claims": None,
 
-    if early_switch:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "strategy_switch_reason": state.get("strategy_switch_reason", ""),
-            "strategy_changed": state["strategy_changed"],
-        })
-    elif retrieval_caused_hallucination and attempts < 3:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "strategy_changed": state["strategy_changed"],
-            "retrieval_caused_hallucination": state["retrieval_caused_hallucination"],
-        })
-    elif not is_answer_sufficient and attempts < 3 and not retrieval_caused_hallucination:
-        result.update({
-            "active_query": state["active_query"],
-            "retrieval_strategy": state["retrieval_strategy"],
-            "refinement_history": [state["refinement_history"][-1]] if state.get("refinement_history") else [],
-            "strategy_changed": state["strategy_changed"],
-        })
+        # Reset output state
+        "final_answer": None,
+        "confidence_score": None,
+    }
 
-    if _should_skip_expansion_llm(query):
-        print(f"\n{'='*60}")
-        print(f"EXPANSION SKIPPED")
-        print(f"Query: {query}")
-        print(f"Reason: LLM determined query is clear/specific enough")
-        print(f"{'='*60}\n")
-
-        result.update({
-            "query_expansions": [query],
-            "active_query": query,
-        })
-        return result
-
-    expansions = expand_query(query)
-    print(f"\n{'='*60}")
-    print(f"QUERY EXPANDED")
-    print(f"Original: {query}")
-    print(f"Expansions: {expansions[1:]}")
-    print(f"{'='*60}\n")
-
-    print(f"\nQuery expansion complete:")
-    print(f"  active_query set to: {query}")
-    print(f"  query_expansions: {len(expansions)} variant(s)")
-    print(f"  Note: Expansions regenerated from {'retrieval_query' if state.get('retrieval_query') else 'active_query'}")
-
-    result.update({
-        "query_expansions": expansions,
-        "active_query": query,
-    })
-    return result
+# ============ QUERY OPTIMIZATION STAGE ============
 
 def decide_retrieval_strategy_node(state: dict) -> dict:
     """
     Decide which retrieval strategy to use based on query and corpus characteristics.
 
     Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
+    Query optimization happens downstream in query_expansion_node (consolidates all optimization logic).
     """
-    query = state["active_query"]
+    query = state["baseline_query"]
     corpus_stats = state.get("corpus_stats", {})
-
-    print(f"Query source for strategy selection: active_query")
-    print(f"  (Note: Semantic rewriting determines strategy, not algorithm-optimized retrieval_query)\n")
 
     strategy, confidence, reasoning = strategy_selector.select_strategy(
         query,
@@ -505,12 +258,98 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
     print(f"Selected: {strategy.upper()}")
     print(f"Confidence: {confidence:.0%}")
     print(f"Reasoning: {reasoning}")
+    print(f"Note: Query optimization will happen in query_expansion_node")
     print(f"{'='*60}\n")
 
     return {
         "retrieval_strategy": strategy,
         "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
+
+
+def query_expansion_node(state: dict) -> dict:
+    """
+    Optimize query for strategy, then conditionally expand.
+
+    ALL queries passing through this node get strategy-specific optimization.
+    This consolidates optimization logic in a single location.
+
+    Entry paths:
+    1. Initial turn: From decide_strategy (first question) - optimizes for selected strategy
+    2. Early switch: From route_after_retrieval (off_topic/wrong_domain detected) - switches strategy then optimizes
+    3. Query rewrite: From rewrite_and_refine (semantic query improvement) - optimizes rewritten query
+
+    NO LONGER HANDLES:
+    - Late strategy switching (removed - no re-retrieval after answer_generation)
+    - Hallucination-triggered re-retrieval (removed - unreachable code)
+    """
+
+    quality = state.get("retrieval_quality_score", 1.0)
+    attempts = state.get("retrieval_attempts", 0)
+    issues = state.get("retrieval_quality_issues", [])
+    current_strategy = state.get("retrieval_strategy", "hybrid")
+
+    # Check for early strategy switch
+    early_switch = (quality < 0.6 and
+                    attempts == 1 and
+                    ("off_topic" in issues or "wrong_domain" in issues))
+
+    old_strategy = None
+    strategy_updates = {}
+
+    if early_switch:
+        # Off-topic results indicate need for precision -> keyword search
+        old_strategy = current_strategy
+        next_strategy = "keyword" if current_strategy != "keyword" else "hybrid"
+
+        print(f"\n{'='*60}")
+        print(f"EARLY STRATEGY SWITCH")
+        print(f"From: {current_strategy} to {next_strategy}")
+        print(f"Reason: {', '.join(issues)}")
+        print(f"{'='*60}\n")
+
+        current_strategy = next_strategy  # Use new strategy for optimization
+
+        strategy_updates = {
+            "retrieval_strategy": next_strategy,
+            "strategy_switch_reason": f"Early detection: {', '.join(issues)}",
+            "strategy_changed": True,
+            "previous_strategy": old_strategy,  # Store for revert validation
+        }
+
+    # ALWAYS optimize query for current strategy (consolidated optimization logic)
+    source_query = state.get("active_query", state["baseline_query"])
+
+    optimized_query = optimize_query_for_strategy(
+        query=source_query,
+        strategy=current_strategy,
+        old_strategy=old_strategy,  # Only set during early switch
+        issues=issues if early_switch else []
+    )
+
+    # Decide whether to expand optimized query
+    if _should_skip_expansion_llm(optimized_query):
+        result = {
+            "retrieval_query": optimized_query,
+            "query_expansions": [optimized_query],
+            **strategy_updates
+        }
+        return result
+
+    # Expand optimized query
+    expansions = expand_query(optimized_query)
+    print(f"\n{'='*60}")
+    print(f"QUERY EXPANDED")
+    print(f"Optimized query: {optimized_query}")
+    print(f"Expansions: {expansions[1:]}")
+    print(f"{'='*60}\n")
+
+    result = {
+        "retrieval_query": optimized_query,
+        "query_expansions": expansions,
+        **strategy_updates
+    }
+    return result
 
 # ============ ADAPTIVE RETRIEVAL STAGE ============
 
@@ -539,14 +378,12 @@ def retrieve_with_expansion_node(state: dict) -> dict:
     print(f"Using {expansions_count} query expansion(s)")
     print(f"Expansions generated from: {expansion_source}")
     print(f"Retrieval strategy: {strategy}")
-    if expansions_count > 0:
-        print(f"First expansion: {state.get('query_expansions', ['N/A'])[0]}")
     print(f"{'='*60}\n")
 
     for query in state.get("query_expansions", []):
         docs = adaptive_retriever.retrieve_without_reranking(query, strategy=strategy)
 
-        for rank, doc in enumerate(docs):
+        for rank, doc in enumerate(docs, start=1):
             doc_id = doc.metadata.get("id", doc.page_content[:50])
             if doc_id not in doc_ranks:
                 doc_ranks[doc_id] = []
@@ -606,14 +443,16 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         print(f"\nExpected chunks in reranking input:")
         print(f"Found: {found_in_reranking if found_in_reranking else '[]'} | Missing: {missing_in_reranking if missing_in_reranking else '[]'}")
 
-    query_for_reranking = state.get('active_query', state.get('baseline_query', ''))
+    query_for_reranking = state.get('active_query', state['baseline_query'])
 
+    query_source = "active_query" if state.get("active_query") else "baseline_query"
+    query_type = "semantic, human-readable" if query_source == "active_query" else "conversational, self-contained"
+    query_type_description = "semantic query" if query_source == "active_query" else "conversational query"
     print(f"\n{'='*60}")
     print(f"RERANKING QUERY SOURCE")
-    print(f"Using: active_query (semantic, human-readable)")
+    print(f"Using: {query_source} ({query_type})")
     print(f"Query: {query_for_reranking}")
-    print(f"Input docs: {len(reranking_input)}")
-    print(f"Note: Reranking uses semantic query, NOT algorithm-optimized retrieval_query")
+    print(f"Note: Reranking uses {query_type_description}, NOT algorithm-optimized retrieval_query")
     print(f"{'='*60}\n")
 
     ranked_results = adaptive_retriever.reranker.rank(
@@ -700,16 +539,48 @@ def retrieve_with_expansion_node(state: dict) -> dict:
             print(f"nDCG@{k}:      {retrieval_metrics['ndcg_at_k']:.4f}")
         print(f"{'='*60}\n")
 
+    # Check for revert after attempt 2 (if early switched and quality degraded)
+    if state.get("strategy_changed") and state.get("retrieval_attempts") == 1:  # Attempt 2 (0-indexed before increment)
+        previous_quality = state.get("previous_quality_score", 0)
+        previous_strategy = state.get("previous_strategy")
+        current_strategy = state.get("retrieval_strategy")
+
+        # Revert if quality degraded
+        if quality_score < previous_quality and previous_strategy:
+            print(f"\n{'='*60}")
+            print(f"STRATEGY REVERT (NO RE-RETRIEVAL)")
+            print(f"Previous ({previous_strategy}): {previous_quality:.0%}")
+            print(f"Current ({current_strategy}): {quality_score:.0%}")
+            print(f"Strategy degraded quality, reverting (state already has attempt 1 values)")
+            print(f"{'='*60}\n")
+
+            # State already has all attempt 1's values!
+            # We just need to revert the strategy fields and increment attempts
+            return {
+                "retrieval_strategy": previous_strategy,  # Revert strategy
+                "strategy_switch_reason": f"Reverted to {previous_strategy} (early switch degraded quality)",
+                "previous_strategy": None,  # Clear
+                "previous_quality_score": None,  # Clear
+                "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,  # Increment
+            }
+
+    # Store quality after attempt 1 (before potential early switch)
+    previous_quality_updates = {}
+    if state.get("retrieval_attempts") == 0:  # Attempt 1 (0-indexed before increment)
+        previous_quality_updates = {
+            "previous_quality_score": quality_score,
+        }
+
     return {
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
         "retrieval_quality_reasoning": quality_reasoning,
         "retrieval_quality_issues": quality_issues,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
-        "groundedness_retry_count": 0,  # Reset for new retrieval (each retrieval gets fresh groundedness budget)
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
+        **previous_quality_updates,
     }
 
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============
@@ -784,34 +655,27 @@ def rewrite_and_refine_node(state: dict) -> dict:
 
 # ============ ANSWER GENERATION & EVALUATION ============
 
-def answer_generation_with_quality_node(state: dict) -> dict:
+def answer_generation_node(state: dict) -> dict:
     """
-    Generate answer using structured RAG prompt with quality-aware instructions.
+    Generate answer using structured RAG prompt with unified retry handling.
 
-    Implements RAG best practices: quality-aware thresholds, XML markup, groundedness feedback.
-    Handles retry counter increment (moved from router for purity).
+    Implements RAG best practices: quality-aware thresholds, XML markup, unified feedback.
+    Handles both initial generation and retries from combined evaluation.
     """
 
     question = state["baseline_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
-    quality_score = state.get("retrieval_quality_score", 0)
-    retry_needed = state.get("retry_needed", False)
-    unsupported_claims = state.get("unsupported_claims", [])
-    groundedness_score = state.get("groundedness_score", 1.0)
-
-    retry_count = state.get("groundedness_retry_count", 0)
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
+    generation_attempts = state.get("generation_attempts", 0) + 1  # Increment before attempt
+    retry_feedback = state.get("retry_feedback", "")
 
     print(f"\n{'='*60}")
-    print(f"ANSWER GENERATION INPUT")
-    print(f"Question (baseline_query): {question}")
-    print(f"Context source: retrieved_docs (RRF-fused, reranked)")
+    print(f"ANSWER GENERATION")
+    print(f"Question: {question}")
     print(f"Context size: {len(context)} chars")
-    print(f"Groundedness retry: {retry_count}/1")
+    print(f"Retrieval quality: {retrieval_quality:.0%}")
+    print(f"Generation attempt: {generation_attempts}/3")
     print(f"{'='*60}\n")
-
-    if retry_needed and retry_count < 1 and retrieval_quality >= 0.6 and groundedness_score < 0.6:
-        retry_count = retry_count + 1
 
     if not context or context == "No context":
         return {
@@ -821,48 +685,36 @@ def answer_generation_with_quality_node(state: dict) -> dict:
 
     formatted_context = context
 
-    hallucination_feedback = ""
-    if retry_needed and unsupported_claims:
-        hallucination_feedback = f"""CRITICAL - GROUNDEDNESS ISSUE DETECTED:
-Your previous answer had a groundedness score of {groundedness_score:.0%}, indicating it contained claims that were NOT supported by the retrieved documents.
+    # Determine quality instruction based on retry scenario
+    if generation_attempts > 1 and retry_feedback:
+        # Unified retry with combined feedback from evaluation
+        quality_instruction = f"""RETRY GENERATION (Attempt {generation_attempts}/3)
 
-Unsupported claims from previous attempt:
-{chr(10).join(f"  {i+1}. {claim}" for i, claim in enumerate(unsupported_claims))}
+Previous attempt had issues:
+{retry_feedback}
 
-REGENERATION REQUIREMENTS:
-1. Use ONLY information that is explicitly stated in the retrieved context below
-2. For each of the unsupported claims listed above, either:
-   - Find direct supporting evidence in the context and rephrase the claim accurately with that evidence
-   - Completely omit the claim if no supporting evidence exists in the context
-3. When helpful for verification, you may reference the documents (e.g., "According to the retrieved information..." or "The documents indicate that...")
-4. Be conservative: If you cannot find explicit support for a claim, do not include it
-5. If the context is insufficient to answer the question fully, clearly state: "The provided context does not contain enough information to answer this question completely."
+Generate improved answer addressing ALL issues above while using the same retrieved context."""
 
-Your goal is to be factually grounded, not comprehensive. Quality over completeness.
-
-"""
-        print(f"\n{'='*60}")
-        print(f"GROUNDEDNESS FEEDBACK PROVIDED")
-        print(f"Previous groundedness: {groundedness_score:.0%}")
-        print(f"Unsupported claims: {len(unsupported_claims)}")
-        print(f"Regenerating with hallucination-specific instructions")
-        print(f"{'='*60}\n")
-
-    if quality_score > 0.8:
-        quality_instruction = f"""High Confidence Retrieval (Score: {quality_score:.0%})
-The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
-    elif quality_score > 0.6:
-        quality_instruction = f"""Medium Confidence Retrieval (Score: {quality_score:.0%})
-The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
+        print(f"RETRY MODE:")
+        print(f"Feedback:\n{retry_feedback}\n")
     else:
-        quality_instruction = f"""Low Confidence Retrieval (Score: {quality_score:.0%})
+        # First generation - use quality-aware instructions
+        if retrieval_quality >= 0.8:
+            quality_instruction = f"""High Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
+        elif retrieval_quality >= 0.6:
+            quality_instruction = f"""Medium Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
+        else:
+            quality_instruction = f"""Low Confidence Retrieval (Score: {retrieval_quality:.0%})
 The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
-    # Detect if this is a retry after hallucination detection
-    is_retry_after_hallucination = retry_needed and unsupported_claims and len(unsupported_claims) > 0
+    # For unified retry, feedback is already in quality_instruction (no duplication)
+    hallucination_feedback = ""  # Unified retry - feedback already in quality_instruction
+    is_retry_after_hallucination = "HALLUCINATION DETECTED" in retry_feedback if retry_feedback else False
 
     system_prompt, user_message = get_answer_generation_prompts(
         hallucination_feedback=hallucination_feedback,
@@ -871,10 +723,26 @@ The retrieved documents may not fully address the question. Only answer what can
         question=question,
         is_gpt5=is_gpt5,
         is_retry_after_hallucination=is_retry_after_hallucination,
-        unsupported_claims=unsupported_claims if is_retry_after_hallucination else None
+        unsupported_claims=None  # Claims already in retry_feedback
     )
 
-    llm = _get_answer_generation_llm()
+    # Adaptive temperature based on attempt number (research: 10-15% quality improvement)
+    # Attempt 1 (0.3): Conservative, faithful, reduces initial hallucinations
+    # Attempt 2 (0.7): Exploratory, diverse synthesis approaches
+    # Attempt 3 (0.5): Balanced, leverages lessons from previous attempts
+    attempt_temperatures = {
+        1: 0.3,  # Conservative first attempt
+        2: 0.7,  # Exploratory retry
+        3: 0.5   # Balanced final attempt
+    }
+    temperature = attempt_temperatures.get(generation_attempts, 0.7)
+
+    llm = ChatOpenAI(
+        model=spec.name,
+        temperature=temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
+    )
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message}
@@ -882,89 +750,132 @@ The retrieved documents may not fully address the question. Only answer what can
 
     result = {
         "final_answer": response.content,
+        "generation_attempts": generation_attempts,
         "messages": [response],
     }
 
-    if retry_needed and retrieval_quality >= 0.6 and groundedness_score < 0.6:
-        result["groundedness_retry_count"] = retry_count
-
     return result
 
-def groundedness_check_node(state: dict) -> dict:
-    """
-    Verify answer is factually grounded in retrieved context.
+def get_quality_fix_guidance(issues: list[str]) -> str:
+    """Generate fix guidance based on quality issues."""
+    guidance_map = {
+        "incomplete_synthesis": "Provide more comprehensive synthesis of the relevant information",
+        "lacks_specificity": "Include specific details (numbers, dates, names, technical terms)",
+        "wrong_focus": "Re-read question and address the primary intent",
+        "partial_answer": "Ensure all question parts are answered completely",
+        "missing_details": "Add more depth and explanation where the context provides supporting information",
+    }
+    return "; ".join([guidance_map.get(issue, issue) for issue in issues])
 
-    Uses NLI-based claim verification (0.83 F1 vs 0.70 F1).
-    Three-tier severity: <0.6 severe (retry), 0.6-0.8 moderate (warn), >=0.8 good (proceed).
+
+def evaluate_answer_node(state: dict) -> dict:
+    """
+    Combined refusal detection + groundedness + quality evaluation (single decision point).
+
+    Performs checks in sequence (with early exit on refusal):
+    1. Refusal detection (LLM-as-judge) - CHECK FIRST, exit early if refusal
+    2. NLI-based hallucination detection (factuality)
+    3. LLM-as-judge quality assessment (sufficiency)
+
+    Returns unified decision: is answer good enough to return?
     """
     answer = state.get("final_answer", "")
     context = state.get("retrieved_docs", [""])[-1]
-
-    evaluation = nli_detector.verify_groundedness(answer, context)
-
-    groundedness_score = evaluation.get("groundedness_score", 1.0)
-    unsupported_claims = evaluation.get("unsupported_claims", [])
-    claims = evaluation.get("claims", [])
-
-    if groundedness_score < 0.6:
-        has_hallucination = True
-        retry_needed = True
-        severity = "SEVERE"
-    elif groundedness_score < 0.8:
-        has_hallucination = True
-        retry_needed = False
-        severity = "MODERATE"
-    else:
-        has_hallucination = False
-        retry_needed = False
-        severity = "NONE"
-
-    if has_hallucination:
-        print(f"\n{'='*60}")
-        print(f"HALLUCINATION DETECTED - Severity: {severity}")
-        print(f"Groundedness Score: {groundedness_score:.0%}")
-        print(f"Total Claims: {len(claims)}")
-        print(f"Unsupported Claims ({len(unsupported_claims)}):")
-        for claim in unsupported_claims:
-            print(f"  - {claim}")
-        print(f"Action: {'RETRY GENERATION' if retry_needed else 'FLAG WARNING'}")
-        print(f"{'='*60}\n")
-
-    current_retry_count = state.get("groundedness_retry_count", 0)
-    new_retry_count = current_retry_count + 1 if retry_needed else current_retry_count
-
-    return {
-        "groundedness_score": groundedness_score,
-        "has_hallucination": has_hallucination,
-        "unsupported_claims": unsupported_claims,
-        "retry_needed": retry_needed,
-        "groundedness_severity": severity,
-        "groundedness_retry_count": new_retry_count,
-        "messages": [AIMessage(content=f"Groundedness: {groundedness_score:.0%} ({severity})")],
-    }
-
-
-def evaluate_answer_with_retrieval_node(state: dict) -> dict:
-    """
-    Evaluate answer quality considering retrieval quality.
-
-    Handles re-retrieval flag setting (moved from router for purity).
-    Uses vRAG-Eval framework with adaptive thresholds.
-    """
     question = state["baseline_query"]
-    answer = state.get("final_answer", "")
-    retrieval_quality = state.get("retrieval_quality_score", 0)
+    retrieval_quality = state.get("retrieval_quality_score", 0.7)
+    generation_attempts = state.get("generation_attempts", 0)
+
+    print(f"\n{'='*60}")
+    print(f"ANSWER EVALUATION (Refusal + Groundedness + Quality)")
+    print(f"Generation attempt: {generation_attempts}")
+    print(f"Retrieval quality: {retrieval_quality:.0%}")
+
+    # ==== 1. REFUSAL DETECTION (LLM-as-judge) - Check FIRST ====
+
+    # Detect if LLM refused to answer due to insufficient context
+    refusal_llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.0,  # Deterministic for classification
+    )
+    refusal_checker = refusal_llm.with_structured_output(RefusalCheck)
+
+    try:
+        refusal_result = refusal_checker.invoke([{
+            "role": "system",
+            "content": """You are evaluating whether an AI assistant FULLY REFUSED to answer a question due to insufficient context.
+
+IMPORTANT DISTINCTION:
+- FULL REFUSAL: No substantive answer provided, only acknowledges insufficiency (e.g., "The provided context does not contain enough information to answer this question.")
+- PARTIAL ANSWER: Provides some information from context BUT acknowledges limitations/gaps (e.g., "Based on the documents, X is true, though the context doesn't provide information about Y.")
+
+The assistant was instructed to use this phrase for FULL REFUSALS:
+"The provided context does not contain enough information to answer this question."
+
+ONLY flag as refusal if the answer provides NO substantive information."""
+        }, {
+            "role": "user",
+            "content": f"""Question: {question}
+
+Answer: {answer}
+
+Determine if the assistant FULLY REFUSED (provided NO answer):
+
+FULL REFUSAL indicators (return refused=True):
+- PRIMARY: Contains the instructed phrase: "The provided context does not contain enough information to answer this question."
+- SECONDARY: Semantically equivalent complete refusals:
+  - "I cannot answer this question based on the context"
+  - "The documents don't contain sufficient information to answer"
+  - "Unable to determine from the provided context"
+- KEY: Answer provides NO substantive information, only acknowledges insufficiency
+
+PARTIAL ANSWER indicators (return refused=False):
+- Provides SOME information from context (facts, details, explanations)
+- May acknowledge limitations (e.g., "however, the context doesn't cover...")
+- Attempts to answer what can be answered from available information
+- KEY: Contains actual content/information, not just refusal
+
+Return:
+- refused: True ONLY if complete refusal with NO substantive answer
+- reasoning: Explain whether answer provided substantive information or only acknowledged insufficiency"""
+        }])
+        is_refusal = refusal_result["refused"]
+        refusal_reasoning = refusal_result["reasoning"]
+    except Exception as e:
+        print(f"Warning: Refusal detection failed: {e}. Defaulting to not refused.")
+        is_refusal = False
+        refusal_reasoning = f"Detection failed: {e}"
+
+    print(f"Refusal detection: {'REFUSED' if is_refusal else 'ATTEMPTED'} - {refusal_reasoning}")
+
+    # Early exit if refusal detected (skip expensive checks)
+    if is_refusal:
+        print(f"Skipping groundedness and quality checks (refusal detected)")
+        print(f"{'='*60}\n")
+        return {
+            "is_refusal": True,  # Terminal state
+            "is_answer_sufficient": False,
+            "groundedness_score": 1.0,  # Refusal is perfectly grounded (no unsupported claims)
+            "has_hallucination": False,
+            "unsupported_claims": [],
+            "confidence_score": 0.0,
+            "answer_quality_reasoning": "Evaluation skipped (LLM refused to answer)",
+            "answer_quality_issues": [],
+            "retry_feedback": "",
+            "messages": [AIMessage(content=f"Refusal detected: {refusal_reasoning}")],
+        }
+
+    # ==== 2. GROUNDEDNESS CHECK (NLI) ====
+
+    # Run NLI groundedness check for all answers
+    groundedness_result = nli_detector.verify_groundedness(answer, context)
+    groundedness_score = groundedness_result.get("groundedness_score", 1.0)
+    has_hallucination = groundedness_score < 0.8
+    unsupported_claims = groundedness_result.get("unsupported_claims", [])
+    print(f"Groundedness: {groundedness_score:.0%}")
+
+    # ==== 3. QUALITY CHECK (LLM-as-judge) ====
+
     retrieval_quality_issues = state.get("retrieval_quality_issues", [])
-    retry_needed = state.get("retry_needed", False)
-    retry_count = state.get("groundedness_retry_count", 0)
-    groundedness_score = state.get("groundedness_score", 1.0)
-
-    result_updates = {}
-
-    if retry_needed and retry_count < 1 and retrieval_quality < 0.6 and groundedness_score < 0.6:
-        result_updates["retrieval_caused_hallucination"] = True
-        result_updates["is_answer_sufficient"] = False
-
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
     quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
@@ -993,7 +904,7 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
         evaluation = structured_answer_llm.invoke(evaluation_prompt)
         confidence = evaluation["confidence_score"] / 100
         reasoning = evaluation["reasoning"]
-        issues = evaluation["issues"]
+        quality_issues = evaluation["issues"]
     except Exception as e:
         print(f"Warning: Answer evaluation failed: {e}. Using conservative fallback.")
         evaluation = {
@@ -1006,23 +917,52 @@ def evaluate_answer_with_retrieval_node(state: dict) -> dict:
         }
         confidence = 0.5
         reasoning = evaluation["reasoning"]
-        issues = evaluation["issues"]
+        quality_issues = evaluation["issues"]
 
-    is_sufficient = (
+    is_quality_sufficient = (
         evaluation["is_relevant"] and
         evaluation["is_complete"] and
         evaluation["is_accurate"] and
         confidence >= quality_threshold
     )
 
-    final_result = {
-        "is_answer_sufficient": is_sufficient,
+    print(f"Quality: {confidence:.0%} ({'sufficient' if is_quality_sufficient else 'insufficient'})")
+    if quality_issues:
+        print(f"Issues: {', '.join(quality_issues)}")
+
+    # ==== 4. COMBINED DECISION ====
+
+    has_issues = has_hallucination or not is_quality_sufficient
+
+    # Build unified feedback for retry
+    retry_feedback_parts = []
+    if has_hallucination:
+        retry_feedback_parts.append(
+            f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
+            f"Unsupported claims: {', '.join(unsupported_claims)}\n"
+            f"Fix: ONLY state facts explicitly in retrieved context."
+        )
+    if not is_quality_sufficient:
+        retry_feedback_parts.append(
+            f"QUALITY ISSUES:\n"
+            f"Problems: {', '.join(quality_issues)}\n"
+            f"Fix: {get_quality_fix_guidance(quality_issues)}"
+        )
+
+    retry_feedback = "\n\n".join(retry_feedback_parts) if retry_feedback_parts else ""
+
+    print(f"Combined decision: {'RETRY' if has_issues else 'SUFFICIENT'}")
+    print(f"{'='*60}\n")
+
+    return {
+        "is_answer_sufficient": not has_issues,
+        "groundedness_score": groundedness_score,
+        "has_hallucination": has_hallucination,
+        "unsupported_claims": unsupported_claims,
         "confidence_score": confidence,
         "answer_quality_reasoning": reasoning,
-        "answer_quality_issues": issues,
-        "messages": [AIMessage(content=f"Evaluation: Confidence={confidence:.0%}")],
+        "answer_quality_issues": quality_issues,
+        "retry_feedback": retry_feedback,
+        "is_refusal": False,  # Only reached for non-refusals (early exit handles refusals)
+        "messages": [AIMessage(content=f"Evaluation: {groundedness_score:.0%} grounded, {confidence:.0%} quality")],
     }
-
-    final_result.update(result_updates)
-
-    return final_result

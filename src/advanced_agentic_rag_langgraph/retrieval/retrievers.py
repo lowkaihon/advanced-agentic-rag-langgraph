@@ -12,8 +12,8 @@ class AdaptiveRetriever:
         self.k_final = k_final
         self.semantic_retriever = SemanticRetriever(documents)
         self.keyword_retriever = BM25Retriever.from_documents(documents)
-        # TwoStageReRanker: CrossEncoder (top-15) then LLM-as-judge (k_final)
-        self.reranker = TwoStageReRanker(k_cross_encoder=15, k_final=k_final)
+        # TwoStageReRanker: CrossEncoder (top-10) then LLM-as-judge (k_final)
+        self.reranker = TwoStageReRanker(k_cross_encoder=10, k_final=k_final)
 
     def retrieve(
         self,
