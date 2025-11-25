@@ -63,15 +63,62 @@ class AnswerQualityEvaluation(TypedDict):
 
 # ========== HELPER FUNCTIONS ==========
 
-def _get_answer_generation_llm():
-    """Get LLM for answer generation with tier-based configuration."""
-    spec = get_model_for_task("answer_generation")
-    return ChatOpenAI(
+def _should_skip_expansion_llm(query: str) -> bool:
+    """
+    Use LLM to determine if query expansion would improve retrieval.
+
+    Domain-agnostic - works for any query type and corpus.
+    More accurate than heuristics - handles context and intent.
+    """
+    spec = get_model_for_task("expansion_decision")
+    expansion_llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
         reasoning_effort=spec.reasoning_effort,
         verbosity=spec.verbosity
     )
+
+    prompt = f"""Should this query be expanded into multiple variations for better retrieval?
+
+Query: "{query}"
+
+EXPANSION IS BENEFICIAL FOR:
+- Ambiguous queries that could be phrased multiple ways
+- Complex questions where synonyms/related terms would help
+- Queries where users might use different terminology
+- Conceptual questions with multiple valid phrasings
+
+SKIP EXPANSION FOR:
+- Clear, specific queries that are already well-formed
+- Simple factual lookups (definitions, direct questions)
+- Queries with exact-match intent only (pure lookups)
+- Procedural queries with specific steps (expansion adds noise)
+- Queries that are already precise and unambiguous
+
+IMPORTANT CONSIDERATIONS:
+- Consider overall intent, not just query length or presence of quotes
+- Quoted terms don't automatically mean skip - consider if variations help
+- Example: "Compare 'X' and 'Y'" has quotes BUT expansion helps (synonyms for "compare")
+- Example: "What is Z?" is simple BUT expansion might help (rephrasing)
+
+Return your decision ('yes' or 'no') with brief reasoning."""
+
+    try:
+        structured_llm = expansion_llm.with_structured_output(ExpansionDecision)
+        result = structured_llm.invoke(prompt)
+        skip = (result["decision"] == "no")
+
+        print(f"\n{'='*60}")
+        print(f"EXPANSION DECISION")
+        print(f"Query: {query}")
+        print(f"LLM decision: {'SKIP expansion' if skip else 'EXPAND query'}")
+        print(f"Reasoning: {result['reasoning']}")
+        print(f"{'='*60}\n")
+
+        return skip
+    except Exception as e:
+        print(f"Warning: Expansion decision LLM failed: {e}, defaulting to expand")
+        return False
 
 
 # ============ CONVERSATIONAL QUERY REWRITING ============
@@ -192,64 +239,6 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
         "retrieval_strategy": strategy,
         "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
     }
-
-
-def _should_skip_expansion_llm(query: str) -> bool:
-    """
-    Use LLM to determine if query expansion would improve retrieval.
-
-    Domain-agnostic - works for any query type and corpus.
-    More accurate than heuristics - handles context and intent.
-    """
-    spec = get_model_for_task("expansion_decision")
-    expansion_llm = ChatOpenAI(
-        model=spec.name,
-        temperature=spec.temperature,
-        reasoning_effort=spec.reasoning_effort,
-        verbosity=spec.verbosity
-    )
-
-    prompt = f"""Should this query be expanded into multiple variations for better retrieval?
-
-Query: "{query}"
-
-EXPANSION IS BENEFICIAL FOR:
-- Ambiguous queries that could be phrased multiple ways
-- Complex questions where synonyms/related terms would help
-- Queries where users might use different terminology
-- Conceptual questions with multiple valid phrasings
-
-SKIP EXPANSION FOR:
-- Clear, specific queries that are already well-formed
-- Simple factual lookups (definitions, direct questions)
-- Queries with exact-match intent only (pure lookups)
-- Procedural queries with specific steps (expansion adds noise)
-- Queries that are already precise and unambiguous
-
-IMPORTANT CONSIDERATIONS:
-- Consider overall intent, not just query length or presence of quotes
-- Quoted terms don't automatically mean skip - consider if variations help
-- Example: "Compare 'X' and 'Y'" has quotes BUT expansion helps (synonyms for "compare")
-- Example: "What is Z?" is simple BUT expansion might help (rephrasing)
-
-Return your decision ('yes' or 'no') with brief reasoning."""
-
-    try:
-        structured_llm = expansion_llm.with_structured_output(ExpansionDecision)
-        result = structured_llm.invoke(prompt)
-        skip = (result["decision"] == "no")
-
-        print(f"\n{'='*60}")
-        print(f"EXPANSION DECISION")
-        print(f"Query: {query}")
-        print(f"LLM decision: {'SKIP expansion' if skip else 'EXPAND query'}")
-        print(f"Reasoning: {result['reasoning']}")
-        print(f"{'='*60}\n")
-
-        return skip
-    except Exception as e:
-        print(f"Warning: Expansion decision LLM failed: {e}, defaulting to expand")
-        return False
 
 
 def query_expansion_node(state: dict) -> dict:
@@ -663,8 +652,8 @@ The retrieved documents may not fully address the question. Only answer what can
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
-    # For unified retry, hallucination feedback is already in retry_feedback
-    hallucination_feedback = retry_feedback if (generation_attempts > 1 and retry_feedback) else ""
+    # For unified retry, feedback is already in quality_instruction (no duplication)
+    hallucination_feedback = ""  # Unified retry - feedback already in quality_instruction
     is_retry_after_hallucination = "HALLUCINATION DETECTED" in retry_feedback if retry_feedback else False
 
     system_prompt, user_message = get_answer_generation_prompts(
@@ -677,7 +666,23 @@ The retrieved documents may not fully address the question. Only answer what can
         unsupported_claims=None  # Claims already in retry_feedback
     )
 
-    llm = _get_answer_generation_llm()
+    # Adaptive temperature based on attempt number (research: 10-15% quality improvement)
+    # Attempt 1 (0.3): Conservative, faithful, reduces initial hallucinations
+    # Attempt 2 (0.7): Exploratory, diverse synthesis approaches
+    # Attempt 3 (0.5): Balanced, leverages lessons from previous attempts
+    attempt_temperatures = {
+        1: 0.3,  # Conservative first attempt
+        2: 0.7,  # Exploratory retry
+        3: 0.5   # Balanced final attempt
+    }
+    temperature = attempt_temperatures.get(generation_attempts, 0.7)
+
+    llm = ChatOpenAI(
+        model=spec.name,
+        temperature=temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity
+    )
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_message}
@@ -694,14 +699,11 @@ The retrieved documents may not fully address the question. Only answer what can
 def get_quality_fix_guidance(issues: list[str]) -> str:
     """Generate fix guidance based on quality issues."""
     guidance_map = {
-        "incomplete_synthesis": "Extract and synthesize key points from ALL documents",
+        "incomplete_synthesis": "Provide more comprehensive synthesis of the relevant information",
         "lacks_specificity": "Include specific details (numbers, dates, names, technical terms)",
-        "unsupported_claims": "Remove claims not explicitly stated in context",
         "wrong_focus": "Re-read question and address the primary intent",
         "partial_answer": "Ensure all question parts are answered completely",
-        "missing_details": "Add sufficient depth and explanation",
-        "contextual_gaps": "Provide necessary background context",
-        "retrieval_limited": "Work with available information, state limitations if needed",
+        "missing_details": "Add more depth and explanation where the context provides supporting information",
     }
     return "; ".join([guidance_map.get(issue, issue) for issue in issues])
 
