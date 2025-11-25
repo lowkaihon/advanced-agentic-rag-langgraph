@@ -519,9 +519,9 @@ if __name__ == "__main__":
     # Run all tests with args
     test_dataset_loading(dataset_type=args.dataset)
     test_baseline_performance(quick_mode=args.quick, dataset_type=args.dataset)
-    test_regression(quick_mode=args.quick, dataset_type=args.dataset)
-    test_cross_document_retrieval(quick_mode=args.quick, dataset_type=args.dataset)
-    test_difficulty_correlation(quick_mode=args.quick, dataset_type=args.dataset)
+    # test_regression(quick_mode=args.quick, dataset_type=args.dataset)
+    # test_cross_document_retrieval(quick_mode=args.quick, dataset_type=args.dataset)
+    # test_difficulty_correlation(quick_mode=args.quick, dataset_type=args.dataset)
 
     # Calculate total execution time
     overall_time = time.time() - overall_start
