@@ -27,9 +27,10 @@ class AdvancedRAGState(TypedDict):
     # === STRATEGY SELECTION & ADAPTATION ===
     retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]
     corpus_stats: Optional[dict[str, Any]]  # Document profiling: technical_density, domain_distribution, has_code/math
-    strategy_changed: Optional[bool]  # Signals retry path should skip decide_strategy node
+    strategy_changed: Optional[bool]  # Signals early switch happened (for revert validation)
     strategy_switch_reason: Optional[str]  # Content-driven explanation (e.g., "off_topic detected -> keyword")
-    refinement_history: Annotated[list[dict[str, Any]], operator.add]  # Accumulated log of strategy switches with reasoning
+    previous_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]  # Strategy before early switch (for revert)
+    previous_quality_score: Optional[float]  # Quality score before early switch (for revert comparison)
 
     # === RETRIEVAL EXECUTION ===
     retrieved_docs: Annotated[list[str], operator.add]  # Accumulated document content across retrieval attempts
@@ -46,6 +47,7 @@ class AdvancedRAGState(TypedDict):
     answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation
     answer_quality_issues: Optional[list[str]]  # Issues: incomplete_synthesis, lacks_specificity, missing_details, etc.
     is_answer_sufficient: Optional[bool]  # Quality gate: proceed to output or retry
+    is_refusal: Optional[bool]  # Whether LLM refused to answer due to insufficient context (terminal state)
 
     # === GROUNDEDNESS & HALLUCINATION (NLI-based detection) ===
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)

@@ -137,7 +137,7 @@ KEYWORD SEARCH (BM25) OPTIMIZATION:
 Example transformations:
 - "benefits" -> "specific quantitative benefits and advantages"
 - "how it works" -> "implementation mechanism and technical process"
-- "AI techniques" -> "machine learning algorithms and neural network architectures"
+- "platform features" -> "specific platform capabilities and feature implementations"
 """,
         "semantic": """
 SEMANTIC SEARCH (Vector) OPTIMIZATION:
@@ -149,7 +149,7 @@ SEMANTIC SEARCH (Vector) OPTIMIZATION:
 - Focus on meaning and intent over exact terms
 
 Example transformations:
-- "BERT implementation" -> "understanding BERT architecture and how it's applied"
+- "system architecture" -> "understanding how the system is structured and deployed"
 - "specific metrics" -> "approaches to measuring and evaluating performance"
 - "version 2.0 features" -> "new capabilities and improvements in recent versions"
 """,
@@ -162,7 +162,7 @@ HYBRID SEARCH (BM25 + Vector) OPTIMIZATION:
 - Aim for queries that work well with both matching styles
 
 Example transformations:
-- "transformer attention" -> "transformer attention mechanism: how it works and implementation details"
+- "authentication system" -> "authentication mechanism: how it works and implementation details"
 - "performance issues" -> "specific performance bottlenecks and optimization strategies"
 """
     }

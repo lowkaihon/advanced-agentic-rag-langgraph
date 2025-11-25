@@ -61,6 +61,15 @@ class AnswerQualityEvaluation(TypedDict):
     issues: list[str]
 
 
+class RefusalCheck(TypedDict):
+    """Structured output schema for refusal detection.
+
+    Detects when LLM refuses to answer due to insufficient context.
+    """
+    refused: bool
+    reasoning: str
+
+
 # ========== HELPER FUNCTIONS ==========
 
 def _should_skip_expansion_llm(query: str) -> bool:
@@ -204,9 +213,26 @@ def conversational_rewrite_node(state: dict) -> dict:
         "active_query": rewritten_query,
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
-        "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
+
+        # Reset attempt counters and feedback
+        "retrieval_attempts": 0,  # Reset counter for new user question
         "generation_attempts": 0,  # Reset for new user question (0 = no attempts yet)
         "retry_feedback": None,  # Clear feedback for new user question
+
+        # Reset answer evaluation state (prevents state leakage across turns)
+        "is_refusal": None,  # CRITICAL: Prevents routing logic treating new turn as refusal
+        "is_answer_sufficient": None,
+        "answer_quality_reasoning": None,
+        "answer_quality_issues": None,
+
+        # Reset groundedness/hallucination detection
+        "groundedness_score": None,
+        "has_hallucination": None,
+        "unsupported_claims": None,
+
+        # Reset output state
+        "final_answer": None,
+        "confidence_score": None,
     }
 
 # ============ QUERY OPTIMIZATION STAGE ============
@@ -288,6 +314,7 @@ def query_expansion_node(state: dict) -> dict:
             "retrieval_strategy": next_strategy,
             "strategy_switch_reason": f"Early detection: {', '.join(issues)}",
             "strategy_changed": True,
+            "previous_strategy": old_strategy,  # Store for revert validation
         }
 
     # ALWAYS optimize query for current strategy (consolidated optimization logic)
@@ -512,6 +539,38 @@ def retrieve_with_expansion_node(state: dict) -> dict:
             print(f"nDCG@{k}:      {retrieval_metrics['ndcg_at_k']:.4f}")
         print(f"{'='*60}\n")
 
+    # Check for revert after attempt 2 (if early switched and quality degraded)
+    if state.get("strategy_changed") and state.get("retrieval_attempts") == 1:  # Attempt 2 (0-indexed before increment)
+        previous_quality = state.get("previous_quality_score", 0)
+        previous_strategy = state.get("previous_strategy")
+        current_strategy = state.get("retrieval_strategy")
+
+        # Revert if quality degraded
+        if quality_score < previous_quality and previous_strategy:
+            print(f"\n{'='*60}")
+            print(f"STRATEGY REVERT (NO RE-RETRIEVAL)")
+            print(f"Previous ({previous_strategy}): {previous_quality:.0%}")
+            print(f"Current ({current_strategy}): {quality_score:.0%}")
+            print(f"Strategy degraded quality, reverting (state already has attempt 1 values)")
+            print(f"{'='*60}\n")
+
+            # State already has all attempt 1's values!
+            # We just need to revert the strategy fields and increment attempts
+            return {
+                "retrieval_strategy": previous_strategy,  # Revert strategy
+                "strategy_switch_reason": f"Reverted to {previous_strategy} (early switch degraded quality)",
+                "previous_strategy": None,  # Clear
+                "previous_quality_score": None,  # Clear
+                "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,  # Increment
+            }
+
+    # Store quality after attempt 1 (before potential early switch)
+    previous_quality_updates = {}
+    if state.get("retrieval_attempts") == 0:  # Attempt 1 (0-indexed before increment)
+        previous_quality_updates = {
+            "previous_quality_score": quality_score,
+        }
+
     return {
         "retrieved_docs": [docs_text],
         "retrieval_quality_score": quality_score,
@@ -521,6 +580,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
         "messages": [AIMessage(content=f"Retrieved {len(unique_docs)} documents")],
+        **previous_quality_updates,
     }
 
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============
@@ -639,10 +699,10 @@ Generate improved answer addressing ALL issues above while using the same retrie
         print(f"Feedback:\n{retry_feedback}\n")
     else:
         # First generation - use quality-aware instructions
-        if retrieval_quality > 0.8:
+        if retrieval_quality >= 0.8:
             quality_instruction = f"""High Confidence Retrieval (Score: {retrieval_quality:.0%})
 The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
-        elif retrieval_quality > 0.6:
+        elif retrieval_quality >= 0.6:
             quality_instruction = f"""Medium Confidence Retrieval (Score: {retrieval_quality:.0%})
 The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
         else:
@@ -710,11 +770,12 @@ def get_quality_fix_guidance(issues: list[str]) -> str:
 
 def evaluate_answer_node(state: dict) -> dict:
     """
-    Combined groundedness + quality evaluation (single decision point).
+    Combined refusal detection + groundedness + quality evaluation (single decision point).
 
-    Performs both checks in sequence:
-    1. NLI-based hallucination detection (factuality)
-    2. LLM-as-judge quality assessment (sufficiency)
+    Performs checks in sequence (with early exit on refusal):
+    1. Refusal detection (LLM-as-judge) - CHECK FIRST, exit early if refusal
+    2. NLI-based hallucination detection (factuality)
+    3. LLM-as-judge quality assessment (sufficiency)
 
     Returns unified decision: is answer good enough to return?
     """
@@ -725,42 +786,94 @@ def evaluate_answer_node(state: dict) -> dict:
     generation_attempts = state.get("generation_attempts", 0)
 
     print(f"\n{'='*60}")
-    print(f"ANSWER EVALUATION (Combined Groundedness + Quality)")
+    print(f"ANSWER EVALUATION (Refusal + Groundedness + Quality)")
     print(f"Generation attempt: {generation_attempts}")
     print(f"Retrieval quality: {retrieval_quality:.0%}")
 
-    # ==== 1. GROUNDEDNESS CHECK (NLI) ====
+    # ==== 1. REFUSAL DETECTION (LLM-as-judge) - Check FIRST ====
 
-    # Handle proper refusal when retrieval poor
-    has_hallucination = False
-    groundedness_score = 1.0
-    unsupported_claims = []
+    # Detect if LLM refused to answer due to insufficient context
+    refusal_llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.0,  # Deterministic for classification
+    )
+    refusal_checker = refusal_llm.with_structured_output(RefusalCheck)
 
-    if retrieval_quality < 0.6:
-        refusal_patterns = [
-            "context does not contain enough information",
-            "provided context is insufficient",
-            "cannot answer based on the context",
-        ]
-        if any(p in answer.lower() for p in refusal_patterns):
-            print(f"Groundedness: PASS (proper refusal)")
-            groundedness_score = 1.0
-        else:
-            # Poor retrieval but LLM tried to answer -> check groundedness
-            groundedness_result = nli_detector.verify_groundedness(answer, context)
-            groundedness_score = groundedness_result.get("groundedness_score", 1.0)
-            has_hallucination = groundedness_score < 0.8
-            unsupported_claims = groundedness_result.get("unsupported_claims", [])
-            print(f"Groundedness: {groundedness_score:.0%} (poor retrieval, checked anyway)")
-    else:
-        # Normal groundedness check
-        groundedness_result = nli_detector.verify_groundedness(answer, context)
-        groundedness_score = groundedness_result.get("groundedness_score", 1.0)
-        has_hallucination = groundedness_score < 0.8
-        unsupported_claims = groundedness_result.get("unsupported_claims", [])
-        print(f"Groundedness: {groundedness_score:.0%}")
+    try:
+        refusal_result = refusal_checker.invoke([{
+            "role": "system",
+            "content": """You are evaluating whether an AI assistant FULLY REFUSED to answer a question due to insufficient context.
 
-    # ==== 2. QUALITY CHECK (LLM-as-judge) ====
+IMPORTANT DISTINCTION:
+- FULL REFUSAL: No substantive answer provided, only acknowledges insufficiency (e.g., "The provided context does not contain enough information to answer this question.")
+- PARTIAL ANSWER: Provides some information from context BUT acknowledges limitations/gaps (e.g., "Based on the documents, X is true, though the context doesn't provide information about Y.")
+
+The assistant was instructed to use this phrase for FULL REFUSALS:
+"The provided context does not contain enough information to answer this question."
+
+ONLY flag as refusal if the answer provides NO substantive information."""
+        }, {
+            "role": "user",
+            "content": f"""Question: {question}
+
+Answer: {answer}
+
+Determine if the assistant FULLY REFUSED (provided NO answer):
+
+FULL REFUSAL indicators (return refused=True):
+- PRIMARY: Contains the instructed phrase: "The provided context does not contain enough information to answer this question."
+- SECONDARY: Semantically equivalent complete refusals:
+  - "I cannot answer this question based on the context"
+  - "The documents don't contain sufficient information to answer"
+  - "Unable to determine from the provided context"
+- KEY: Answer provides NO substantive information, only acknowledges insufficiency
+
+PARTIAL ANSWER indicators (return refused=False):
+- Provides SOME information from context (facts, details, explanations)
+- May acknowledge limitations (e.g., "however, the context doesn't cover...")
+- Attempts to answer what can be answered from available information
+- KEY: Contains actual content/information, not just refusal
+
+Return:
+- refused: True ONLY if complete refusal with NO substantive answer
+- reasoning: Explain whether answer provided substantive information or only acknowledged insufficiency"""
+        }])
+        is_refusal = refusal_result["refused"]
+        refusal_reasoning = refusal_result["reasoning"]
+    except Exception as e:
+        print(f"Warning: Refusal detection failed: {e}. Defaulting to not refused.")
+        is_refusal = False
+        refusal_reasoning = f"Detection failed: {e}"
+
+    print(f"Refusal detection: {'REFUSED' if is_refusal else 'ATTEMPTED'} - {refusal_reasoning}")
+
+    # Early exit if refusal detected (skip expensive checks)
+    if is_refusal:
+        print(f"Skipping groundedness and quality checks (refusal detected)")
+        print(f"{'='*60}\n")
+        return {
+            "is_refusal": True,  # Terminal state
+            "is_answer_sufficient": False,
+            "groundedness_score": 1.0,  # Refusal is perfectly grounded (no unsupported claims)
+            "has_hallucination": False,
+            "unsupported_claims": [],
+            "confidence_score": 0.0,
+            "answer_quality_reasoning": "Evaluation skipped (LLM refused to answer)",
+            "answer_quality_issues": [],
+            "retry_feedback": "",
+            "messages": [AIMessage(content=f"Refusal detected: {refusal_reasoning}")],
+        }
+
+    # ==== 2. GROUNDEDNESS CHECK (NLI) ====
+
+    # Run NLI groundedness check for all answers
+    groundedness_result = nli_detector.verify_groundedness(answer, context)
+    groundedness_score = groundedness_result.get("groundedness_score", 1.0)
+    has_hallucination = groundedness_score < 0.8
+    unsupported_claims = groundedness_result.get("unsupported_claims", [])
+    print(f"Groundedness: {groundedness_score:.0%}")
+
+    # ==== 3. QUALITY CHECK (LLM-as-judge) ====
 
     retrieval_quality_issues = state.get("retrieval_quality_issues", [])
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
@@ -817,7 +930,7 @@ def evaluate_answer_node(state: dict) -> dict:
     if quality_issues:
         print(f"Issues: {', '.join(quality_issues)}")
 
-    # ==== 3. COMBINED DECISION ====
+    # ==== 4. COMBINED DECISION ====
 
     has_issues = has_hallucination or not is_quality_sufficient
 
@@ -850,5 +963,6 @@ def evaluate_answer_node(state: dict) -> dict:
         "answer_quality_reasoning": reasoning,
         "answer_quality_issues": quality_issues,
         "retry_feedback": retry_feedback,
+        "is_refusal": False,  # Only reached for non-refusals (early exit handles refusals)
         "messages": [AIMessage(content=f"Evaluation: {groundedness_score:.0%} grounded, {confidence:.0%} quality")],
     }

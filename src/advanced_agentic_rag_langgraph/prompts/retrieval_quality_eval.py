@@ -69,35 +69,37 @@ SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
 FEW-SHOT EXAMPLES:
 
 Example 1 (Excellent - Score 85):
-Query: "What are the advantages of BERT over traditional word embeddings?"
-Documents: [3 documents explaining BERT's bidirectional architecture, pre-training advantages,
-performance improvements on 11 NLP tasks with specific metrics, and comparisons to ELMo/GPT]
+Query: "What are the advantages of Agile over Waterfall project management?"
+Documents: [3 documents explaining Agile's iterative approach, sprint methodology with specific examples,
+flexibility advantages in changing requirements, comparative study showing 37% faster delivery, and
+detailed Waterfall limitations]
 Evaluation:
   quality_score: 85
-  reasoning: "All query aspects covered. Documents directly address BERT advantages with specific
-  examples (bidirectionality, pre-training benefits, benchmark results). Complete information for
-  comprehensive answer. All documents highly relevant to query topic."
+  reasoning: "All query aspects covered. Documents directly address Agile advantages with specific
+  examples (iterative development, sprint benefits, delivery speed metrics). Complete information for
+  comprehensive comparison. All documents highly relevant to project management methodologies."
   issues: []
 
 Example 2 (Fair - Score 50):
-Query: "Compare BERT and GPT-2 architectures"
-Documents: [BERT paper with architecture details, BERT training procedure, related work section
-mentioning transformers - but NO GPT-2 content, no architectural comparison]
+Query: "Compare Docker and Kubernetes for container orchestration"
+Documents: [Docker documentation with container basics, Docker architecture details, containerization
+benefits - but NO Kubernetes content, no orchestration comparison, no scaling features]
 Evaluation:
   quality_score: 50
-  reasoning: "Only BERT aspects covered in detail. GPT-2 architecture completely missing - cannot
-  make comparison with current documents. Partial information insufficient for answering comparison
-  query."
+  reasoning: "Only Docker aspects covered in detail. Kubernetes orchestration capabilities completely
+  missing - cannot make meaningful comparison with current documents. Partial information insufficient
+  for answering comparison query."
   issues: ["partial_coverage", "missing_key_info"]
 
 Example 3 (Poor - Score 30):
-Query: "What is the time complexity of self-attention in Transformers?"
-Documents: [Vision Transformer application paper, BERT fine-tuning guide, general attention mechanism
-overview without complexity analysis, image classification benchmarks]
+Query: "What is the performance impact of adding indexes to large database tables?"
+Documents: [NoSQL database comparison article, general SQL syntax tutorial, database backup strategies
+guide, cloud database pricing comparison]
 Evaluation:
   quality_score: 30
-  reasoning: "Documents discuss attention tangentially but lack computational complexity analysis.
-  Wrong focus (applications vs theory). Cannot answer time complexity question from retrieved content."
+  reasoning: "Documents discuss databases tangentially but lack indexing performance analysis. Wrong
+  focus (comparisons and operations vs performance optimization). Cannot answer performance impact
+  question from retrieved content."
   issues: ["missing_key_info", "wrong_domain", "off_topic"]
 
 STRUCTURED OUTPUT:

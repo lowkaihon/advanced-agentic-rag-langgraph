@@ -301,7 +301,6 @@ def test_regression(quick_mode: bool = False, dataset_type: str = "standard"):
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
         dataset,
-        k_final=k_final,
         verbose=False
     )
 
@@ -373,7 +372,6 @@ def test_cross_document_retrieval(quick_mode: bool = False, dataset_type: str = 
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
         cross_doc_examples,
-        k_final=k_final,
         verbose=False
     )
 
@@ -423,7 +421,6 @@ def test_difficulty_correlation(quick_mode: bool = False, dataset_type: str = "s
     results = evaluate_on_golden_dataset(
         advanced_rag_graph,
         dataset,
-        k_final=k_final,
         verbose=False
     )
 

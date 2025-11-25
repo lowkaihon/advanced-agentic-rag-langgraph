@@ -362,6 +362,9 @@ def evaluate_on_golden_dataset(
             if verbose:
                 print(f"    Recall@K: {retrieval_metrics.get('recall_at_k', 0):.2%}")
                 print(f"    Groundedness: {groundedness_score:.2%}")
+                print(f"    Semantic Similarity: {answer_comparison.get('semantic_similarity', 0):.2%}")
+                print(f"    Factual Accuracy: {answer_comparison.get('factual_accuracy', 0):.2%}")
+                print(f"    Completeness: {answer_comparison.get('completeness', 0):.2%}")
 
         except Exception as e:
             print(f"  ERROR: {str(e)}")

@@ -32,27 +32,27 @@ CLAIM DECOMPOSITION GUIDELINES:
 FEW-SHOT EXAMPLES:
 
 Example 1:
-Input: "BERT has 12 layers and uses transformers"
+Input: "The Eiffel Tower is 330 meters tall and was completed in 1889"
 Reasoning: This is a compound statement with two distinct facts
 Output:
-  claims: ["BERT has 12 layers", "BERT uses transformers"]
+  claims: ["The Eiffel Tower is 330 meters tall", "The Eiffel Tower was completed in 1889"]
   reasoning: "Separated compound statement into two atomic claims, each verifiable independently"
 
 Example 2:
-Input: "The attention mechanism allows models to focus on relevant parts"
-Reasoning: This is already atomic but needs context for "relevant parts"
+Input: "The process converts sunlight into electrical energy"
+Reasoning: This is already atomic but needs subject clarity for "the process"
 Output:
-  claims: ["The attention mechanism allows models to focus on relevant parts of the input"]
-  reasoning: "Single atomic claim, added 'of the input' for completeness and verifiability"
+  claims: ["Solar panels convert sunlight into electrical energy"]
+  reasoning: "Single atomic claim, added 'Solar panels' to specify the subject for completeness and verifiability"
 
 Example 3:
-Input: "GPT-3 was released by OpenAI in 2020 and has 175 billion parameters"
-Reasoning: Three distinct facts (who, when, size)
+Input: "The Great Wall of China was built over several dynasties starting in the 7th century BC and stretches over 13,000 miles"
+Reasoning: Three distinct facts (construction history, start time, length)
 Output:
   claims: [
-    "GPT-3 was released by OpenAI",
-    "GPT-3 was released in 2020",
-    "GPT-3 has 175 billion parameters"
+    "The Great Wall of China was built over several dynasties",
+    "The Great Wall of China construction started in the 7th century BC",
+    "The Great Wall of China stretches over 13,000 miles"
   ]
   reasoning: "Decomposed compound statement into three atomic, independently verifiable claims"
 

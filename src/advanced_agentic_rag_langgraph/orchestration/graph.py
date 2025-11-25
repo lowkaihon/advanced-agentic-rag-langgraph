@@ -71,12 +71,19 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generatio
     Research principle: "Fix generation problems with generation strategies, not by retrieving more documents."
     """
 
-    # Priority 1: Answer sufficient -> done
+    # Priority 1: Refusal detected -> accept immediately (terminal state)
+    # Rationale: If LLM refuses despite quality-aware prompts, it's genuine limitation
+    if state.get("is_refusal", False):
+        retrieval_quality = state.get("retrieval_quality_score", 0.7)
+        print(f"\nRouting: END (LLM refused to answer, retrieval quality: {retrieval_quality:.0%})")
+        return END
+
+    # Priority 2: Answer sufficient -> done
     if state.get("is_answer_sufficient"):
         print("\nRouting: END (answer sufficient)")
         return END
 
-    # Priority 2: Generation retry budget
+    # Priority 3: Generation retry budget
     generation_attempts = state.get("generation_attempts", 0)
 
     if generation_attempts < 3:

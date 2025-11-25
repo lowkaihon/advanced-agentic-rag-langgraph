@@ -14,7 +14,7 @@ Evaluation dimensions:
 - Accuracy: Is answer factually correct?
 
 Adaptive thresholds:
-- Good retrieval (>0.6): 65% quality threshold
+- Good retrieval (>=0.6): 65% quality threshold
 - Poor retrieval (<0.6): 50% quality threshold (compensates for limited context)
 """
 
