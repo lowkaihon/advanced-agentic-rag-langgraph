@@ -53,7 +53,7 @@ class AdvancedRAGState(TypedDict):
     unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
 
     # === GENERATION RETRY (Unified retry handling) ===
-    generation_retry_count: Optional[int]  # Unified generation retry counter (max 3, resets per user question)
+    generation_attempts: Optional[int]  # Generation attempt counter (max 3 total attempts = initial + 2 retries, resets per user question)
     retry_feedback: Optional[str]  # Combined groundedness + quality feedback for regeneration
 
     # === EVALUATION METRICS (Golden Dataset Support) ===

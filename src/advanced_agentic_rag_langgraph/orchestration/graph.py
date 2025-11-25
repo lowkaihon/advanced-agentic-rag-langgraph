@@ -77,13 +77,13 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generatio
         return END
 
     # Priority 2: Generation retry budget
-    generation_retry = state.get("generation_retry_count", 0)
+    generation_attempts = state.get("generation_attempts", 0)
 
-    if generation_retry < 3:
-        print(f"\nRouting: answer_generation (retry {generation_retry}/3)")
+    if generation_attempts < 3:
+        print(f"\nRouting: answer_generation (attempt {generation_attempts + 1}/3)")
         return "answer_generation"
     else:
-        print(f"\nRouting: END (max retries reached)")
+        print(f"\nRouting: END (max attempts reached)")
         return END
 
 

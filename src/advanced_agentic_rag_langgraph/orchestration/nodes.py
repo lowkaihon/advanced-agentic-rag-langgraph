@@ -158,11 +158,41 @@ def conversational_rewrite_node(state: dict) -> dict:
         "corpus_stats": get_corpus_stats(),
         "messages": [HumanMessage(content=question)],
         "retrieval_attempts": 0,  # Reset counter for new user question (fixes multi-turn conversation bug)
-        "generation_retry_count": 0,  # Reset for new user question (unified retry counter)
+        "generation_attempts": 0,  # Reset for new user question (0 = no attempts yet)
         "retry_feedback": None,  # Clear feedback for new user question
     }
 
 # ============ QUERY OPTIMIZATION STAGE ============
+
+def decide_retrieval_strategy_node(state: dict) -> dict:
+    """
+    Decide which retrieval strategy to use based on query and corpus characteristics.
+
+    Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
+    Query optimization happens downstream in query_expansion_node (consolidates all optimization logic).
+    """
+    query = state["baseline_query"]
+    corpus_stats = state.get("corpus_stats", {})
+
+    strategy, confidence, reasoning = strategy_selector.select_strategy(
+        query,
+        corpus_stats
+    )
+
+    print(f"\n{'='*60}")
+    print(f"STRATEGY SELECTION")
+    print(f"Query: {query}")
+    print(f"Selected: {strategy.upper()}")
+    print(f"Confidence: {confidence:.0%}")
+    print(f"Reasoning: {reasoning}")
+    print(f"Note: Query optimization will happen in query_expansion_node")
+    print(f"{'='*60}\n")
+
+    return {
+        "retrieval_strategy": strategy,
+        "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
+    }
+
 
 def _should_skip_expansion_llm(query: str) -> bool:
     """
@@ -304,35 +334,6 @@ def query_expansion_node(state: dict) -> dict:
         **strategy_updates
     }
     return result
-
-def decide_retrieval_strategy_node(state: dict) -> dict:
-    """
-    Decide which retrieval strategy to use based on query and corpus characteristics.
-
-    Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
-    Query optimization happens downstream in query_expansion_node (consolidates all optimization logic).
-    """
-    query = state["baseline_query"]
-    corpus_stats = state.get("corpus_stats", {})
-
-    strategy, confidence, reasoning = strategy_selector.select_strategy(
-        query,
-        corpus_stats
-    )
-
-    print(f"\n{'='*60}")
-    print(f"STRATEGY SELECTION")
-    print(f"Query: {query}")
-    print(f"Selected: {strategy.upper()}")
-    print(f"Confidence: {confidence:.0%}")
-    print(f"Reasoning: {reasoning}")
-    print(f"Note: Query optimization will happen in query_expansion_node")
-    print(f"{'='*60}\n")
-
-    return {
-        "retrieval_strategy": strategy,
-        "messages": [AIMessage(content=f"Strategy: {strategy} (confidence: {confidence:.0%})")],
-    }
 
 # ============ ADAPTIVE RETRIEVAL STAGE ============
 
@@ -616,7 +617,7 @@ def answer_generation_node(state: dict) -> dict:
     question = state["baseline_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
-    generation_retry = state.get("generation_retry_count", 0)
+    generation_attempts = state.get("generation_attempts", 0) + 1  # Increment before attempt
     retry_feedback = state.get("retry_feedback", "")
 
     print(f"\n{'='*60}")
@@ -624,7 +625,7 @@ def answer_generation_node(state: dict) -> dict:
     print(f"Question: {question}")
     print(f"Context size: {len(context)} chars")
     print(f"Retrieval quality: {retrieval_quality:.0%}")
-    print(f"Generation attempt: {generation_retry + 1}/3")
+    print(f"Generation attempt: {generation_attempts}/3")
     print(f"{'='*60}\n")
 
     if not context or context == "No context":
@@ -636,9 +637,9 @@ def answer_generation_node(state: dict) -> dict:
     formatted_context = context
 
     # Determine quality instruction based on retry scenario
-    if generation_retry > 0 and retry_feedback:
+    if generation_attempts > 1 and retry_feedback:
         # Unified retry with combined feedback from evaluation
-        quality_instruction = f"""RETRY GENERATION (Attempt {generation_retry + 1}/3)
+        quality_instruction = f"""RETRY GENERATION (Attempt {generation_attempts}/3)
 
 Previous attempt had issues:
 {retry_feedback}
@@ -663,7 +664,7 @@ The retrieved documents may not fully address the question. Only answer what can
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
     # For unified retry, hallucination feedback is already in retry_feedback
-    hallucination_feedback = retry_feedback if (generation_retry > 0 and retry_feedback) else ""
+    hallucination_feedback = retry_feedback if (generation_attempts > 1 and retry_feedback) else ""
     is_retry_after_hallucination = "HALLUCINATION DETECTED" in retry_feedback if retry_feedback else False
 
     system_prompt, user_message = get_answer_generation_prompts(
@@ -684,7 +685,7 @@ The retrieved documents may not fully address the question. Only answer what can
 
     result = {
         "final_answer": response.content,
-        "generation_retry_count": generation_retry + 1,
+        "generation_attempts": generation_attempts,
         "messages": [response],
     }
 
@@ -719,11 +720,11 @@ def evaluate_answer_node(state: dict) -> dict:
     context = state.get("retrieved_docs", [""])[-1]
     question = state["baseline_query"]
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
-    generation_retry = state.get("generation_retry_count", 0)
+    generation_attempts = state.get("generation_attempts", 0)
 
     print(f"\n{'='*60}")
     print(f"ANSWER EVALUATION (Combined Groundedness + Quality)")
-    print(f"Generation attempt: {generation_retry + 1}")
+    print(f"Generation attempt: {generation_attempts}")
     print(f"Retrieval quality: {retrieval_quality:.0%}")
 
     # ==== 1. GROUNDEDNESS CHECK (NLI) ====
