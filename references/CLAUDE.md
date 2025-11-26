@@ -577,8 +577,8 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Implement feedback loops | Research-Backed Best Practices for Self-Correction... | `src/orchestration/graph.py:16-146` |
 | Set retry limits | Research-Backed Best Practices for Self-Correction... | `src/orchestration/graph.py` |
 | Fix hallucination on retry | Research-Backed Best Practices for Self-Correction... (Section 3b) | `src/orchestration/nodes.py:574-612` |
-| Add citation requirements | Research-Backed Best Practices for Self-Correction... (Section 3b) | `src/orchestration/nodes.py:answer_generation_with_quality_node` |
-| Strengthen retry prompts | Research-Backed Best Practices for Self-Correction... (Section 3b) | `src/orchestration/nodes.py:answer_generation_with_quality_node` |
+| Add citation requirements | Research-Backed Best Practices for Self-Correction... (Section 3b) | `src/orchestration/nodes.py:answer_generation_node` |
+| Strengthen retry prompts | Research-Backed Best Practices for Self-Correction... (Section 3b) | `src/orchestration/nodes.py:answer_generation_node` |
 | Optimize profiling sampling | Best Practices for Document Profiling... (merged) | `src/preprocessing/document_profiler.py:_stratified_sample()` |
 | Select models for RAG tasks | Model Selection and Tier Optimization... | Future: `src/core/model_config.py` |
 | Optimize cost-quality trade-offs | Model Selection and Tier Optimization... (Section 4) | Future: `src/core/task_router.py` |

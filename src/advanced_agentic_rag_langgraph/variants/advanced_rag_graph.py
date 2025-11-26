@@ -1,58 +1,54 @@
 """
-Advanced RAG Graph (31 Features) - Full Agentic RAG Implementation.
+Advanced RAG Graph (17 Features) - Full Agentic RAG Implementation.
 
 This is the complete system with all advanced features enabled.
 It re-exports the main graph from orchestration.graph for comparison testing.
 
-Features (31 total):
-- Hybrid retrieval (semantic + keyword)
-- Strategy selection (semantic/keyword/hybrid)
-- LLM-based expansion decision
-- RRF multi-query fusion
-- Two-stage reranking (CrossEncoder + LLM-as-judge)
-- Conversational query rewriting
-- Retrieval quality scoring (8 issue types)
-- Answer quality framework (8 issue types)
-- Query rewriting loop (issue-specific feedback, max 2 rewrites)
-- NLI-based hallucination detection
-- Three-tier groundedness routing (SEVERE/MODERATE/NONE)
-- Root cause detection (LLM vs retrieval-caused hallucination)
-- Hallucination correction loop (max 2 retries)
-- Dual-tier strategy switching (early + late)
-- Query optimization for new strategy
-- Expansion regeneration on strategy change
-- Content-driven issue → strategy mapping
-- Adaptive thresholds (65% good retrieval, 50% poor)
-- Document profiling metadata
-- Complete metrics suite
-- 4 specialized routing functions
-- 9 nodes with conditional edges
-- State management with selective accumulation
-- Multi-turn conversation support
-- Comprehensive logging and metrics
-- Quality gates at every stage
-- Self-correction loops
-- Dynamic planning and execution
-- Distributed intelligence
-- Context-aware adaptation
-- Research-backed patterns (CRAG, PreQRAG, vRAG-Eval)
+Features (17 = +12 over Intermediate):
 
-Graph Structure: 9 nodes, 4 routing functions
+Inherited from Intermediate (5):
+1. Semantic vector search
+2. Query expansion (multi-variant)
+3. Hybrid retrieval (semantic + BM25)
+4. RRF fusion
+5. CrossEncoder reranking
+
+Intelligent Query Processing (+2):
+6. Conversational query rewriting
+7. LLM-based strategy selection
+
+Enhanced Retrieval (+1):
+8. Two-stage reranking (CrossEncoder -> LLM-as-judge)
+
+Quality-Driven Routing (+3):
+9. Retrieval quality gates (8 issue types)
+10. Answer quality evaluation (8 issue types)
+11. Adaptive thresholds (65%/50%)
+
+Self-Correction Loops (+3):
+12. Query rewriting loop (issue-specific feedback, max 3)
+13. Early strategy switching (off_topic/wrong_domain)
+14. Generation retry loop (adaptive temperature)
+
+Anti-Hallucination (+2):
+15. NLI-based hallucination detection
+16. Refusal detection
+
+Multi-Turn (+1):
+17. Conversation context preservation
+
+Graph Structure: 7 nodes, 2 routing functions
 - conversational_rewrite_node
 - decide_strategy_node
 - query_expansion_node
 - retrieve_with_expansion_node
-- rerank_node
-- grade_documents_node
+- rewrite_and_refine_node
 - answer_generation_node
-- check_hallucination_node
-- regenerate_grounded_answer_node
+- evaluate_answer_node
 
 Routing Functions:
-- route_after_query_expansion: Detects strategy changes
 - route_after_retrieval: Early strategy switching, issue detection
-- route_after_evaluation: Late strategy switching, quality gates
-- route_after_groundedness_check: Three-tier hallucination routing
+- route_after_evaluation: Generation retry or end
 
 All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
 """

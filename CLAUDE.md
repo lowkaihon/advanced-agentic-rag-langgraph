@@ -2,17 +2,17 @@
 
 A portfolio project showcasing advanced RAG and LangGraph capabilities through an intelligent, adaptive retrieval pipeline. The system analyzes both corpus characteristics (document types, technical density, content patterns) and query context (intent, conversational history, complexity) to dynamically select optimal retrieval strategies. Built-in quality gates, self-correction loops, and automatic strategy switching ensure retrieved documents meet relevance thresholds. While demonstrated using research papers, the architecture generalizes to diverse document types and use cases, making it a foundation for production-grade RAG systems.
 
-**Architecture**: 9-node StateGraph with distributed intelligence, not linear pipeline
+**Architecture**: 7-node StateGraph with distributed intelligence, not linear pipeline
 **Pattern**: Dynamic Planning and Execution Agents (graph structure encodes planning logic)
 **Framework**: LangChain 1.0 & LangGraph 1.0 (production-ready)
 **Requirements**: Python 3.11+
 
 ## Agentic Architecture
 
-The agentic RAG system implements the "Dynamic Planning and Execution Agents" pattern. The LangGraph StateGraph itself IS the agent — decision-making is distributed across 4 specialized routing functions rather than centralized in a single LLM orchestrator. Autonomous adaptation through quality-driven conditional routing at every stage.
+The agentic RAG system implements the "Dynamic Planning and Execution Agents" pattern. The LangGraph StateGraph itself IS the agent — decision-making is distributed across 2 specialized routing functions rather than centralized in a single LLM orchestrator. Autonomous adaptation through quality-driven conditional routing at every stage.
 
 **No Central Agent Orchestrator**: The StateGraph itself provides autonomous decision-making through:
-- **4 routing functions** with specialized logic: retrieval quality assessment, groundedness routing, answer evaluation, strategy selection
+- **2 routing functions** with specialized logic: retrieval quality assessment (route_after_retrieval), answer evaluation (route_after_evaluation)
 - **Conditional edges** that change behavior based on state (quality scores, detected issues, attempt counts)
 - **Quality-driven flow**: Each routing point evaluates intermediate results and autonomously decides next action (proceed/rewrite/switch/retry)
 
@@ -28,28 +28,20 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Adaptive thresholds based on retrieval performance
 
 **LangGraph Workflow Pattern** (Dynamic Planning and Execution Agents)
-- 9 nodes with conditional edges (not linear pipeline)
+- 7 nodes with conditional edges (not linear pipeline)
 - Integrated metadata analysis within retrieval evaluation
 - **State management pattern**:
   - `add_messages` for messages (conversation history), `operator.add` for: retrieved_docs, refinement_history
   - Direct replacement (no operator.add) for: query_expansions (regenerated fresh per iteration to ensure expansion-query alignment)
-  - Rationale: Expansions must match current query context; accumulation would mix variants for different queries/strategies
-- Quality gates determine routing: retrieval quality → answer generation, answer quality → retry/end
+- Quality gates determine routing: retrieval quality -> answer generation, answer quality -> retry/end
 - Single-use nodes: conversational_rewrite and decide_strategy used only on initial flow; retry paths skip them
-- conversational_rewrite: Makes query self-contained using conversation history (once per user query)
-- decide_strategy: Selects optimal strategy; retry paths use strategy_changed flag to bypass re-selection
-- Conditional routing: route_after_query_expansion distinguishes initial vs retry paths for proper expansion regeneration
+- Key principle: Fix generation problems with generation strategies, not by retrieving more documents
 
 **Self-Correction Loops**
-- Query rewriting loop: poor retrieval quality (score <0.6) → issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) → actionable rewriting guidance → retry (max 3 attempts)
-- Hallucination correction loop (three-tier with root cause detection):
-  - MODERATE (0.6-0.8): Likely NLI false positive → log warning, proceed without retry (protects against over-conservative zero-shot NLI)
-  - SEVERE + good retrieval (>0.6): LLM hallucination → regenerate with strict grounding → retry (max 2)
-  - SEVERE + poor retrieval (<0.6): Retrieval-caused hallucination → flag for re-retrieval with strategy change (research: 46% hallucination reduction)
-- Dual-tier strategy switching (with strategy-specific query optimization):
-  - Early tier: strategy mismatch detected at retrieval (off_topic, wrong_domain) → immediate strategy switch → optimize query for new strategy → regenerate query expansions → retry (saves 30-50% tokens vs. wasted rewrites)
-  - Late tier: insufficient answer → content-driven mapping (missing_key_info → semantic, off_topic → keyword, partial_coverage → intelligent fallback) → optimize query for new strategy → regenerate query expansions → retry (max 3 attempts)
-  - Query optimization: Rewrites query to match new strategy characteristics (keyword = specific terms/identifiers, semantic = conceptual phrasing, hybrid = balanced) following CRAG/PreQRAG research pattern (13-14% MRR improvement)
+- Query rewriting loop: poor retrieval quality (score <0.6) -> issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) -> actionable rewriting guidance -> retry (max 3 attempts)
+- Generation retry loop: Consolidated evaluation in single node (refusal detection + NLI hallucination + quality assessment) -> unified feedback -> regenerate with adaptive temperature (0.3/0.7/0.5) -> retry (max 3 attempts)
+- Early strategy switching: off_topic/wrong_domain detected at retrieval -> immediate strategy switch -> saves 30-50% tokens vs. wasted rewrites
+- No re-retrieval after generation: Generation problems fixed with generation strategies, not by retrieving more documents (CRAG research principle)
 
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
@@ -72,19 +64,16 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Query analysis: LLM-based intent classification and expansion decisions
 - Strategy selector: pure LLM classification (domain-agnostic, handles all edge cases)
 - Conversational rewriting: injects context from conversation history
-- Dual-tier content-driven strategy switching (research-backed CRAG confidence-based action triggering):
-  - Early detection (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts
-  - Late detection (route_after_evaluation): Maps retrieval quality issues to optimal strategies (missing_key_info → semantic, off_topic/wrong_domain → keyword, partial_coverage/incomplete_context → intelligent fallback) after answer proves insufficient
-  - Both tiers regenerate query expansions optimized for new strategy
+- Early strategy switching (route_after_retrieval): Detects obvious strategy mismatches (off_topic, wrong_domain) and switches immediately before wasting retrieval attempts, regenerates query expansions for new strategy
 - Tiered model architecture: Configurable quality/cost trade-offs through three model tiers (budget: GPT-4o-mini only, balanced: GPT-4o-mini + GPT-5-mini, premium: GPT-5.1 + GPT-5-mini + GPT-5-nano). Demonstrates architectural value independent of model quality—budget tier showcases graph intelligence (adaptive retrieval, self-correction, multi-stage processing) while balanced/premium tiers show incremental gains from model upgrades. Architecture provides baseline, models add polish.
 - LLM allocation strategy: 13 total instances (11 tier-aware for runtime operations, 2 hardcoded for quality-critical operations). Golden dataset evaluation uses gpt-5-mini (portfolio quality showcase, 85-90% agreement with human judges). Document profiling uses gpt-4o-mini (tier-independence principle, already optimal, one-time ingestion cost). Design principle: Evaluation and ingestion use best/appropriate models regardless of tier; runtime components scale with tier for cost-quality flexibility.
-- Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, groundedness feedback prepended when retry_needed=True
-- Query expansion regeneration: Expansions regenerated when strategy changes OR query rewritten, ensuring retrieval pool always matches current query context (both strategy switching and query rewriting trigger expansion regeneration via conditional routing)
+- Hallucination-aware answer generation: Structured RAG prompting with XML markup, quality-aware instructions, unified retry_feedback (hallucination + quality issues) prepended on regeneration
+- Query expansion regeneration: Expansions regenerated when strategy changes OR query rewritten, ensuring retrieval pool always matches current query context
 
 **State Management**
 - Uses TypedDict (best performance) not Pydantic
 - MemorySaver checkpointer for multi-turn conversations
-- Tracks: queries, documents, quality scores, attempts, conversation history
+- Tracks: queries, documents, quality scores, retrieval_attempts, generation_attempts, retry_feedback, conversation history
 
 ## Development Commands
 

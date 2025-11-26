@@ -1,22 +1,19 @@
 """
-Pure Semantic RAG Graph (4 Features) - Simplest Possible RAG.
+Basic RAG Graph (1 Feature) - Simplest Possible RAG.
 
 Baseline implementation showing the absolute minimum viable RAG system.
 Just semantic search + answer generation, no optimizations.
 
-Features (4):
-1. Pure semantic search (vector similarity only)
-2. Top-k retrieval (adaptive, no reranking)
-3. Simple answer generation
-4. Basic state management (TypedDict)
+Features (1):
+1. Semantic vector search
 
-Graph Structure: 2 nodes, linear flow
-- START → retrieve → generate → END
+Graph Structure: 2 nodes, linear flow (no routing)
+- START -> retrieve -> generate -> END
 
 No query expansion - uses original query only.
 No hybrid search - semantic/vector search only.
 No RRF fusion - single query, single retrieval.
-No reranking - directly uses top-k chunks (adaptive).
+No reranking - directly uses top-k chunks.
 No quality gates - assumes results are good enough.
 No retry logic - single pass only.
 
@@ -34,8 +31,8 @@ from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 # ========== STATE SCHEMA ==========
 
-class PureSemanticRAGState(TypedDict):
-    """Minimal state for pure semantic RAG."""
+class BasicRAGState(TypedDict):
+    """Minimal state for basic RAG."""
     user_question: str
     retrieved_docs: list
     unique_docs_list: Optional[list]
@@ -51,8 +48,8 @@ adaptive_retriever = None
 
 # ========== NODES ==========
 
-def retrieve_node(state: PureSemanticRAGState) -> dict:
-    """Pure semantic retrieval - top-k chunks, no reranking."""
+def retrieve_node(state: BasicRAGState) -> dict:
+    """Basic semantic retrieval - top-k chunks, no reranking."""
     global adaptive_retriever
 
     if adaptive_retriever is None:
@@ -68,12 +65,12 @@ def retrieve_node(state: PureSemanticRAGState) -> dict:
     ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
 
     print(f"\n{'='*60}")
-    print(f"PURE SEMANTIC RETRIEVAL")
+    print(f"BASIC RETRIEVAL")
     print(f"Strategy: semantic only (vector similarity)")
     print(f"Top-K: {k_final} chunks (no reranking)")
     print(f"Retrieved: {len(docs)} documents")
 
-    # Show ALL chunk IDs (rank order = quality indicator for pure semantic)
+    # Show ALL chunk IDs (rank order = quality indicator for basic retrieval)
     print(f"\nAll {len(docs)} chunk IDs (rank order):")
     for i, doc in enumerate(docs, 1):
         chunk_id = doc.metadata.get("id", "unknown")
@@ -95,7 +92,7 @@ def retrieve_node(state: PureSemanticRAGState) -> dict:
     }
 
 
-def generate_node(state: PureSemanticRAGState) -> dict:
+def generate_node(state: BasicRAGState) -> dict:
     """Simple answer generation without quality assessment."""
     query = state["user_question"]
     docs = state.get("retrieved_docs", [])
@@ -141,9 +138,9 @@ Answer:"""
 
 # ========== GRAPH BUILDER ==========
 
-def build_pure_semantic_rag_graph():
+def build_basic_rag_graph():
     """Build simplest possible RAG graph."""
-    builder = StateGraph(PureSemanticRAGState)
+    builder = StateGraph(BasicRAGState)
 
     # Add nodes
     builder.add_node("retrieve", retrieve_node)
@@ -158,4 +155,4 @@ def build_pure_semantic_rag_graph():
     return builder.compile(checkpointer=checkpointer)
 
 
-pure_semantic_rag_graph = build_pure_semantic_rag_graph()
+basic_rag_graph = build_basic_rag_graph()

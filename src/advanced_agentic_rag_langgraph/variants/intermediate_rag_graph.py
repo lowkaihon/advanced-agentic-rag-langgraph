@@ -1,21 +1,18 @@
 """
-Basic RAG Graph (8 Features) - Simple Linear RAG Pipeline.
+Intermediate RAG Graph (5 Features) - Simple Linear RAG Pipeline.
 
 Demonstrates core RAG functionality without advanced routing or retry logic.
-Linear flow: query expansion → retrieval → reranking → answer generation.
+Linear flow: query expansion -> retrieval -> reranking -> answer generation.
 
-Features (8):
-1. Hybrid retrieval (semantic + keyword combined)
-2. Basic query expansion (always generate 3 variants)
-3. RRF fusion for multiple query variants
-4. CrossEncoder reranking (stage 1 only, top-k)
-5. Basic answer generation with context
-6. Simple state management (TypedDict)
-7. Linear graph structure (no conditional routing)
-8. Basic metrics tracking
+Features (5 = +4 over Basic):
+1. Semantic vector search (inherited)
+2. Query expansion (multi-variant)
+3. Hybrid retrieval (semantic + BM25)
+4. RRF fusion
+5. CrossEncoder reranking
 
-Graph Structure: 4 nodes, linear flow (no routing functions)
-- START → query_expansion → retrieve → rerank → generate → END
+Graph Structure: 4 nodes, linear flow (no routing)
+- START -> query_expansion -> retrieve -> rerank -> generate -> END
 
 No retry logic - single pass only.
 No quality gates - assumes all results are good enough.
@@ -38,8 +35,8 @@ from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import Cros
 
 # ========== STATE SCHEMA ==========
 
-class BasicRAGState(TypedDict):
-    """Minimal state for basic RAG."""
+class IntermediateRAGState(TypedDict):
+    """Minimal state for intermediate RAG."""
     user_question: str
     query_expansions: list[str]
     retrieved_docs: Annotated[list[str], operator.add]
@@ -57,7 +54,7 @@ cross_encoder = CrossEncoderReRanker()
 
 # ========== NODES ==========
 
-def query_expansion_node(state: BasicRAGState) -> dict:
+def query_expansion_node(state: IntermediateRAGState) -> dict:
     """Always expand query into 3 variants."""
     query = state["user_question"]
 
@@ -73,7 +70,7 @@ def query_expansion_node(state: BasicRAGState) -> dict:
     return {"query_expansions": expansions}
 
 
-def retrieve_node(state: BasicRAGState) -> dict:
+def retrieve_node(state: IntermediateRAGState) -> dict:
     """Hybrid retrieval with RRF fusion."""
     global adaptive_retriever
 
@@ -138,7 +135,7 @@ def retrieve_node(state: BasicRAGState) -> dict:
     }
 
 
-def rerank_node(state: BasicRAGState) -> dict:
+def rerank_node(state: IntermediateRAGState) -> dict:
     """CrossEncoder reranking only (stage 1, top-k)."""
     global adaptive_retriever
     query = state["user_question"]
@@ -192,7 +189,7 @@ def rerank_node(state: BasicRAGState) -> dict:
     return {"unique_docs_list": reranked_docs}
 
 
-def generate_node(state: BasicRAGState) -> dict:
+def generate_node(state: IntermediateRAGState) -> dict:
     """Basic answer generation without quality assessment."""
     query = state["user_question"]
     docs = state.get("unique_docs_list", [])
@@ -238,9 +235,9 @@ Answer:"""
 
 # ========== GRAPH BUILDER ==========
 
-def build_basic_rag_graph():
-    """Build basic linear RAG graph."""
-    builder = StateGraph(BasicRAGState)
+def build_intermediate_rag_graph():
+    """Build intermediate linear RAG graph."""
+    builder = StateGraph(IntermediateRAGState)
 
     # Add nodes
     builder.add_node("query_expansion", query_expansion_node)
@@ -259,4 +256,4 @@ def build_basic_rag_graph():
     return builder.compile(checkpointer=checkpointer)
 
 
-basic_rag_graph = build_basic_rag_graph()
+intermediate_rag_graph = build_intermediate_rag_graph()
