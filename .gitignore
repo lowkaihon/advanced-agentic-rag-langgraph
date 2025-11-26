@@ -145,10 +145,8 @@ architecture_comparison_report*.md
 architecture_comparison_results*.json
 test_log*.txt
 scripts
-perplexity answer.md
-When Strategy Switching is Actually Beneficial in Dynamic RAG Pipelines.md
-When Re-Retrieval is Actually Beneficial.md
-RAG Answer Evaluation & Regeneration Best Practices.md
+src/advanced_agentic_rag_langgraph/variants/archive/
 root_cause_analysis_advanced_tier.md
 Multi-Agent RAG.md
-src/advanced_agentic_rag_langgraph/variants/archive/
+Best Practices for LLM-Based Retrieval Quality Evaluation in RAG Systems.md
+Best Practices for Multi-Stage Query Transformation and Feedback Integration in RAG Systems.md

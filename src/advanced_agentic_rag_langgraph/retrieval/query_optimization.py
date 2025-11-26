@@ -80,20 +80,32 @@ Guidelines:
 
 
 def rewrite_query(query: str, retrieval_context: str = None) -> str:
+    """
+    Rewrite query to retrieve missing information identified by evaluation.
+
+    The retrieval_context contains specific feedback from retrieval quality evaluation:
+    - Previous quality score
+    - Actionable improvement suggestion (what to add/modify)
+    - Detected issues for context
+    """
     context_info = ""
     if retrieval_context:
-        context_info = f"\n\nContext: {retrieval_context}"
+        context_info = f"""
 
-    rewrite_prompt = f"""Rewrite this query to be clearer and more specific for a search system:
+IMPROVEMENT CONTEXT:
+{retrieval_context}
+
+CRITICAL: Use the improvement suggestion above to guide your rewrite."""
+
+    rewrite_prompt = f"""Rewrite this query to retrieve the missing information identified below.
 
 Original: "{query}"{context_info}
 
 Guidelines:
-- Preserve all technical terms, acronyms, and proper nouns EXACTLY as written
-- Add missing context if the query is vague
-- Use precise, unambiguous language
-- Be concise but complete
-- Remove unnecessary qualifiers
+- FOCUS on the improvement suggestion - incorporate the missing information it identifies
+- Add specific terms, entities, or concepts mentioned in the suggestion
+- Preserve technical terms and proper nouns exactly as written
+- Keep the query focused but complete enough to retrieve what was missing
 
 Return ONLY the rewritten query."""
 

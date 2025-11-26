@@ -38,9 +38,10 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Key principle: Fix generation problems with generation strategies, not by retrieving more documents
 
 **Self-Correction Loops**
-- Query rewriting loop: poor retrieval quality (score <0.6) -> issue-specific feedback (8 types: partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain) -> actionable rewriting guidance -> retry (max 3 attempts)
+- Retrieval correction loop: poor retrieval quality (score <0.6) -> single correction cycle (max 2 attempts, research-backed CRAG/Self-RAG principle showing diminishing returns after first cycle)
+  - Path A (off_topic/wrong_domain): Strategy switch (precision correction, pure strategy change)
+  - Path B (other issues): Query rewrite with improvement_suggestion (coverage correction)
 - Generation retry loop: Consolidated evaluation in single node (refusal detection + NLI hallucination + quality assessment) -> unified feedback -> regenerate with adaptive temperature (0.3/0.7/0.5) -> retry (max 3 attempts)
-- Early strategy switching: off_topic/wrong_domain detected at retrieval -> immediate strategy switch -> saves 30-50% tokens vs. wasted rewrites
 - No re-retrieval after generation: Generation problems fixed with generation strategies, not by retrieving more documents (CRAG research principle)
 
 **Multi-Strategy Retrieval**

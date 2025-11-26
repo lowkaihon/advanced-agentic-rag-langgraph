@@ -35,13 +35,14 @@ class AdvancedRAGState(TypedDict):
     # === RETRIEVAL EXECUTION ===
     retrieved_docs: Annotated[list[str], operator.add]  # Accumulated document content across retrieval attempts
     unique_docs_list: Optional[list]  # Deduplicated Document objects with metadata (for reranking/analysis)
-    retrieval_attempts: Optional[int]  # Retrieval attempt counter: tracks attempts across rewrites/strategy switches (max 3, resets per user question)
+    retrieval_attempts: Optional[int]  # Retrieval attempt counter: tracks attempts across rewrites/strategy switches (max 2, resets per user question)
 
     # === QUALITY ASSESSMENT ===
     # Retrieval Quality (LLM-as-judge evaluation)
     retrieval_quality_score: Optional[float]  # 0.0-1.0 score from structured LLM evaluation
     retrieval_quality_reasoning: Optional[str]  # LLM explanation of quality score
     retrieval_quality_issues: Optional[list[str]]  # Issues: partial_coverage, missing_key_info, off_topic, wrong_domain, etc.
+    retrieval_improvement_suggestion: Optional[str]  # LLM-generated actionable query improvement (if quality < 60)
 
     # Answer Quality (vRAG-Eval framework with adaptive thresholds)
     answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation

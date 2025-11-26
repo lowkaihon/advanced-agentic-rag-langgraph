@@ -13,8 +13,10 @@ Set MODEL_TIER in .env.local to compare architectures at different quality/cost 
 Key Metrics:
 - F1@K: Retrieval quality (K=4 for standard, K=6 for hard datasets)
 - Groundedness: Anti-hallucination (% claims supported by context)
-- Confidence: Answer quality (LLM confidence score)
-- Avg Retrieval Attempts: Efficiency metric
+- Semantic Similarity: How closely answer matches ground truth meaning
+- Factual Accuracy: Correctness of factual claims in answer
+- Completeness: Coverage of key points from ground truth
+- Retrieval/Generation Attempts: Retry metrics for Advanced tier only (Basic/Intermediate have no retry features)
 
 Expected Progression:
 - Basic -> Intermediate: +10-15% (hybrid search, query expansion, reranking)
@@ -58,7 +60,7 @@ import advanced_agentic_rag_langgraph.variants.basic_rag_graph as basic_module
 import advanced_agentic_rag_langgraph.variants.intermediate_rag_graph as intermediate_module
 import advanced_agentic_rag_langgraph.orchestration.nodes as advanced_module
 from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager
+from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
     calculate_retrieval_metrics,
 )
@@ -165,9 +167,14 @@ def run_tier_on_golden_dataset(
 
             # Extract results (different state schemas)
             answer = result.get("final_answer", "")
-            confidence = result.get("confidence_score", 0.7)
             retrieved_docs = result.get("unique_docs_list", [])
-            retrieval_attempts = result.get("retrieval_attempts", 1)
+            # Only advanced tier has retry features
+            if tier_name == "advanced":
+                retrieval_attempts = result.get("retrieval_attempts", 1)
+                generation_attempts = result.get("generation_attempts", 1)
+            else:
+                retrieval_attempts = None
+                generation_attempts = None
 
             # Calculate retrieval metrics using shared function
             metrics = calculate_retrieval_metrics(retrieved_docs, ground_truth_docs, k_final)
@@ -186,8 +193,22 @@ def run_tier_on_golden_dataset(
             else:
                 groundedness_score = 0.0
 
+            # Calculate answer quality metrics vs ground truth (replaces hardcoded confidence)
+            if answer:
+                answer_comparison = compare_answers(
+                    generated=answer,
+                    ground_truth=example.get("ground_truth_answer", "")
+                )
+                semantic_similarity = answer_comparison.get("semantic_similarity", 0.0)
+                factual_accuracy = answer_comparison.get("factual_accuracy", 0.0)
+                completeness = answer_comparison.get("completeness", 0.0)
+            else:
+                semantic_similarity = 0.0
+                factual_accuracy = 0.0
+                completeness = 0.0
+
             if verbose:
-                print(f"  F1@{k_final}: {f1_at_k:.0%} | Groundedness: {groundedness_score:.0%} | Confidence: {confidence:.0%} | Attempts: {retrieval_attempts}")
+                print(f"  F1@{k_final}: {f1_at_k:.0%} | Ground: {groundedness_score:.0%} | Sim: {semantic_similarity:.0%} | Fact: {factual_accuracy:.0%} | Comp: {completeness:.0%}")
 
             # Extract doc IDs for storage (using same logic as shared function)
             retrieved_doc_ids = [
@@ -199,14 +220,17 @@ def run_tier_on_golden_dataset(
                 "example_id": example.get("id", query[:30]),
                 "query": query,
                 "answer": answer,
-                "confidence": confidence,
                 "ground_truth_docs": ground_truth_docs,
                 "retrieved_docs": retrieved_doc_ids,
                 "f1_at_k": f1_at_k,
                 "precision_at_k": precision,
                 "recall_at_k": recall,
                 "groundedness_score": groundedness_score,
+                "semantic_similarity": semantic_similarity,
+                "factual_accuracy": factual_accuracy,
+                "completeness": completeness,
                 "retrieval_attempts": retrieval_attempts,
+                "generation_attempts": generation_attempts,
             })
 
         except Exception as e:
@@ -219,7 +243,11 @@ def run_tier_on_golden_dataset(
                 "precision_at_k": 0.0,
                 "recall_at_k": 0.0,
                 "groundedness_score": 0.0,
-                "retrieval_attempts": 0,
+                "semantic_similarity": 0.0,
+                "factual_accuracy": 0.0,
+                "completeness": 0.0,
+                "retrieval_attempts": 0 if tier_name == "advanced" else None,
+                "generation_attempts": 0 if tier_name == "advanced" else None,
             })
 
     return results
@@ -244,8 +272,9 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
             "avg_precision_at_k": 0.0,
             "avg_recall_at_k": 0.0,
             "avg_groundedness": 0.0,
-            "avg_confidence": 0.0,
-            "avg_retrieval_attempts": 0.0,
+            "avg_semantic_similarity": 0.0,
+            "avg_factual_accuracy": 0.0,
+            "avg_completeness": 0.0,
             "total_examples": len(results),
             "successful_examples": 0,
             "error_rate": 1.0,
@@ -256,12 +285,20 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
         "avg_precision_at_k": sum(r["precision_at_k"] for r in valid_results) / len(valid_results),
         "avg_recall_at_k": sum(r["recall_at_k"] for r in valid_results) / len(valid_results),
         "avg_groundedness": sum(r["groundedness_score"] for r in valid_results) / len(valid_results),
-        "avg_confidence": sum(r["confidence"] for r in valid_results) / len(valid_results),
-        "avg_retrieval_attempts": sum(r["retrieval_attempts"] for r in valid_results) / len(valid_results),
+        "avg_semantic_similarity": sum(r["semantic_similarity"] for r in valid_results) / len(valid_results),
+        "avg_factual_accuracy": sum(r["factual_accuracy"] for r in valid_results) / len(valid_results),
+        "avg_completeness": sum(r["completeness"] for r in valid_results) / len(valid_results),
         "total_examples": len(results),
         "successful_examples": len(valid_results),
         "error_rate": (len(results) - len(valid_results)) / len(results) if results else 0.0,
     }
+
+    # Only calculate attempt averages for advanced tier (has retry features)
+    # Basic and Intermediate have retrieval_attempts=None
+    has_retry_features = any(r.get("retrieval_attempts") is not None for r in valid_results)
+    if has_retry_features:
+        metrics["avg_retrieval_attempts"] = sum(r["retrieval_attempts"] for r in valid_results) / len(valid_results)
+        metrics["avg_generation_attempts"] = sum(r["generation_attempts"] for r in valid_results) / len(valid_results)
 
     return metrics
 
@@ -332,7 +369,8 @@ architectural improvements.
 **Winner by Metric:**
 - **F1@{k} (Retrieval Quality):** {_get_winner(basic_metrics['avg_f1_at_k'], intermediate_metrics['avg_f1_at_k'], advanced_metrics['avg_f1_at_k'])}
 - **Groundedness (Anti-Hallucination):** {_get_winner(basic_metrics['avg_groundedness'], intermediate_metrics['avg_groundedness'], advanced_metrics['avg_groundedness'])}
-- **Confidence (Answer Quality):** {_get_winner(basic_metrics['avg_confidence'], intermediate_metrics['avg_confidence'], advanced_metrics['avg_confidence'])}
+- **Semantic Similarity (Answer Quality):** {_get_winner(basic_metrics['avg_semantic_similarity'], intermediate_metrics['avg_semantic_similarity'], advanced_metrics['avg_semantic_similarity'])}
+- **Factual Accuracy:** {_get_winner(basic_metrics['avg_factual_accuracy'], intermediate_metrics['avg_factual_accuracy'], advanced_metrics['avg_factual_accuracy'])}
 
 **Overall Improvement (Basic -> Advanced):**
 - F1@{k}: **{basic_to_adv_f1:+.1f}%**
@@ -342,11 +380,11 @@ architectural improvements.
 
 ## Metrics Comparison
 
-| Tier | Features | F1@{k} | Groundedness | Confidence | Avg Attempts |
-|------|----------|------|--------------|------------|--------------|
-| **Basic** | 1 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_confidence']:.1%} | {basic_metrics['avg_retrieval_attempts']:.1f} |
-| **Intermediate** | 5 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_confidence']:.1%} | {intermediate_metrics['avg_retrieval_attempts']:.1f} |
-| **Advanced** | 17 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_confidence']:.1%} | {advanced_metrics['avg_retrieval_attempts']:.1f} |
+| Tier | Features | F1@{k} | Groundedness | Similarity | Factual | Complete | Retrieval Attempts | Generation Attempts |
+|------|----------|------|--------------|------------|---------|----------|--------------------|--------------------|
+| **Basic** | 1 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_semantic_similarity']:.1%} | {basic_metrics['avg_factual_accuracy']:.1%} | {basic_metrics['avg_completeness']:.1%} | - | - |
+| **Intermediate** | 5 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_semantic_similarity']:.1%} | {intermediate_metrics['avg_factual_accuracy']:.1%} | {intermediate_metrics['avg_completeness']:.1%} | - | - |
+| **Advanced** | 17 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_semantic_similarity']:.1%} | {advanced_metrics['avg_factual_accuracy']:.1%} | {advanced_metrics['avg_completeness']:.1%} | {advanced_metrics.get('avg_retrieval_attempts', 1.0):.1f} | {advanced_metrics.get('avg_generation_attempts', 1.0):.1f} |
 
 ---
 
@@ -461,8 +499,10 @@ independent of model quality**:
 **Metrics:**
 - **F1@{k}:** Harmonic mean of Precision@{k} and Recall@{k} (retrieval quality)
 - **Groundedness:** NLI-based verification (% claims supported by context)
-- **Confidence:** LLM confidence score (answer quality)
-- **Avg Attempts:** Average retrieval attempts per query (efficiency)
+- **Similarity:** Semantic similarity to ground truth answer (0-100%)
+- **Factual:** Factual accuracy of claims in answer (0-100%)
+- **Complete:** Coverage of key points from ground truth (0-100%)
+- **Retrieval/Generation Attempts:** Retry metrics for Advanced tier only (Basic/Intermediate have no retry features)
 
 **Evaluation:** Offline evaluation using ground truth relevance labels
 
@@ -492,7 +532,7 @@ def _format_top_examples(results: List[Dict], n: int = 5, k: int = 4) -> str:
 
     lines = []
     for i, r in enumerate(sorted_results, 1):
-        lines.append(f"{i}. **{r['example_id']}**: F1@{k}={r['f1_at_k']:.0%}, Ground={r['groundedness_score']:.0%}")
+        lines.append(f"{i}. **{r['example_id']}**: F1@{k}={r['f1_at_k']:.0%}, Sim={r['semantic_similarity']:.0%}, Fact={r['factual_accuracy']:.0%}")
 
     return "\n".join(lines) if lines else "*No successful examples*"
 
@@ -611,15 +651,15 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
 
     # Print summary
     k = k_final
-    print(f"\n{'='*80}")
+    print(f"\n{'='*120}")
     print("SUMMARY")
-    print(f"{'='*80}")
-    print(f"\n{'Tier':<15} {f'F1@{k}':<10} {'Groundedness':<15} {'Confidence':<12} {'Attempts':<10}")
-    print("-" * 80)
-    print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<10.1%} {basic_metrics['avg_groundedness']:<15.1%} {basic_metrics['avg_confidence']:<12.1%} {basic_metrics['avg_retrieval_attempts']:<10.1f}")
-    print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<10.1%} {intermediate_metrics['avg_groundedness']:<15.1%} {intermediate_metrics['avg_confidence']:<12.1%} {intermediate_metrics['avg_retrieval_attempts']:<10.1f}")
-    print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<10.1%} {advanced_metrics['avg_groundedness']:<15.1%} {advanced_metrics['avg_confidence']:<12.1%} {advanced_metrics['avg_retrieval_attempts']:<10.1f}")
-    print("=" * 80 + "\n")
+    print(f"{'='*120}")
+    print(f"\n{'Tier':<15} {f'F1@{k}':<8} {'Ground':<8} {'Sim':<8} {'Fact':<8} {'Comp':<8} {'Retr Att':<10} {'Gen Att':<10}")
+    print("-" * 120)
+    print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
+    print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
+    print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f}")
+    print("=" * 120 + "\n")
 
     # Save raw results with timestamp
     os.makedirs("evaluation", exist_ok=True)

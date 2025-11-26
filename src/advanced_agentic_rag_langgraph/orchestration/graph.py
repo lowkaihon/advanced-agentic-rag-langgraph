@@ -35,7 +35,7 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
     print(f"\n{'='*60}")
     print(f"ROUTER: AFTER RETRIEVAL")
     print(f"Quality: {quality:.0%} (threshold: >=60%)")
-    print(f"Attempts: {attempts}/3")
+    print(f"Attempts: {attempts}/2")
     if issues:
         print(f"Issues: {', '.join(issues)}")
 
@@ -44,7 +44,7 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
         print(f"{'='*60}\n")
         return "answer_generation"
 
-    if attempts >= 3:
+    if attempts >= 2:
         print(f"Decision: answer_generation (max attempts reached)")
         print(f"{'='*60}\n")
         return "answer_generation"
@@ -65,7 +65,7 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generatio
     """
     Single routing decision: retry generation or end.
 
-    By this point, retrieval already validated upstream (quality >= 0.6 or attempts >= 3).
+    By this point, retrieval already validated upstream (quality >= 0.6 or attempts >= 2).
     Therefore all answer issues = generation problems.
 
     Research principle: "Fix generation problems with generation strategies, not by retrieving more documents."

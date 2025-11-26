@@ -183,6 +183,78 @@ This directory contains compiled research documents from Perplexity.ai and other
 
 ---
 
+### 15. RAG Answer Evaluation & Regeneration Best Practices
+
+**File:** `RAG Answer Evaluation & Regeneration Best Practices.md`
+
+**Purpose:** Production-grade framework for answer evaluation metrics and regeneration strategies when retrieved documents are locked (quality >= 0.6 or retrieval attempts exhausted)
+
+**When to Use:**
+- Implementing answer quality evaluation with multi-metric approach (Faithfulness, Relevancy, Correctness)
+- Designing regeneration loops with optimal retry counts (2-3 attempts with diminishing returns)
+- Building hierarchical validation gates with confidence-based routing
+- Implementing ensemble generation and prompt variation strategies
+
+**Key Sections:**
+- Core evaluation metrics (Faithfulness >= 0.8, Answer Relevancy >= 0.75, Answer Correctness >= 0.75, Context Precision >= 0.70)
+- Hierarchical validation gates with 0.6 regeneration threshold
+- Regeneration mechanisms: prompt variation, sampling parameters (T=0.3/0.7/0.5), self-correction tokens, ensemble voting
+- Optimal retry strategy: 2-3 attempts with diminishing returns curve (+8% Attempt 1->2, +3% Attempt 2->3)
+- LangGraph feedback loop architecture with conditional routing
+- Fine-grained grounding checks: claim extraction, token-level hallucination detection, LLM-as-judge
+- Production deployment checklist (threshold calibration, score drift, retry budget monitoring)
+
+**Implementation Status:**
+- [IMPLEMENTED] Answer quality evaluation in `src/orchestration/nodes.py:assess_answer()`
+- [IMPLEMENTED] Generation retry loop with max 3 attempts
+- [IMPLEMENTED] Adaptive temperature strategy (0.3/0.7/0.5 per attempt)
+- [IMPLEMENTED] NLI-based hallucination feedback for regeneration
+- [ALIGNED] 0.6 threshold matches system retrieval quality gates
+- [PARTIAL] Ensemble generation (not implemented, single-generation approach)
+
+**Related Code:**
+- `src/orchestration/nodes.py` - Answer generation and evaluation
+- `src/orchestration/graph.py` - Regeneration feedback loop (route_after_evaluation)
+- `src/validation/nli_hallucination_detector.py` - Claim-level verification
+
+**Notes:** Validates system's 2-3 retry limit as optimal. Research confirms diminishing returns after 3 attempts. Core metrics align with system's vRAG-Eval framework.
+
+---
+
+### 16. When Re-Retrieval is Actually Beneficial
+
+**File:** `When Re-Retrieval is Actually Beneficial.md`
+
+**Purpose:** Decision framework for when re-retrieval has positive ROI vs. when to fix generation instead - validates system's "no re-retrieval after generation" principle
+
+**When to Use:**
+- Deciding whether to re-retrieve or fix generation when answer quality is poor
+- Implementing generation error triage before routing decisions
+- Understanding cost-benefit analysis of re-retrieval vs. generation retry
+- Designing quality gates that distinguish retrieval problems from generation problems
+
+**Key Sections:**
+- High ROI scenarios: Query reformulation with ambiguous queries (+4-6 NDCG@3)
+- Low/Negative ROI scenarios: Hallucination, incomplete synthesis, lacks specificity, unsupported claims, wrong focus
+- Generation error classification (generation_only vs. retrieval_issues vs. ambiguity_issues)
+- Core principle: "Fix generation problems with generation strategies, not by retrieving more documents"
+- Research backing: 35-62% of errors with sufficient context are generation failures, not retrieval failures
+
+**Implementation Status:**
+- [IMPLEMENTED] No re-retrieval after generation (core system principle)
+- [IMPLEMENTED] Generation retry loop handles quality issues
+- [IMPLEMENTED] Issue-specific feedback (hallucination, quality issues) guides regeneration
+- [ALIGNED] System correctly identifies that retrieval_quality >= 0.6 means retrieval succeeded
+- [VALIDATED] Research confirms system design decisions
+
+**Related Code:**
+- `src/orchestration/graph.py` - No edge from answer_generation back to retrieval nodes
+- `src/orchestration/nodes.py` - Generation retry with feedback, not re-retrieval
+
+**Notes:** Critical validation of system architecture. Research confirms that re-retrieval for generation failures has negative ROI. System correctly routes generation problems to generation fixes.
+
+---
+
 ## Implementation References
 
 ### 6. Best Practices for Document Profiling and Metadata Extraction in RAG Pipelines
@@ -548,6 +620,80 @@ This directory contains compiled research documents from Perplexity.ai and other
 
 ---
 
+### 17. Retrieval Optimization vs. Semantic Evaluation
+
+**File:** `Retrieval Optimization vs. Semantic Evaluation.md`
+
+**Purpose:** Query variant separation architecture - using different query representations for retrieval algorithms vs. semantic reasoning tasks (generation, evaluation, reranking)
+
+**When to Use:**
+- Designing query state management with multiple query variants
+- Understanding when to use keyword-optimized queries vs. original natural language queries
+- Implementing stage-specific query routing (retrieval vs. reranking vs. generation)
+- Optimizing hybrid search with algorithm-specific query transformations
+
+**Key Sections:**
+- Three-tier query management: baseline_query (user intent), active_query (clarified), retrieval_query (algorithm-optimized)
+- Stage-specific query routing patterns (production examples from Microsoft, Pinecone, Cloudflare)
+- Research backing: PreQRAG (+13% MRR), RQ-RAG (+22.6% multi-hop), CRAG, Self-RAG, HyDE
+- Decision matrix: Which query variant for which pipeline stage
+- Core principle: "Retrieval is a matching problem; generation is a reasoning problem. They need different inputs."
+
+**Implementation Status:**
+- [IMPLEMENTED] baseline_query and active_query separation in `src/core/state.py`
+- [IMPLEMENTED] Original query used for reranking in `src/retrieval/retrievers.py`
+- [IMPLEMENTED] Original query used for answer generation in `src/orchestration/nodes.py`
+- [IMPLEMENTED] Conversational rewriting preserves user intent in `src/preprocessing/query_processing.py`
+- [PARTIAL] Query expansion generates variants but doesn't separate sparse/dense optimization
+- [ALIGNED] System design matches research-backed patterns
+
+**Related Code:**
+- `src/core/state.py` - baseline_query, active_query state management
+- `src/orchestration/nodes.py` - Query expansion and generation (uses baseline_query)
+- `src/retrieval/retrievers.py` - Reranking (uses original query)
+- `src/preprocessing/query_processing.py` - Conversational rewriting
+
+**Notes:** Validates system's query separation architecture. Research confirms using original query for reranking/generation produces better results than keyword-optimized queries. PreQRAG pattern (dual retrieval optimization + original for generation) aligns with system design.
+
+---
+
+### 18. When Strategy Switching is Actually Beneficial in Dynamic RAG Pipelines
+
+**File:** `When Strategy Switching is Actually Beneficial in Dynamic RAG Pipelines.md`
+
+**Purpose:** ROI analysis for dynamic retrieval strategy switching - when early intervention has high ROI vs. when late-stage switching wastes resources
+
+**When to Use:**
+- Implementing early strategy switching triggers (off_topic, wrong_domain detection)
+- Understanding 60% quality threshold for strategy switch decisions
+- Evaluating query expansion as alternative to strategy switching
+- Designing cost-effective retry policies for retrieval failures
+
+**Key Sections:**
+- High ROI: Early intervention for off_topic/wrong_domain at < 60% quality (+25-35% precision improvement)
+- Low ROI: Late-stage arbitrary switching, hallucination-triggered cycling without quality validation
+- Strategy characteristics: BM25 (precision, exact terms), Semantic (recall, concepts), Hybrid (combined, +73% relevance)
+- Query expansion as alternative to strategy switching (lower cost, often more effective)
+- Cost-benefit framework: Attempt 1 ($0.01-0.20), Attempt 2 (+$0.01-0.20, HIGH ROI if quality < 60%), Attempt 3 (LOW ROI)
+- 60% quality threshold calibration with industry standards
+
+**Implementation Status:**
+- [IMPLEMENTED] Early strategy switching in `src/orchestration/graph.py:route_after_retrieval()`
+- [IMPLEMENTED] off_topic and wrong_domain detection triggers immediate strategy switch
+- [IMPLEMENTED] 60% quality threshold for retrieval evaluation
+- [IMPLEMENTED] Query expansion regeneration when strategy changes
+- [IMPLEMENTED] Refusing to switch when retrieval quality >= 60% (generation problem, not retrieval)
+- [ALIGNED] System avoids arbitrary late-stage switching
+
+**Related Code:**
+- `src/orchestration/graph.py` - route_after_retrieval() with early switching logic
+- `src/orchestration/nodes.py` - grade_documents() with issue-specific detection
+- `src/retrieval/query_optimization.py` - Query expansion utilities
+
+**Notes:** Validates system's early strategy switching design. Research confirms 60% threshold is well-calibrated. System correctly implements high-ROI patterns (early intervention) while avoiding low-ROI patterns (late-stage cycling).
+
+---
+
 ## Quick Reference Guide
 
 **Task** → **Recommended Document**
@@ -592,6 +738,18 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Reduce perceived latency with streaming | Latency-Focused Deep Dive... (Document 14, Section 6.5) | Future: `src/orchestration/streaming.py` |
 | Benchmark production latency | Latency-Focused Deep Dive... (Document 14, Section 6.4) | Latency monitoring framework |
 | Optimize first-token latency (TTFT) | Latency-Focused Deep Dive... (Document 14, Sections 6.1, 6.3) | Streaming + reasoning_effort tuning |
+| Design answer evaluation metrics | RAG Answer Evaluation & Regeneration... (Document 15) | `src/orchestration/nodes.py:assess_answer()` |
+| Implement regeneration retry strategy | RAG Answer Evaluation & Regeneration... (Document 15, Section 3) | `src/orchestration/graph.py` |
+| Set evaluation thresholds (Faithfulness, Relevancy) | RAG Answer Evaluation & Regeneration... (Document 15, Section 1.2) | `src/orchestration/nodes.py` |
+| Build LangGraph feedback loops | RAG Answer Evaluation & Regeneration... (Document 15, Section 4) | `src/orchestration/graph.py:route_after_evaluation` |
+| Decide re-retrieval vs. generation retry | When Re-Retrieval is Actually Beneficial (Document 16) | `src/orchestration/graph.py` |
+| Classify generation error types | When Re-Retrieval is Actually Beneficial (Document 16) | `src/orchestration/nodes.py` |
+| Design query variant architecture | Retrieval Optimization vs. Semantic Evaluation (Document 17) | `src/core/state.py` |
+| Implement stage-specific query routing | Retrieval Optimization vs. Semantic Evaluation (Document 17) | `src/orchestration/nodes.py`, `src/retrieval/retrievers.py` |
+| Separate retrieval vs. generation queries | Retrieval Optimization vs. Semantic Evaluation (Document 17) | `src/preprocessing/query_processing.py` |
+| Implement early strategy switching | When Strategy Switching is Actually Beneficial (Document 18) | `src/orchestration/graph.py:route_after_retrieval()` |
+| Calibrate 60% quality threshold | When Strategy Switching is Actually Beneficial (Document 18) | `src/orchestration/nodes.py:grade_documents()` |
+| Evaluate query expansion vs. strategy switch | When Strategy Switching is Actually Beneficial (Document 18) | `src/retrieval/query_optimization.py` |
 
 ---
 
@@ -620,5 +778,5 @@ See `../CLAUDE.md` for comprehensive links to official documentation
 
 ---
 
-*Last Updated: 2025-11-18 (Consolidated: 4 new model selection documents → 14 total documents)*
+*Last Updated: 2025-11-26 (Added: 4 RAG architecture documents -> 18 total documents)*
 *Note: This guide uses ASCII-only characters per project guidelines (no emojis/unicode)*

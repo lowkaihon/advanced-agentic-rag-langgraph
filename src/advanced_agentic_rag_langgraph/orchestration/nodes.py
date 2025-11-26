@@ -46,6 +46,7 @@ class RetrievalQualityEvaluation(TypedDict):
     quality_score: float
     reasoning: str
     issues: list[str]
+    improvement_suggestion: str  # Actionable query improvement if quality < 60
 
 
 class AnswerQualityEvaluation(TypedDict):
@@ -71,6 +72,54 @@ class RefusalCheck(TypedDict):
 
 
 # ========== HELPER FUNCTIONS ==========
+
+def _extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
+    """
+    Extract conversation history from messages list (LangGraph best practice).
+
+    Pairs HumanMessage/AIMessage to create conversation turns in the format
+    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
+
+    Only includes complete pairs (ignores trailing unpaired messages).
+
+    Args:
+        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
+
+    Returns:
+        List of conversation turns in format: [{"user": str, "assistant": str}]
+
+    Example:
+        >>> messages = [
+        ...     HumanMessage(content="What is RAG?"),
+        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
+        ...     HumanMessage(content="How does it work?"),
+        ...     AIMessage(content="It works by...")
+        ... ]
+        >>> _extract_conversation_history(messages)
+        [
+            {"user": "What is RAG?", "assistant": "RAG is..."},
+            {"user": "How does it work?", "assistant": "It works by..."}
+        ]
+    """
+    if not messages or len(messages) < 2:
+        return []
+
+    conversation = []
+    i = 0
+
+    while i < len(messages) - 1:
+        # Look for HumanMessage followed by AIMessage
+        if isinstance(messages[i], HumanMessage) and isinstance(messages[i+1], AIMessage):
+            conversation.append({
+                "user": messages[i].content,
+                "assistant": messages[i+1].content
+            })
+            i += 2
+        else:
+            i += 1
+
+    return conversation
+    
 
 def _should_skip_expansion_llm(query: str) -> bool:
     """
@@ -132,54 +181,6 @@ Return your decision ('yes' or 'no') with brief reasoning."""
 
 # ============ CONVERSATIONAL QUERY REWRITING ============
 
-def extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
-    """
-    Extract conversation history from messages list (LangGraph best practice).
-
-    Pairs HumanMessage/AIMessage to create conversation turns in the format
-    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
-
-    Only includes complete pairs (ignores trailing unpaired messages).
-
-    Args:
-        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
-
-    Returns:
-        List of conversation turns in format: [{"user": str, "assistant": str}]
-
-    Example:
-        >>> messages = [
-        ...     HumanMessage(content="What is RAG?"),
-        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
-        ...     HumanMessage(content="How does it work?"),
-        ...     AIMessage(content="It works by...")
-        ... ]
-        >>> extract_conversation_history(messages)
-        [
-            {"user": "What is RAG?", "assistant": "RAG is..."},
-            {"user": "How does it work?", "assistant": "It works by..."}
-        ]
-    """
-    if not messages or len(messages) < 2:
-        return []
-
-    conversation = []
-    i = 0
-
-    while i < len(messages) - 1:
-        # Look for HumanMessage followed by AIMessage
-        if isinstance(messages[i], HumanMessage) and isinstance(messages[i+1], AIMessage):
-            conversation.append({
-                "user": messages[i].content,
-                "assistant": messages[i+1].content
-            })
-            i += 2
-        else:
-            i += 1
-
-    return conversation
-
-
 def conversational_rewrite_node(state: dict) -> dict:
     """
     Rewrite query using conversation history to make it self-contained.
@@ -191,7 +192,7 @@ def conversational_rewrite_node(state: dict) -> dict:
 
     # Extract conversation from messages (LangGraph best practice)
     messages = state.get("messages", [])
-    conversation_history = extract_conversation_history(messages)
+    conversation_history = _extract_conversation_history(messages)
 
     rewritten_query, reasoning = conversational_rewriter.rewrite(
         question,
@@ -502,11 +503,13 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         quality_score = evaluation["quality_score"] / 100
         quality_reasoning = evaluation["reasoning"]
         quality_issues = evaluation["issues"]
+        improvement_suggestion = evaluation.get("improvement_suggestion", "")
     except Exception as e:
         print(f"Warning: Quality evaluation failed: {e}. Using neutral score.")
         quality_score = 0.5
         quality_reasoning = "Evaluation failed"
         quality_issues = []
+        improvement_suggestion = ""
 
     retrieval_metrics = {}
     ground_truth_doc_ids = state.get("ground_truth_doc_ids")
@@ -576,6 +579,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         "retrieval_quality_score": quality_score,
         "retrieval_quality_reasoning": quality_reasoning,
         "retrieval_quality_issues": quality_issues,
+        "retrieval_improvement_suggestion": improvement_suggestion,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
@@ -587,54 +591,28 @@ def retrieve_with_expansion_node(state: dict) -> dict:
 
 def rewrite_and_refine_node(state: dict) -> dict:
     """
-    Rewrite query if retrieval quality is poor.
+    Rewrite query using LLM-generated improvement suggestion.
 
-    Uses specific feedback from retrieval_quality_issues to guide rewriting.
+    The retrieval quality evaluator provides specific, actionable feedback
+    that flows directly into query rewriting (closed-loop CRAG pattern).
     """
-
     query = state["active_query"]
     quality = state.get("retrieval_quality_score", 0)
-    issues = state.get("retrieval_quality_issues", [])
+    suggestion = state.get("retrieval_improvement_suggestion", "")
+    issues = state.get("retrieval_quality_issues", [])  # Keep for logging only
 
-    if issues:
-        # Build actionable feedback based on specific issues detected
-        feedback_parts = [
-            f"Previous retrieval quality: {quality:.0%}",
-            "",
-            "Detected issues and recommended improvements:"
-        ]
+    # LLM-generated suggestion is authoritative (no heuristic fallback)
+    retrieval_context = f"""Previous retrieval quality: {quality:.0%}
 
-        for issue in issues:
-            if issue == "partial_coverage":
-                feedback_parts.append("- PARTIAL COVERAGE: Query aspects not fully addressed in retrieved documents.")
-                feedback_parts.append("  Suggestion: Expand query to explicitly cover all aspects or break into sub-queries.")
-            elif issue == "missing_key_info":
-                feedback_parts.append("- MISSING KEY INFORMATION: Retrieved documents lack specific details needed to answer.")
-                feedback_parts.append("  Suggestion: Add specific keywords, technical terms, or entities that might appear in relevant documents.")
-            elif issue == "incomplete_context":
-                feedback_parts.append("- INCOMPLETE CONTEXT: Documents provide insufficient depth or detail.")
-                feedback_parts.append("  Suggestion: Add qualifiers or context to target more comprehensive sources (e.g., 'detailed explanation of', 'comprehensive guide to').")
-            elif issue == "domain_misalignment":
-                feedback_parts.append("- DOMAIN MISALIGNMENT: Retrieved documents are from wrong topic area or use different terminology.")
-                feedback_parts.append("  Suggestion: Adjust terminology to match target domain (use domain-specific terms, acronyms, or jargon).")
-            elif issue == "low_confidence" or issue == "insufficient_depth":
-                feedback_parts.append("- LOW CONFIDENCE/DEPTH: Documents are surface-level or tangentially related.")
-                feedback_parts.append("  Suggestion: Make query more specific and focused (add constraints, context, or narrow scope).")
-            elif issue == "mixed_relevance":
-                feedback_parts.append("- MIXED RELEVANCE: Some documents relevant, others off-topic.")
-                feedback_parts.append("  Suggestion: Refine query to target more specific topic and reduce noise.")
-            elif issue == "off_topic" or issue == "wrong_domain":
-                feedback_parts.append("- OFF-TOPIC RESULTS: Documents retrieved are not relevant to query intent.")
-                feedback_parts.append("  Suggestion: Rephrase query with different keywords or approach (try synonyms, related concepts, or reframe the question).")
+Improvement needed: {suggestion}
 
-        retrieval_context = "\n".join(feedback_parts)
-    else:
-        retrieval_context = f"Previous retrieval quality was {quality:.0%}. Improve query specificity and clarity."
+Issues detected: {', '.join(issues) if issues else 'None'}"""
 
     print(f"\n{'='*60}")
     print(f"QUERY REWRITING")
     print(f"Original query: {query}")
     print(f"Retrieval quality: {quality:.0%}")
+    print(f"Improvement suggestion: {suggestion}")
     print(f"Issues detected: {', '.join(issues) if issues else 'None'}")
     print(f"{'='*60}\n")
 
@@ -650,7 +628,7 @@ def rewrite_and_refine_node(state: dict) -> dict:
         "active_query": rewritten,
         "query_expansions": [],
         "retrieval_query": None,  # Clear stale algorithm optimization (semantic rewrite takes precedence)
-        "messages": [AIMessage(content=f"Query rewritten: {query} → {rewritten}")],
+        "messages": [AIMessage(content=f"Query rewritten: {query} -> {rewritten}")],
     }
 
 # ============ ANSWER GENERATION & EVALUATION ============

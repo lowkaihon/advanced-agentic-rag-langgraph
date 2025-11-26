@@ -1,23 +1,23 @@
 """
 Retrieval Quality Evaluation Prompts
 
-Evaluates retrieved documents to determine if sufficient for answer generation.
+Evaluates CONTEXT SUFFICIENCY - whether retrieved documents contain
+the specific information needed to answer correctly.
 
-Research-backed optimizations:
-- GPT-4o-mini (BASE): Explicit scoring rubric + examples improve alignment ~10%
-- GPT-5 (GPT5): Concise criteria + direct assessment leverage reasoning, ~12% improvement
-- Expected correlation with human judges: 0.82 (baseline) -> 0.88-0.92 (optimized)
+Research foundation (Google ICLR 2025, eRAG, CoV-RAG):
+- Relevance != Sufficiency: Topically related docs may lack specific answers
+- 66% hallucination rate with relevant-but-insufficient context (vs 10% no context)
+- LLMs recognize sufficient context well, but fail to abstain when insufficient
 
-Evaluation dimensions:
-- Coverage: How many query aspects are addressed?
-- Completeness: Can query be fully answered?
-- Relevance: Are documents on-topic?
+Model-specific optimizations:
+- GPT-4o-mini (BASE): Explicit rubric + few-shot examples for calibration
+- GPT-5 (GPT5): Concise criteria leverage stronger reasoning
 
-Scoring thresholds:
-- 80-100: Excellent (proceed immediately)
-- 60-79: Good (acceptable, will proceed)
-- 40-59: Fair (retry with query rewriting)
-- 0-39: Poor (needs strategy change)
+Scoring thresholds (sufficiency-based):
+- 80-100: Sufficient (explicit answers present)
+- 60-79: Mostly sufficient (core answer explicit)
+- 40-59: Insufficient (related but missing key info) -> retry
+- 0-39: Irrelevant (wrong topic) -> strategy change
 """
 
 BASE_PROMPT = """Query: {query}
@@ -25,103 +25,110 @@ BASE_PROMPT = """Query: {query}
 Retrieved documents (top-k after reranking):
 {docs_text}
 
-Evaluate retrieval quality to determine if these documents are sufficient for answer generation.
+Evaluate CONTEXT SUFFICIENCY: Do these documents contain the specific information needed to answer correctly?
 
-EVALUATION CRITERIA:
+CRITICAL DISTINCTION - Relevance vs Sufficiency:
+- RELEVANT: Document discusses the same topic as the query
+- SUFFICIENT: Document contains the SPECIFIC facts/details needed to answer
 
-1. Coverage: How many aspects of the query are addressed?
-   - Multi-aspect query (e.g., "advantages AND disadvantages"): Both aspects needed
-   - Single-aspect query: Core information must be present
-   - Consider: Are all parts of the question answered by the documents?
+A document about "transistor physics" is RELEVANT to "Who invented the transistor?"
+but NOT SUFFICIENT because it lacks the inventors' names.
 
-2. Completeness: Can the query be fully answered with these documents?
-   - Complete information present: Documents contain everything needed
-   - Partial information: Some details present but gaps exist
-   - Insufficient: Cannot answer without additional sources
+SUFFICIENCY TEST (Answer these questions):
+1. Can an expert definitively answer this query using ONLY the retrieved documents?
+2. Are the specific entities, numbers, dates, or facts requested explicitly stated?
+3. Would you need to "fill in gaps" or make assumptions to answer? If yes, NOT sufficient.
 
-3. Relevance: Are documents on-topic and directly useful?
-   - High relevance: Documents directly address query topic
-   - Mixed relevance: Some docs relevant, others tangential
-   - Low relevance: Documents off-topic or only peripherally related
+SCORING GUIDELINES (0-100, threshold 60):
 
-SCORING GUIDELINES (0-100 scale, aligned with routing threshold of 60):
+- 80-100: SUFFICIENT - Documents contain explicit answers
+  * All query-specific information explicitly stated (not implied)
+  * Could directly quote passages to answer each part of query
+  * No inference or assumption required
 
-- 80-100: EXCELLENT - Proceed to answer generation immediately
-  * All/most query aspects directly addressed
-  * Complete information for full answer
-  * All documents highly relevant to query
+- 60-79: MOSTLY SUFFICIENT - Minor gaps that don't affect correctness
+  * Core answer explicitly present in documents
+  * Minor supporting details may be missing
+  * Answer would be correct, just less detailed
 
-- 60-79: GOOD - Acceptable for answer generation [THRESHOLD: Will proceed]
-  * Key query aspects covered (may have minor gaps)
-  * Sufficient information for complete answer
-  * Most documents relevant, minimal noise
+- 40-59: INSUFFICIENT - Related but missing key information [WILL RETRY]
+  * Documents are topically relevant (same domain/paper)
+  * BUT: Specific requested information is NOT explicitly stated
+  * Would need to infer, assume, or synthesize to answer
+  * High hallucination risk if we proceed
 
-- 40-59: FAIR - Requires query rewriting [THRESHOLD: Will retry if attempts < 3]
-  * Partial coverage, key information missing
-  * Incomplete information, gaps in answer
-  * Documents tangential or only partially relevant
-
-- 0-39: POOR - Inadequate retrieval, needs strategy change
-  * Wrong domain or off-topic documents
-  * Cannot answer query with current results
-  * Most/all documents irrelevant
+- 0-39: IRRELEVANT - Wrong topic entirely [STRATEGY CHANGE]
+  * Documents don't address query topic
+  * Cannot construct any reasonable answer
 
 FEW-SHOT EXAMPLES:
 
-Example 1 (Excellent - Score 85):
-Query: "What are the advantages of Agile over Waterfall project management?"
-Documents: [3 documents explaining Agile's iterative approach, sprint methodology with specific examples,
-flexibility advantages in changing requirements, comparative study showing 37% faster delivery, and
-detailed Waterfall limitations]
+Example 1 (Sufficient - Score 85):
+Query: "What year was the company founded and who were the founders?"
+Documents: [Company history page stating "Founded in 2015 by Jane Smith and Robert Chen in Seattle"]
 Evaluation:
   quality_score: 85
-  reasoning: "All query aspects covered. Documents directly address Agile advantages with specific
-  examples (iterative development, sprint benefits, delivery speed metrics). Complete information for
-  comprehensive comparison. All documents highly relevant to project management methodologies."
+  reasoning: "Document explicitly states founding year (2015) and founders (Jane Smith, Robert Chen).
+  Can directly quote the answer. No inference needed."
   issues: []
 
-Example 2 (Fair - Score 50):
-Query: "Compare Docker and Kubernetes for container orchestration"
-Documents: [Docker documentation with container basics, Docker architecture details, containerization
-benefits - but NO Kubernetes content, no orchestration comparison, no scaling features]
+Example 2 (Insufficient - Score 50):
+Query: "What year was the company founded and who were the founders?"
+Documents: [Company overview discussing products, mission statement, current leadership team,
+office locations, and recent acquisitions - but NO founding date or original founders mentioned]
 Evaluation:
   quality_score: 50
-  reasoning: "Only Docker aspects covered in detail. Kubernetes orchestration capabilities completely
-  missing - cannot make meaningful comparison with current documents. Partial information insufficient
-  for answering comparison query."
+  reasoning: "Documents discuss the company extensively but do NOT state when it was founded
+  or who the founders were. Topically relevant (correct company) but missing the specific
+  facts requested. Would need to guess or infer."
+  issues: ["missing_key_info"]
+
+Example 3 (Insufficient - Score 55):
+Query: "Compare the pricing plans: what does the Pro tier cost vs the Enterprise tier?"
+Documents: [Product documentation with Pro tier features and pricing ($49/month), FAQ about
+billing cycles, upgrade process - but NO information about Enterprise tier pricing]
+Evaluation:
+  quality_score: 55
+  reasoning: "Documents cover Pro tier pricing completely but Enterprise tier cost is
+  not mentioned anywhere. Can only answer half the comparison. Related content present
+  but cannot complete the requested comparison."
   issues: ["partial_coverage", "missing_key_info"]
 
-Example 3 (Poor - Score 30):
-Query: "What is the performance impact of adding indexes to large database tables?"
-Documents: [NoSQL database comparison article, general SQL syntax tutorial, database backup strategies
-guide, cloud database pricing comparison]
+Example 4 (Irrelevant - Score 25):
+Query: "What database does the application use for storing user data?"
+Documents: [Frontend React component documentation, CSS styling guide, UI/UX design principles]
 Evaluation:
-  quality_score: 30
-  reasoning: "Documents discuss databases tangentially but lack indexing performance analysis. Wrong
-  focus (comparisons and operations vs performance optimization). Cannot answer performance impact
-  question from retrieved content."
-  issues: ["missing_key_info", "wrong_domain", "off_topic"]
+  quality_score: 25
+  reasoning: "Documents discuss frontend/UI aspects but contain no backend or database
+  information. Wrong part of the system entirely. Cannot answer database question."
+  issues: ["wrong_domain", "off_topic"]
+
+COMMON MISTAKES TO AVOID:
+- DON'T score 60+ just because documents are "from the right paper/topic"
+- DON'T score 60+ if you'd need to infer or synthesize the answer
+- DON'T score 60+ for comparison queries if only one side is covered
+- DO score below 60 if the specific fact/number/name requested is missing
 
 STRUCTURED OUTPUT:
+- quality_score (0-100): Based on SUFFICIENCY, not just relevance
+- reasoning: 2-3 sentences on what IS vs ISN'T explicitly present
+- issues: List problems (empty if none):
+  * "missing_key_info": Specific requested information absent
+  * "partial_coverage": Some query aspects covered, others missing
+  * "incomplete_context": Related info but can't definitively answer
+  * "wrong_domain": Documents from different topic area
+  * "off_topic": Documents don't address query
+- improvement_suggestion: If quality_score < 60, ONE specific actionable suggestion
+  for improving the query. Empty string if quality_score >= 60.
 
-- quality_score (0-100): Aggregate score following guidelines above
-
-- reasoning: 2-3 sentences explaining:
-  * Which aspects are covered vs missing
-  * Whether information is complete for answering
-  * Relevance quality of documents
-
-- issues: List specific problems (empty list if none):
-  * "missing_key_info": Required information not in documents (specify what is missing)
-  * "partial_coverage": Some query aspects covered, others missing (list missing aspects)
-  * "incomplete_context": Context lacks necessary details to fully answer query
-  * "wrong_domain": Documents from unrelated topic area
-  * "insufficient_depth": Surface-level info only, lacks detail
-  * "off_topic": Documents irrelevant to query
-  * "mixed_relevance": Combination of relevant and irrelevant docs
-
-IMPORTANT: If key information or query aspects are missing, explicitly include "partial_coverage"
-or "missing_key_info" in the issues list. This assessment is critical for routing decisions.
+IMPROVEMENT SUGGESTION GUIDELINES (only if quality_score < 60):
+- Be specific about WHAT is missing (e.g., "Enterprise pricing", "author names", "publication year")
+- Suggest HOW to modify the query (e.g., "Add X to query", "Rephrase to ask about Y")
+- One sentence maximum
+- Examples:
+  * "Add 'Enterprise tier pricing' to query - documents only cover Pro tier"
+  * "Include author names or publication year to narrow results"
+  * "Rephrase to ask about 'database architecture' instead of generic 'backend'"
 
 Return your evaluation as structured data."""
 
@@ -131,19 +138,33 @@ GPT5_PROMPT = """Query: {query}
 Retrieved documents (top-k after reranking):
 {docs_text}
 
-Evaluate if these documents sufficiently answer the query (0-100, threshold 60).
+Evaluate CONTEXT SUFFICIENCY (0-100, threshold 60).
 
-EVALUATE:
-- Coverage: All query aspects addressed?
-- Completeness: Can query be fully answered?
-- Relevance: Documents on-topic and directly useful?
+KEY DISTINCTION:
+- RELEVANT: Documents discuss same topic as query
+- SUFFICIENT: Documents contain SPECIFIC facts needed to answer
 
-SCORE (threshold 60 for proceed):
-80-100: Excellent | 60-79: Good | 40-59: Fair (retry) | 0-39: Poor (strategy change)
+SUFFICIENCY TEST:
+1. Can expert definitively answer using ONLY these documents?
+2. Are specific entities/numbers/facts explicitly stated (not implied)?
+3. Would answering require inference or assumptions? If yes -> insufficient
 
-Issues if applicable: missing_key_info, partial_coverage, incomplete_context, wrong_domain, insufficient_depth, off_topic, mixed_relevance
+SCORE:
+- 80-100: SUFFICIENT - Explicit answers present, can quote directly
+- 60-79: MOSTLY SUFFICIENT - Core answer explicit, minor gaps OK
+- 40-59: INSUFFICIENT - Topically relevant but key info missing [RETRY]
+- 0-39: IRRELEVANT - Wrong topic [STRATEGY CHANGE]
+
+MISTAKES TO AVOID:
+- Don't score 60+ for "right topic but wrong details"
+- Don't score 60+ if you'd need to infer the answer
+- Do score <60 if specific requested fact is absent
+
+Issues: missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic
 
 Return:
-- quality_score (0-100)
-- reasoning (2-3 sentences: coverage, completeness, relevance)
-- issues (list, empty if none; include partial_coverage or missing_key_info if gaps exist)"""
+- quality_score (0-100): Based on SUFFICIENCY not relevance
+- reasoning (2-3 sentences: what IS vs ISN'T explicitly present)
+- issues (list, empty if none)
+- improvement_suggestion: If score < 60, ONE specific actionable query improvement. Empty if >= 60.
+  Be concrete: "Add 'X' to query" not "improve specificity"."""
