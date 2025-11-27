@@ -107,6 +107,7 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
 | Portfolio architecture showcase | test_architecture_comparison.py | 55-65min | 3-tier A/B test (basic/intermediate/advanced) with F1@K, Groundedness, Confidence |
+| Multi-agent RAG evaluation | test_multi_agent_evaluation.py | 15-20min | Orchestrator-worker pattern with parallel retrieval, cross-agent fusion |
 
 ---
 
@@ -209,6 +210,18 @@ Quick verification that RAGAS evaluation executes correctly.
 **Command:** `uv run python tests/integration/test_architecture_comparison.py`
 **Options:** `--dataset standard|hard`, `--quick` (2 examples, ~5min)
 **Output:** `evaluation/architecture_comparison_report_{dataset}_latest.md`
+
+---
+
+### 11. test_multi_agent_evaluation.py (~15-20min)
+Evaluates the Multi-Agent RAG variant using the Orchestrator-Worker pattern.
+
+**Tests:** Query decomposition, parallel retrieval workers, cross-agent RRF fusion, multi-agent specific metrics
+**Run after:** Changes to multi-agent RAG variant, before portfolio demos
+**Command:** `uv run python tests/integration/test_multi_agent_evaluation.py`
+**Options:** `--dataset standard|hard`, `--quick` (2 examples, ~2-3min)
+**Metrics:** F1@K, Groundedness, Semantic Similarity + avg sub-queries, cross-agent doc overlap %
+**Output:** `evaluation/multi_agent_evaluation_report_{dataset}_latest.md`
 
 ---
 
@@ -326,6 +339,10 @@ uv run python tests/integration/test_nli_hallucination_detector.py
 # RAGAS evaluation tests
 uv run python tests/integration/test_ragas_simple.py
 uv run python tests/integration/test_ragas_evaluation.py
+
+# Multi-agent RAG evaluation
+uv run python tests/integration/test_multi_agent_evaluation.py
+uv run python tests/integration/test_multi_agent_evaluation.py --quick  # Fast mode
 
 # Check dataset stats
 uv run python -c "from advanced_agentic_rag_langgraph.evaluation import GoldenDatasetManager; m = GoldenDatasetManager('evaluation/golden_set.json'); m.print_statistics()"

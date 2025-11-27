@@ -56,21 +56,24 @@ STRATEGY SELECTION GUIDELINES:
 **Semantic Search** (dense vector embeddings):
 - Best for: Conceptual understanding, explanations, "why/how/what" questions
 - Strengths: Finds semantically similar content, handles paraphrasing and synonyms
-- Use when: User seeks understanding, concepts, or thematic information
+- Also preferred for: Compound terms that carry meaning as a unit (e.g., hyphenated names, multi-word phrases)
+- Use when: User seeks understanding, concepts, or queries with multi-token terms
 - Examples:
   * "What is X?" (definitional)
   * "How does Y work?" (explanatory)
   * "Why use Z?" (conceptual reasoning)
+  * Queries with hyphenated or compound terms (BM25 tokenizes these, losing meaning)
 
 **Keyword Search** (BM25 term matching):
-- Best for: Exact term lookups, specific names, codes, identifiers, citations
-- Strengths: Precise matching on exact terms, proper nouns, technical identifiers
-- Use when: User needs specific information by exact name/term
+- Best for: Atomic identifiers, single-token codes, exact IDs, citations
+- Strengths: Precise matching when terms are single tokens that don't need context
+- Limitation: Tokenizes compound terms (e.g., "X-123" becomes ["X", "123"]), losing their unity
+- Use when: Looking up single-token identifiers, error codes, or exact atomic matches
 - Examples:
-  * API/function names lookup
-  * Error codes or specific identifiers
-  * Proper nouns (people, places, products)
-  * Technical terminology with exact spelling
+  * Single-token function or variable names
+  * Error codes (e.g., "E404", "SIGKILL")
+  * Numeric identifiers, ISBNs, DOIs
+  * Exact single words where BM25 precision helps
 
 **Hybrid Search** (semantic + keyword combined):
 - Best for: Comparisons, multi-faceted queries, queries needing both concepts AND exact terms
@@ -81,6 +84,26 @@ STRATEGY SELECTION GUIDELINES:
   * Procedural + specific ("How to use X feature?")
   * Queries with quoted terms AND conceptual elements
   * Ambiguous queries where both modes add value
+
+DECISION EXAMPLES:
+
+Query: "What does the__(term)__ feature do?"
+-> SEMANTIC: Seeking conceptual understanding; semantic finds explanatory content even with different wording.
+
+Query: "Find error code E5012"
+-> KEYWORD: Single-token error code; BM25 matches this exactly. Semantic might return "similar errors" instead.
+
+Query: "How many__(units)__ does__(Product-X)__ have?"
+-> SEMANTIC: Despite specific name, "Product-X" is a compound term that BM25 would split. Semantic preserves it as a unit.
+
+Query: "Compare__(A)__ vs__(B)__ performance"
+-> HYBRID: Comparison needs both conceptual understanding AND exact term matching for both items.
+
+Query: "__(config_value)__ setting location"
+-> KEYWORD: Looking up a specific single-token identifier; exact match needed.
+
+Query: "Why is__(Feature-Name)__ better than alternatives?"
+-> SEMANTIC: Conceptual "why" question + compound term. Semantic handles both aspects well.
 
 IMPORTANT DECISION FACTORS:
 
@@ -94,12 +117,17 @@ IMPORTANT DECISION FACTORS:
    - Exact term matching needed -> keyword or hybrid
    - Both needed -> hybrid
 
-3. **Corpus Characteristics**: Consider document type and content style
+3. **Term Structure**:
+   - Atomic/single-token terms -> keyword may help
+   - Compound/hyphenated/multi-word terms -> semantic preserves meaning
+   - When unsure -> hybrid or semantic (safer)
+
+4. **Corpus Characteristics**: Consider document type and content style
    - High technical density + technical query -> keyword or hybrid
    - Conceptual content + conceptual query -> semantic
    - Mixed corpus -> hybrid (safest)
 
-4. **Quoted Terms**: Consider overall intent, not just presence of quotes
+5. **Quoted Terms**: Consider overall intent, not just presence of quotes
    - Quoted terms + lookup only -> keyword
    - Quoted terms + comparison -> hybrid
    - Quoted terms + conceptual question -> semantic or hybrid

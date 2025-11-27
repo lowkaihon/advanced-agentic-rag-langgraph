@@ -65,6 +65,10 @@ def get_prompt(task_name: str, **kwargs) -> str:
         from . import answer_generation as module
         template = module.GPT5_PROMPT if is_gpt5 else module.BASE_PROMPT
 
+    elif task_name == "multi_agent_merge_reranking":
+        from . import multi_agent_merge_reranking as module
+        template = module.GPT5_PROMPT if is_gpt5 else module.BASE_PROMPT
+
     else:
         # Task not optimized - return empty string
         # Caller should use hardcoded prompt as fallback

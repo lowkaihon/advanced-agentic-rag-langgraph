@@ -143,6 +143,8 @@ tier_comparison_report*.md
 tier_comparison_results*.json
 architecture_comparison_report*.md
 architecture_comparison_results*.json
+multi_agent_evaluation*.md
+multi_agent_evaluation*.json
 test_log*.txt
 scripts
 src/advanced_agentic_rag_langgraph/variants/archive/
@@ -150,3 +152,5 @@ root_cause_analysis_advanced_tier.md
 Multi-Agent RAG.md
 Best Practices for LLM-Based Retrieval Quality Evaluation in RAG Systems.md
 Best Practices for Multi-Stage Query Transformation and Feedback Integration in RAG Systems.md
+Best Practices for LLM-Based Strategy Selection in RAG Pipelines.md
+Best Practices for Merging and Ranking Documents in Multi-Agent RAG Systems.md

@@ -1,11 +1,12 @@
 """
-3-Tier Architecture A/B Test for Portfolio Showcase.
+4-Tier Architecture A/B Test for Portfolio Showcase.
 
-Compares three RAG architecture implementations to demonstrate
+Compares four RAG architecture implementations to demonstrate
 the incremental value of advanced features:
 - Basic: Simplest RAG (1 feature, semantic vector search)
 - Intermediate: Simple RAG (5 features, linear flow)
 - Advanced: Full Agentic RAG (17 features, adaptive loops)
+- Multi-Agent: Orchestrator-Worker RAG (20 features, parallel retrieval)
 
 Model tier controlled by MODEL_TIER environment variable (budget/balanced/premium).
 Set MODEL_TIER in .env.local to compare architectures at different quality/cost points.
@@ -16,19 +17,20 @@ Key Metrics:
 - Semantic Similarity: How closely answer matches ground truth meaning
 - Factual Accuracy: Correctness of factual claims in answer
 - Completeness: Coverage of key points from ground truth
-- Retrieval/Generation Attempts: Retry metrics for Advanced tier only (Basic/Intermediate have no retry features)
+- Generation Attempts: Retry metrics for Advanced/Multi-Agent tiers
 
 Expected Progression:
 - Basic -> Intermediate: +10-15% (hybrid search, query expansion, reranking)
 - Intermediate -> Advanced: +30-50% (NLI, strategy switching, adaptive loops, quality gates)
-- Basic -> Advanced: +45-75% overall
+- Advanced -> Multi-Agent: +5-15% (query decomposition, parallel retrieval, cross-agent fusion)
+- Basic -> Multi-Agent: +50-90% overall
 
 Usage:
     uv run python tests/integration/test_architecture_comparison.py
 
 Outputs:
-    - evaluation/architecture_comparison_results.json (raw data)
-    - evaluation/architecture_comparison_report.md (formatted report)
+    - evaluation/architecture_comparison_results_{dataset}_{timestamp}.json (raw data)
+    - evaluation/architecture_comparison_report_{dataset}_{timestamp}.md (formatted report)
 """
 
 import json
@@ -54,11 +56,13 @@ from advanced_agentic_rag_langgraph.variants import (
     basic_rag_graph,
     intermediate_rag_graph,
     advanced_rag_graph,
+    multi_agent_rag_graph,
 )
 # Import modules to access global adaptive_retriever variables
 import advanced_agentic_rag_langgraph.variants.basic_rag_graph as basic_module
 import advanced_agentic_rag_langgraph.variants.intermediate_rag_graph as intermediate_module
 import advanced_agentic_rag_langgraph.orchestration.nodes as advanced_module
+import advanced_agentic_rag_langgraph.variants.multi_agent_rag_graph as multi_agent_module
 from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
@@ -88,6 +92,12 @@ TIER_CONFIGS = {
         "features": 17,
         "graph": advanced_rag_graph,
         "description": "Full agentic with NLI, strategy switching, and adaptive loops",
+    },
+    "multi_agent": {
+        "name": "Multi-Agent RAG",
+        "features": 20,
+        "graph": multi_agent_rag_graph,
+        "description": "Orchestrator-worker pattern with parallel retrieval and cross-agent RRF fusion",
     },
 }
 
@@ -148,7 +158,7 @@ def run_tier_on_golden_dataset(
                     "retrieved_docs": [],  # Accumulated field
                     "ground_truth_doc_ids": ground_truth_docs,
                 }
-            else:  # advanced
+            elif tier_name == "advanced":
                 initial_state = {
                     "user_question": query,
                     "baseline_query": query,  # Required field for advanced tier
@@ -156,6 +166,14 @@ def run_tier_on_golden_dataset(
                     "retrieved_docs": [],
                     "retrieval_attempts": 0,
                     "query_expansions": [],
+                    "ground_truth_doc_ids": ground_truth_docs,
+                }
+            else:  # multi_agent
+                initial_state = {
+                    "user_question": query,
+                    "baseline_query": query,
+                    "messages": [],
+                    "sub_agent_results": [],  # Required for operator.add reducer
                     "ground_truth_doc_ids": ground_truth_docs,
                 }
 
@@ -307,9 +325,11 @@ def generate_comparison_report(
     basic_metrics: Dict[str, float],
     intermediate_metrics: Dict[str, float],
     advanced_metrics: Dict[str, float],
+    multi_agent_metrics: Dict[str, float],
     basic_results: List[Dict],
     intermediate_results: List[Dict],
     advanced_results: List[Dict],
+    multi_agent_results: List[Dict],
     k_final: int = 4,
     dataset_type: str = "standard",
     test_timestamp: str = None,
@@ -343,6 +363,12 @@ def generate_comparison_report(
     intermediate_to_adv_ground = ((advanced_metrics["avg_groundedness"] - intermediate_metrics["avg_groundedness"]) / intermediate_metrics["avg_groundedness"] * 100) if intermediate_metrics["avg_groundedness"] > 0 else 0
     basic_to_adv_ground = ((advanced_metrics["avg_groundedness"] - basic_metrics["avg_groundedness"]) / basic_metrics["avg_groundedness"] * 100) if basic_metrics["avg_groundedness"] > 0 else 0
 
+    # Multi-agent deltas
+    adv_to_multi_f1 = ((multi_agent_metrics["avg_f1_at_k"] - advanced_metrics["avg_f1_at_k"]) / advanced_metrics["avg_f1_at_k"] * 100) if advanced_metrics["avg_f1_at_k"] > 0 else 0
+    adv_to_multi_ground = ((multi_agent_metrics["avg_groundedness"] - advanced_metrics["avg_groundedness"]) / advanced_metrics["avg_groundedness"] * 100) if advanced_metrics["avg_groundedness"] > 0 else 0
+    basic_to_multi_f1 = ((multi_agent_metrics["avg_f1_at_k"] - basic_metrics["avg_f1_at_k"]) / basic_metrics["avg_f1_at_k"] * 100) if basic_metrics["avg_f1_at_k"] > 0 else 0
+    basic_to_multi_ground = ((multi_agent_metrics["avg_groundedness"] - basic_metrics["avg_groundedness"]) / basic_metrics["avg_groundedness"] * 100) if basic_metrics["avg_groundedness"] > 0 else 0
+
     dataset_label = "Standard" if dataset_type == "standard" else "Hard"
 
     # Get tier info if not provided
@@ -350,7 +376,7 @@ def generate_comparison_report(
         current_tier = get_current_tier()
         tier_info = TIER_METADATA[current_tier]
 
-    report = f"""# 3-Tier RAG Architecture Comparison Report
+    report = f"""# 4-Tier RAG Architecture Comparison Report
 
 **Generated:** {timestamp}
 **Model Tier:** {current_tier.value.upper()} ({tier_info['description']})
@@ -361,20 +387,20 @@ def generate_comparison_report(
 ## Executive Summary
 
 This report demonstrates the incremental value of advanced RAG architecture patterns
-by comparing three implementation tiers using identical models (BUDGET tier) to isolate
+by comparing four implementation tiers using identical models (BUDGET tier) to isolate
 architectural improvements.
 
 ### Key Findings
 
 **Winner by Metric:**
-- **F1@{k} (Retrieval Quality):** {_get_winner(basic_metrics['avg_f1_at_k'], intermediate_metrics['avg_f1_at_k'], advanced_metrics['avg_f1_at_k'])}
-- **Groundedness (Anti-Hallucination):** {_get_winner(basic_metrics['avg_groundedness'], intermediate_metrics['avg_groundedness'], advanced_metrics['avg_groundedness'])}
-- **Semantic Similarity (Answer Quality):** {_get_winner(basic_metrics['avg_semantic_similarity'], intermediate_metrics['avg_semantic_similarity'], advanced_metrics['avg_semantic_similarity'])}
-- **Factual Accuracy:** {_get_winner(basic_metrics['avg_factual_accuracy'], intermediate_metrics['avg_factual_accuracy'], advanced_metrics['avg_factual_accuracy'])}
+- **F1@{k} (Retrieval Quality):** {_get_winner_4(basic_metrics['avg_f1_at_k'], intermediate_metrics['avg_f1_at_k'], advanced_metrics['avg_f1_at_k'], multi_agent_metrics['avg_f1_at_k'])}
+- **Groundedness (Anti-Hallucination):** {_get_winner_4(basic_metrics['avg_groundedness'], intermediate_metrics['avg_groundedness'], advanced_metrics['avg_groundedness'], multi_agent_metrics['avg_groundedness'])}
+- **Semantic Similarity (Answer Quality):** {_get_winner_4(basic_metrics['avg_semantic_similarity'], intermediate_metrics['avg_semantic_similarity'], advanced_metrics['avg_semantic_similarity'], multi_agent_metrics['avg_semantic_similarity'])}
+- **Factual Accuracy:** {_get_winner_4(basic_metrics['avg_factual_accuracy'], intermediate_metrics['avg_factual_accuracy'], advanced_metrics['avg_factual_accuracy'], multi_agent_metrics['avg_factual_accuracy'])}
 
-**Overall Improvement (Basic -> Advanced):**
-- F1@{k}: **{basic_to_adv_f1:+.1f}%**
-- Groundedness: **{basic_to_adv_ground:+.1f}%**
+**Overall Improvement (Basic -> Multi-Agent):**
+- F1@{k}: **{basic_to_multi_f1:+.1f}%**
+- Groundedness: **{basic_to_multi_ground:+.1f}%**
 
 ---
 
@@ -385,6 +411,7 @@ architectural improvements.
 | **Basic** | 1 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_semantic_similarity']:.1%} | {basic_metrics['avg_factual_accuracy']:.1%} | {basic_metrics['avg_completeness']:.1%} | - | - |
 | **Intermediate** | 5 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_semantic_similarity']:.1%} | {intermediate_metrics['avg_factual_accuracy']:.1%} | {intermediate_metrics['avg_completeness']:.1%} | - | - |
 | **Advanced** | 17 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_semantic_similarity']:.1%} | {advanced_metrics['avg_factual_accuracy']:.1%} | {advanced_metrics['avg_completeness']:.1%} | {advanced_metrics.get('avg_retrieval_attempts', 1.0):.1f} | {advanced_metrics.get('avg_generation_attempts', 1.0):.1f} |
+| **Multi-Agent** | 20 | {multi_agent_metrics['avg_f1_at_k']:.1%} | {multi_agent_metrics['avg_groundedness']:.1%} | {multi_agent_metrics['avg_semantic_similarity']:.1%} | {multi_agent_metrics['avg_factual_accuracy']:.1%} | {multi_agent_metrics['avg_completeness']:.1%} | - | {multi_agent_metrics.get('avg_generation_attempts', 1.0):.1f} |
 
 ---
 
@@ -424,12 +451,24 @@ architectural improvements.
 11. Refusal detection
 12. Conversation context preservation (multi-turn)
 
-### Basic -> Advanced (Overall: +16 features)
+### Advanced -> Multi-Agent (+3 features)
 
 | Metric | Delta |
 |--------|-------|
-| F1@{k} | {basic_to_adv_f1:+.1f}% |
-| Groundedness | {basic_to_adv_ground:+.1f}% |
+| F1@{k} | {adv_to_multi_f1:+.1f}% |
+| Groundedness | {adv_to_multi_ground:+.1f}% |
+
+**Key Features Added:**
+1. Query decomposition (orchestrator breaks complex queries into sub-queries)
+2. Parallel retrieval workers (independent pipelines per sub-query)
+3. Cross-agent RRF fusion (documents from multiple perspectives get boost)
+
+### Basic -> Multi-Agent (Overall: +19 features)
+
+| Metric | Delta |
+|--------|-------|
+| F1@{k} | {basic_to_multi_f1:+.1f}% |
+| Groundedness | {basic_to_multi_ground:+.1f}% |
 
 ---
 
@@ -453,6 +492,14 @@ architectural improvements.
 7. **Conversational Rewriting:** Contextualizes queries using conversation history for multi-turn interactions
 8. **Document Profiling:** Metadata-aware retrieval optimizes strategy selection based on corpus characteristics
 
+### Why Multi-Agent Outperforms Advanced
+
+1. **Query Decomposition:** Complex queries broken into focused sub-queries captures multiple aspects
+2. **Parallel Retrieval:** Independent workers retrieve from different perspectives simultaneously
+3. **Cross-Agent RRF Fusion:** Documents appearing in multiple workers get boosted relevance scores
+4. **Better for Comparative Queries:** "Compare X and Y" naturally decomposes into X-focused and Y-focused sub-queries
+5. **Reduced Latency:** Parallel execution means total time = max(worker times), not sum
+
 ---
 
 ## Portfolio Narrative
@@ -468,8 +515,12 @@ independent of model quality**:
    switching, adaptive retry, root cause analysis) provide an additional {intermediate_to_adv_f1:.0f}%
    F1@{k} improvement over Intermediate tier
 
-3. **The value is in the architecture, not just the model:** All tiers use identical BUDGET models
-   (gpt-4o-mini), yet Advanced tier shows {basic_to_adv_f1:.0f}% improvement over Basic
+3. **Multi-agent orchestration unlocks complex query handling:** Query decomposition and parallel
+   retrieval workers provide an additional {adv_to_multi_f1:.0f}% F1@{k} improvement over Advanced tier,
+   especially effective on comparative and multi-faceted questions
+
+4. **The value is in the architecture, not just the model:** All tiers use identical BUDGET models
+   (gpt-4o-mini), yet Multi-Agent tier shows {basic_to_multi_f1:.0f}% improvement over Basic
    through architecture alone
 
 ---
@@ -481,14 +532,15 @@ independent of model quality**:
 - **Basic:** {basic_metrics['successful_examples']}/{basic_metrics['total_examples']} ({(basic_metrics['successful_examples']/basic_metrics['total_examples']*100):.0f}%)
 - **Intermediate:** {intermediate_metrics['successful_examples']}/{intermediate_metrics['total_examples']} ({(intermediate_metrics['successful_examples']/intermediate_metrics['total_examples']*100):.0f}%)
 - **Advanced:** {advanced_metrics['successful_examples']}/{advanced_metrics['total_examples']} ({(advanced_metrics['successful_examples']/advanced_metrics['total_examples']*100):.0f}%)
+- **Multi-Agent:** {multi_agent_metrics['successful_examples']}/{multi_agent_metrics['total_examples']} ({(multi_agent_metrics['successful_examples']/multi_agent_metrics['total_examples']*100):.0f}%)
 
-### Top Performing Examples (Advanced Tier)
+### Top Performing Examples (Multi-Agent Tier)
 
-{_format_top_examples(advanced_results, n=5, k=k)}
+{_format_top_examples(multi_agent_results, n=5, k=k)}
 
-### Most Improved Examples (Intermediate -> Advanced)
+### Most Improved Examples (Advanced -> Multi-Agent)
 
-{_format_most_improved(intermediate_results, advanced_results, n=5)}
+{_format_most_improved(advanced_results, multi_agent_results, n=5)}
 
 ---
 
@@ -496,13 +548,19 @@ independent of model quality**:
 
 **Dataset:** {intermediate_metrics['total_examples']} validated examples from golden set
 **Model Tier:** BUDGET (gpt-4o-mini) for all tiers
+**Architecture Tiers:**
+- **Basic (1 feature):** Semantic vector search only
+- **Intermediate (5 features):** Hybrid retrieval + CrossEncoder reranking
+- **Advanced (17 features):** Full agentic with NLI, strategy switching, adaptive loops
+- **Multi-Agent (20 features):** Orchestrator-worker pattern with parallel retrieval
+
 **Metrics:**
 - **F1@{k}:** Harmonic mean of Precision@{k} and Recall@{k} (retrieval quality)
 - **Groundedness:** NLI-based verification (% claims supported by context)
 - **Similarity:** Semantic similarity to ground truth answer (0-100%)
 - **Factual:** Factual accuracy of claims in answer (0-100%)
 - **Complete:** Coverage of key points from ground truth (0-100%)
-- **Retrieval/Generation Attempts:** Retry metrics for Advanced tier only (Basic/Intermediate have no retry features)
+- **Generation Attempts:** Retry metrics for Advanced/Multi-Agent tiers only
 
 **Evaluation:** Offline evaluation using ground truth relevance labels
 
@@ -515,11 +573,23 @@ independent of model quality**:
 
 
 def _get_winner(basic: float, intermediate: float, advanced: float) -> str:
-    """Determine which tier won for a metric."""
+    """Determine which tier won for a metric (3 tiers)."""
     scores = {
         "Basic": basic,
         "Intermediate": intermediate,
         "Advanced": advanced
+    }
+    winner = max(scores, key=scores.get)
+    return f"{winner} ({scores[winner]:.1%})"
+
+
+def _get_winner_4(basic: float, intermediate: float, advanced: float, multi_agent: float) -> str:
+    """Determine which tier won for a metric (4 tiers)."""
+    scores = {
+        "Basic": basic,
+        "Intermediate": intermediate,
+        "Advanced": advanced,
+        "Multi-Agent": multi_agent
     }
     winner = max(scores, key=scores.get)
     return f"{winner} ({scores[winner]:.1%})"
@@ -582,12 +652,12 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     - evaluation/architecture_comparison_report_{dataset_type}_latest.md (convenience copy)
     """
     print("\n" + "="*80)
-    print("3-TIER ARCHITECTURE COMPARISON TEST")
+    print("4-TIER ARCHITECTURE COMPARISON TEST")
     print("="*80)
     current_tier = get_current_tier()
     tier_info = TIER_METADATA[current_tier]
     print(f"Model Tier: {current_tier.value.upper()} ({tier_info['description']})")
-    print("Tiers: Basic (1), Intermediate (5), Advanced (17 features)")
+    print("Tiers: Basic (1), Intermediate (5), Advanced (17), Multi-Agent (20 features)")
     print(f"Dataset: {dataset_type}")
     print(f"Mode: {'Quick (2 examples)' if quick_mode else 'Full'}")
     print("="*80 + "\n")
@@ -621,33 +691,41 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     print("    This avoids re-ingesting PDFs for each tier (saves 40-50% time)")
     shared_retriever = setup_retriever(k_final=k_final)
 
-    # Inject into all three variant modules
+    # Inject into all four variant modules
     basic_module.adaptive_retriever = shared_retriever
     intermediate_module.adaptive_retriever = shared_retriever
     advanced_module.adaptive_retriever = shared_retriever
+    multi_agent_module.adaptive_retriever = shared_retriever
     print(f"[OK] Retriever pre-built and injected into all tiers (k_final={k_final})")
     print(f"{'='*80}\n")
 
     # Run Basic Tier
     print(f"\n{'='*80}")
-    print("[1/3] Running BASIC tier (1 feature)...")
+    print("[1/4] Running BASIC tier (1 feature)...")
     print(f"{'='*80}")
     basic_results = run_tier_on_golden_dataset("basic", basic_rag_graph, dataset, k_final=k_final)
     basic_metrics = calculate_tier_metrics(basic_results)
 
     # Run Intermediate Tier
     print(f"\n{'='*80}")
-    print("[2/3] Running INTERMEDIATE tier (5 features)...")
+    print("[2/4] Running INTERMEDIATE tier (5 features)...")
     print(f"{'='*80}")
     intermediate_results = run_tier_on_golden_dataset("intermediate", intermediate_rag_graph, dataset, k_final=k_final)
     intermediate_metrics = calculate_tier_metrics(intermediate_results)
 
     # Run Advanced Tier
     print(f"\n{'='*80}")
-    print("[3/3] Running ADVANCED tier (17 features)...")
+    print("[3/4] Running ADVANCED tier (17 features)...")
     print(f"{'='*80}")
     advanced_results = run_tier_on_golden_dataset("advanced", advanced_rag_graph, dataset, k_final=k_final)
     advanced_metrics = calculate_tier_metrics(advanced_results)
+
+    # Run Multi-Agent Tier
+    print(f"\n{'='*80}")
+    print("[4/4] Running MULTI-AGENT tier (20 features)...")
+    print(f"{'='*80}")
+    multi_agent_results = run_tier_on_golden_dataset("multi_agent", multi_agent_rag_graph, dataset, k_final=k_final)
+    multi_agent_tier_metrics = calculate_tier_metrics(multi_agent_results)
 
     # Print summary
     k = k_final
@@ -659,6 +737,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
     print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
     print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f}")
+    print(f"{'Multi-Agent':<15} {multi_agent_tier_metrics['avg_f1_at_k']:<8.1%} {multi_agent_tier_metrics['avg_groundedness']:<8.1%} {multi_agent_tier_metrics['avg_semantic_similarity']:<8.1%} {multi_agent_tier_metrics['avg_factual_accuracy']:<8.1%} {multi_agent_tier_metrics['avg_completeness']:<8.1%} {'-':<10} {multi_agent_tier_metrics.get('avg_generation_attempts', 1.0):<10.1f}")
     print("=" * 120 + "\n")
 
     # Save raw results with timestamp
@@ -688,6 +767,10 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
                 "metrics": advanced_metrics,
                 "results": advanced_results,
             },
+            "multi_agent": {
+                "metrics": multi_agent_tier_metrics,
+                "results": multi_agent_results,
+            },
         },
     }
 
@@ -705,8 +788,8 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
 
     # Generate and save report
     report = generate_comparison_report(
-        basic_metrics, intermediate_metrics, advanced_metrics,
-        basic_results, intermediate_results, advanced_results,
+        basic_metrics, intermediate_metrics, advanced_metrics, multi_agent_tier_metrics,
+        basic_results, intermediate_results, advanced_results, multi_agent_results,
         k_final, dataset_type, test_timestamp, current_tier, tier_info
     )
 
@@ -730,7 +813,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='3-Tier Architecture Comparison Evaluation')
+    parser = argparse.ArgumentParser(description='4-Tier Architecture Comparison Evaluation')
     parser.add_argument(
         '--dataset',
         choices=['standard', 'hard'],
@@ -748,9 +831,9 @@ if __name__ == "__main__":
         print(f"[*] Running in quick mode (2 examples from {args.dataset} dataset)")
     else:
         dataset_size = "20 examples" if args.dataset == "standard" else "10 examples"
-        expected_time = "55-65 minutes" if args.dataset == "standard" else "25-35 minutes"
+        expected_time = "70-85 minutes" if args.dataset == "standard" else "35-45 minutes"
         print(f"[*] Running full evaluation on {args.dataset} dataset ({dataset_size})")
         print(f"[*] This will take approximately {expected_time}")
-        print("[*] Use --quick flag for faster testing (~4-5 minutes)")
+        print("[*] Use --quick flag for faster testing (~6-8 minutes)")
 
     test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset)

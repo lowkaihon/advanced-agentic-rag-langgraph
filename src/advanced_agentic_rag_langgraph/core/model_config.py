@@ -47,7 +47,7 @@ class ModelSpec:
 @dataclass
 class TierConfig:
     """
-    Complete tier configuration mapping 12 RAG tasks to model specs.
+    Complete tier configuration mapping 15 RAG tasks to model specs.
 
     Task categories:
     - Sequential (user-facing latency): conversational_rewrite, expansion_decision,
@@ -56,6 +56,7 @@ class TierConfig:
       nli_claim_decomposition, answer_quality_eval
     - Retry paths: query_rewriting, strategy_optimization
     - Offline: ragas_evaluation
+    - Multi-agent: complexity_classification, query_decomposition, multi_agent_merge_reranking
     """
     conversational_rewrite: ModelSpec
     expansion_decision: ModelSpec
@@ -69,6 +70,10 @@ class TierConfig:
     nli_claim_decomposition: ModelSpec
     answer_quality_eval: ModelSpec
     ragas_evaluation: ModelSpec
+    # Multi-agent RAG tasks
+    complexity_classification: ModelSpec
+    query_decomposition: ModelSpec
+    multi_agent_merge_reranking: ModelSpec
 
 
 # ========== BUDGET TIER: ALL GPT-4o-mini ==========
@@ -160,6 +165,28 @@ BUDGET_TIER = TierConfig(
         reasoning_effort=None,
         verbosity="medium",
         few_shot_count=0  # Offline, use cheapest
+    ),
+    # Multi-agent RAG tasks
+    complexity_classification=ModelSpec(
+        name="gpt-4o-mini",
+        temperature=0,  # Deterministic classification
+        reasoning_effort=None,
+        verbosity="medium",
+        few_shot_count=0  # Binary decision, no examples needed
+    ),
+    query_decomposition=ModelSpec(
+        name="gpt-4o-mini",
+        temperature=0,  # Consistent decomposition
+        reasoning_effort=None,
+        verbosity="medium",
+        few_shot_count=2  # Few-shot improves decomposition quality
+    ),
+    multi_agent_merge_reranking=ModelSpec(
+        name="gpt-4o-mini",
+        temperature=0,  # Deterministic selection
+        reasoning_effort=None,
+        verbosity="medium",
+        few_shot_count=0  # Coverage selection is well-defined
     ),
 )
 
@@ -257,6 +284,28 @@ BALANCED_TIER = TierConfig(
         verbosity="medium",
         few_shot_count=0  # Offline, use cheaper
     ),
+    # Multi-agent RAG tasks
+    complexity_classification=ModelSpec(
+        name="gpt-4o-mini",
+        temperature=0,  # Deterministic classification
+        reasoning_effort=None,
+        verbosity="medium",
+        few_shot_count=0  # Binary decision
+    ),
+    query_decomposition=ModelSpec(
+        name="gpt-4o-mini",
+        temperature=0,  # Consistent decomposition
+        reasoning_effort=None,
+        verbosity="medium",
+        few_shot_count=2  # Keep latency-sensitive
+    ),
+    multi_agent_merge_reranking=ModelSpec(
+        name="gpt-5-mini",
+        temperature=0,  # Deterministic selection
+        reasoning_effort="medium",
+        verbosity="low",
+        few_shot_count=0  # GPT-5 doesn't need examples
+    ),
 )
 
 
@@ -349,6 +398,28 @@ PREMIUM_TIER = TierConfig(
         reasoning_effort=None,
         verbosity="low",
         few_shot_count=0  # Offline, cheaper than GPT-5.1
+    ),
+    # Multi-agent RAG tasks
+    complexity_classification=ModelSpec(
+        name="gpt-5-nano",
+        temperature=0,  # Deterministic classification
+        reasoning_effort="minimal",
+        verbosity="low",
+        few_shot_count=0  # Lightweight binary decision
+    ),
+    query_decomposition=ModelSpec(
+        name="gpt-5-mini",
+        temperature=0,  # Consistent decomposition
+        reasoning_effort="low",
+        verbosity="low",
+        few_shot_count=0  # GPT-5 doesn't need examples
+    ),
+    multi_agent_merge_reranking=ModelSpec(
+        name="gpt-5.1",
+        temperature=0,  # Deterministic selection
+        reasoning_effort="medium",
+        verbosity="low",
+        few_shot_count=0  # GPT-5 excels at coverage reasoning
     ),
 )
 

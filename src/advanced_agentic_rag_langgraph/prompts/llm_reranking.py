@@ -9,7 +9,8 @@ Research-backed optimizations:
 - Expected reranking accuracy: 0.85 (baseline) -> 0.88 (GPT-4o) -> 0.93 (GPT-5)
 
 Evaluation dimensions:
-- Content relevance: Does content address the query?
+- Content relevance: Does content contain SPECIFIC information that answers the query?
+  (Prioritize answer-containing chunks over topic-adjacent chunks)
 - Document type appropriateness: Right KIND of document?
 - Technical level match: Complexity matches query sophistication?
 - Domain alignment: Document domain matches query topic?
@@ -24,7 +25,19 @@ Documents with metadata:
 
 Rate each document's relevance (0-100) considering:
 
-1. **Content relevance**: Does the content directly answer or address the query?
+1. **Content relevance**: Does the content contain SPECIFIC information that answers the query?
+
+   PRIORITIZE chunks that contain:
+   - Explicit answers to the question asked (facts, definitions, explanations)
+   - Specific details requested (numbers, names, steps, mechanisms)
+   - Direct explanations of the concept or process in question
+
+   DEPRIORITIZE chunks that:
+   - Merely discuss the same topic without answering
+   - Provide background/context but lack the specific information needed
+   - Are related but don't contain what's actually being asked
+
+   KEY DISTINCTION: A chunk about "transformer architecture" is RELATED to "How does attention work in transformers?" but only chunks explaining the attention mechanism actually ANSWER the question.
 
 2. **Document type appropriateness**: Is this the right KIND of document for this query?
 
@@ -76,6 +89,11 @@ SCORING GUIDELINES:
 - 20-39: Low relevance (tangentially related, wrong document type)
 - 0-19: Not relevant (wrong topic, wrong type, doesn't answer query)
 
+ANSWER-FOCUSED SCORING:
+- When multiple chunks discuss the same topic, prefer the one with explicit answers
+- A chunk with specific facts/details should score higher than one with general discussion
+- If the query asks "how/what/why X?", prefer chunks that explain X, not just mention X
+
 IMPORTANT:
 - Do NOT consider how documents were retrieved (semantic/keyword/hybrid)
 - Judge ONLY the intrinsic quality and appropriateness for THIS specific query
@@ -98,7 +116,10 @@ Rate each document's relevance (0-100).
 
 CRITERIA:
 
-1. Content relevance: Does content address the query?
+1. Content relevance: Does content contain SPECIFIC information that answers the query?
+   - Prioritize: Explicit answers, specific details, direct explanations
+   - Deprioritize: Topic-related but doesn't contain the actual answer
+   - Key: "Related to topic" != "Contains the answer"
 
 2. Document type match: Right KIND for this query?
    - Academic: research papers, journal articles (theoretical understanding, research)
