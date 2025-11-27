@@ -122,10 +122,10 @@ uv run python tests/integration/test_adaptive_retrieval.py
 # Comprehensive evaluation (~10-15 min)
 uv run python tests/integration/test_golden_dataset_evaluation.py
 
-# Architecture comparison test (~5-10 min, portfolio showcase)
+# Architecture comparison test (~70-85 min, portfolio showcase)
 uv run python tests/integration/test_architecture_comparison.py
 ```
-See `tests/CLAUDE.md` for all 9 tests, selection matrix, and detailed documentation.
+See `tests/CLAUDE.md` for all 11 tests, selection matrix, and detailed documentation.
 
 ### Development
 ```bash

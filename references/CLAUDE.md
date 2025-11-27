@@ -694,6 +694,90 @@ This directory contains compiled research documents from Perplexity.ai and other
 
 ---
 
+### 19. LLM-Based Retrieval Quality Evaluation
+
+**File:** `Best Practices for LLM-Based Retrieval Quality Evaluation in RAG Systems.md`
+
+**Purpose:** Threshold calibration, false positive prevention, and the relevance-sufficiency gap (semantic relevance != information sufficiency)
+
+**When to Use:**
+- Implementing sufficiency detection beyond relevance scoring
+- Calibrating retrieval thresholds using task-aligned evaluation (eRAG)
+- Preventing false positives from topically-related but information-insufficient documents
+
+**Key Sections:**
+- eRAG framework (task-aligned evaluation, Kendall's tau = 0.467-0.639 vs 0.007-0.181 for human labels)
+- Sufficient context detection (FLAMe autorater, 93% accuracy)
+- Multi-signal confidence calibration (SteeringConf, temperature scaling)
+- Specificity verification and cross-document consistency checking
+
+**Implementation Status:**
+- [IMPLEMENTED] Retrieval quality scoring in `src/orchestration/nodes.py:grade_documents()`
+- [PARTIAL] Sufficiency checking (current system checks relevance, not explicit sufficiency)
+- [NOT IMPLEMENTED] eRAG task-aligned evaluation, multi-signal confidence calibration
+
+**Related Code:**
+- `src/orchestration/nodes.py` - grade_documents(), assess_answer()
+
+---
+
+## Multi-Agent Architecture
+
+### 20. Merging and Ranking in Multi-Agent RAG
+
+**File:** `Best Practices for Merging and Ranking Documents in Multi-Agent RAG Systems.md`
+
+**Purpose:** Strategies for combining outputs from parallel retrieval agents
+
+**When to Use:**
+- Implementing multi-agent parallel retrieval with result fusion
+- Choosing between RRF, consensus, diversity-aware, and coverage-based ranking
+- Designing production multi-agent pipelines
+
+**Key Sections:**
+- RRF fusion (robust baseline, widely used)
+- Consensus boosting and filtering across agents
+- Diversity-aware ranking (MMR, inter-passage dissimilarity)
+- Coverage-based set selection (SetR, PureCover)
+- LLM-based reranking comparison (pointwise vs pairwise vs listwise)
+
+**Implementation Status:**
+- [IMPLEMENTED] RRF fusion in `src/orchestration/nodes.py:retrieve_with_expansion_node()`
+- [IMPLEMENTED] LLM-based reranking in `src/retrieval/retrievers.py`
+- [FUTURE] Multi-agent parallel retrieval, consensus boosting, diversity-aware ranking
+
+**Related Code:**
+- `src/orchestration/nodes.py` - RRF implementation
+- `src/retrieval/retrievers.py` - LLM reranking
+
+---
+
+### 21. Multi-Agent RAG Research
+
+**File:** `Multi-Agent RAG.md`
+
+**Purpose:** Research validation for multi-agent RAG patterns and cost-benefit analysis
+
+**When to Use:**
+- Designing multi-agent RAG architecture (query decomposition + parallel agents)
+- Evaluating cost-benefit of multi-agent vs single-hop approaches
+- Planning hybrid architecture (simple queries -> single-hop, complex -> multi-agent)
+
+**Key Sections:**
+- Query decomposition + parallel retrieval patterns (POQD, NVIDIA Blueprint, Anthropic)
+- Performance benefits: +15-40% accuracy on complex queries, -10-30% latency vs sequential
+- Cost-benefit: 4-10x better cost-efficiency than context-stuffing for research queries
+- Hybrid integration with existing single-hop architecture
+
+**Implementation Status:**
+- [NOT IMPLEMENTED] Multi-agent architecture (current system is single-hop with self-correction)
+- [ARCHITECTURAL REFERENCE] Blueprint for future multi-agent variant
+
+**Related Code:**
+- Future: Multi-agent graph variant
+
+---
+
 ## Quick Reference Guide
 
 **Task** → **Recommended Document**
@@ -750,6 +834,11 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Implement early strategy switching | When Strategy Switching is Actually Beneficial (Document 18) | `src/orchestration/graph.py:route_after_retrieval()` |
 | Calibrate 60% quality threshold | When Strategy Switching is Actually Beneficial (Document 18) | `src/orchestration/nodes.py:grade_documents()` |
 | Evaluate query expansion vs. strategy switch | When Strategy Switching is Actually Beneficial (Document 18) | `src/retrieval/query_optimization.py` |
+| Implement sufficiency detection | LLM-Based Retrieval Quality Evaluation (Document 19) | `src/orchestration/nodes.py:grade_documents()` |
+| Calibrate retrieval thresholds (eRAG) | LLM-Based Retrieval Quality Evaluation (Document 19) | `src/orchestration/nodes.py` |
+| Merge multi-agent outputs | Merging and Ranking in Multi-Agent RAG (Document 20) | `src/orchestration/nodes.py` |
+| Design multi-agent RAG architecture | Multi-Agent RAG Research (Document 21) | Future: Multi-agent graph variant |
+| Query decomposition patterns | Multi-Agent RAG Research (Document 21) | Future: Multi-agent graph variant |
 
 ---
 
@@ -778,5 +867,5 @@ See `../CLAUDE.md` for comprehensive links to official documentation
 
 ---
 
-*Last Updated: 2025-11-26 (Added: 4 RAG architecture documents -> 18 total documents)*
+*Last Updated: 2025-11-27 (Added: 3 documents for evaluation calibration and multi-agent architecture -> 21 total documents)*
 *Note: This guide uses ASCII-only characters per project guidelines (no emojis/unicode)*

@@ -542,6 +542,10 @@ independent of model quality**:
 
 {_format_most_improved(advanced_results, multi_agent_results, n=5)}
 
+### Question-by-Question Comparison
+
+{_format_question_by_question_comparison(basic_results, intermediate_results, advanced_results, multi_agent_results, k=k)}
+
 ---
 
 ## Methodology
@@ -633,6 +637,74 @@ def _format_most_improved(intermediate_results: List[Dict], advanced_results: Li
         )
 
     return "\n".join(lines) if lines else "*No improvements found*"
+
+
+def _format_question_by_question_comparison(
+    basic_results: List[Dict],
+    intermediate_results: List[Dict],
+    advanced_results: List[Dict],
+    multi_agent_results: List[Dict],
+    k: int = 4
+) -> str:
+    """
+    Format question-by-question comparison table across all 4 tiers.
+
+    Args:
+        basic_results: Per-example results from Basic tier
+        intermediate_results: Per-example results from Intermediate tier
+        advanced_results: Per-example results from Advanced tier
+        multi_agent_results: Per-example results from Multi-Agent tier
+        k: K value for F1@K display
+
+    Returns:
+        Markdown formatted table string
+    """
+    lines = []
+    lines.append(f"| # | Question | Basic | Intermediate | Advanced | Multi-Agent |")
+    lines.append("|---|----------|-------|--------------|----------|-------------|")
+
+    for i, (basic_r, inter_r, adv_r, multi_r) in enumerate(
+        zip(basic_results, intermediate_results, advanced_results, multi_agent_results), 1
+    ):
+        # Get question ID (truncate if too long)
+        question_id = basic_r.get("example_id", f"Q{i}")
+        if len(question_id) > 35:
+            question_id = question_id[:32] + "..."
+
+        # Extract F1 scores for winner determination
+        f1_scores = {
+            "basic": basic_r.get("f1_at_k", 0) if "error" not in basic_r else -1,
+            "inter": inter_r.get("f1_at_k", 0) if "error" not in inter_r else -1,
+            "adv": adv_r.get("f1_at_k", 0) if "error" not in adv_r else -1,
+            "multi": multi_r.get("f1_at_k", 0) if "error" not in multi_r else -1,
+        }
+        max_f1 = max(f1_scores.values())
+
+        def format_cell(result: Dict, tier_key: str) -> str:
+            """Format a single cell as F1/Sim/Fact with bold winner."""
+            if "error" in result:
+                return "-"
+            f1 = result.get("f1_at_k", 0) * 100
+            sim = result.get("semantic_similarity", 0) * 100
+            fact = result.get("factual_accuracy", 0) * 100
+
+            # Bold the F1 if it's the winner (or tied for winner)
+            is_winner = f1_scores[tier_key] == max_f1 and max_f1 > 0
+            f1_str = f"**{f1:.0f}**" if is_winner else f"{f1:.0f}"
+
+            return f"{f1_str}/{sim:.0f}/{fact:.0f}"
+
+        basic_cell = format_cell(basic_r, "basic")
+        inter_cell = format_cell(inter_r, "inter")
+        adv_cell = format_cell(adv_r, "adv")
+        multi_cell = format_cell(multi_r, "multi")
+
+        lines.append(f"| {i} | {question_id} | {basic_cell} | {inter_cell} | {adv_cell} | {multi_cell} |")
+
+    lines.append("")
+    lines.append(f"*F1/Sim/Fact = F1@{k} / Semantic Similarity / Factual Accuracy (%). Bold = best F1 for row.*")
+
+    return "\n".join(lines)
 
 
 # ========== MAIN TEST ==========

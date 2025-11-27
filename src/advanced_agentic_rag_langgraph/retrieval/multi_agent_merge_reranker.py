@@ -91,7 +91,7 @@ class MultiAgentMergeReRanker:
             elif "\\" in source:
                 source = source.split("\\")[-1]
 
-            content_preview = doc.page_content[:800]
+            content_preview = doc.page_content[:1000]
             doc_list.append(f"{doc_id}: [Source: {source}]\n{content_preview}")
 
         # Format sub-queries

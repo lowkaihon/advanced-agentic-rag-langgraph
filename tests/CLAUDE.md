@@ -106,7 +106,7 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 | After NLI detector changes | test_nli_hallucination_detector.py | 20-30s | NLI-based hallucination detection validation |
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
-| Portfolio architecture showcase | test_architecture_comparison.py | 55-65min | 3-tier A/B test (basic/intermediate/advanced) with F1@K, Groundedness, Confidence |
+| Portfolio architecture showcase | test_architecture_comparison.py | 70-85min | 4-tier A/B test (basic/intermediate/advanced/multi-agent) with F1@K, Groundedness, Similarity |
 | Multi-agent RAG evaluation | test_multi_agent_evaluation.py | 15-20min | Orchestrator-worker pattern with parallel retrieval, cross-agent fusion |
 
 ---
@@ -202,13 +202,13 @@ Quick verification that RAGAS evaluation executes correctly.
 
 ---
 
-### 10. test_architecture_comparison.py (~55-65min)
-3-tier A/B test comparing Basic (1), Intermediate (5), Advanced (17 features).
+### 10. test_architecture_comparison.py (~70-85min)
+4-tier A/B test comparing Basic (1), Intermediate (5), Advanced (17), Multi-Agent (20 features).
 
-**Tests:** F1@K, Groundedness, Confidence across tiers using BUDGET models
+**Tests:** F1@K, Groundedness, Semantic Similarity, Factual Accuracy across tiers using BUDGET models
 **Run after:** Architecture changes, before portfolio demos
 **Command:** `uv run python tests/integration/test_architecture_comparison.py`
-**Options:** `--dataset standard|hard`, `--quick` (2 examples, ~5min)
+**Options:** `--dataset standard|hard`, `--quick` (2 examples, ~6-8min)
 **Output:** `evaluation/architecture_comparison_report_{dataset}_latest.md`
 
 ---

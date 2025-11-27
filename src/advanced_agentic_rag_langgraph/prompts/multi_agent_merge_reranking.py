@@ -26,32 +26,32 @@ CANDIDATE DOCUMENTS (from all retrieval workers):
 {doc_list}
 
 YOUR TASK:
-Select exactly {k} documents that TOGETHER best cover ALL aspects of the original question.
+Select exactly {k} documents that TOGETHER provide the best information to answer the original question.
 
-SELECTION CRITERIA:
-1. **Coverage**: Selected docs should address different sub-queries/aspects
-2. **Relevance**: Each doc should contain SPECIFIC information that answers part of the question
-   - Prioritize: Chunks with explicit answers, specific details, direct explanations
-   - Deprioritize: Chunks that discuss the topic but don't contain the actual answer
-   - Key distinction: "Related to the topic" != "Contains the answer"
-3. **Non-redundancy**: Avoid selecting docs that cover the same information
-4. **Complementarity**: Prefer docs that fill gaps left by others
+SELECTION CRITERIA (in priority order):
+
+1. **Answer Content** (MOST IMPORTANT): Prioritize docs containing SPECIFIC factual information that DIRECTLY answers parts of the question:
+   - Look for: definitions, methods, equations, experimental results, direct comparisons
+   - "Contains the answer" is far more valuable than "Related to the topic"
+   - A chunk explaining HOW something works >> a chunk that merely mentions it
+
+2. **Depth over Breadth**: Multiple chunks from the SAME source with complementary answer details are BETTER than diverse but superficial coverage. Complex questions often need consecutive/nearby chunks from one source.
+
+3. **Evidence Quality**: Prefer chunks with concrete details over general topic discussions:
+   - GOOD: Specific mechanisms, parameters, step-by-step processes, quantitative results
+   - BAD: High-level overviews, vague references, "achieved good results" without specifics
+
+4. **Coverage** (secondary): AFTER satisfying above criteria, ensure different aspects of the question are addressed. But NEVER sacrifice answer content for coverage diversity.
 
 IMPORTANT:
-- You are selecting a SET, not ranking individuals
-- A doc that covers an unaddressed aspect is more valuable than another doc on an already-covered aspect
-- The goal is to maximize information coverage for answer generation
-
-SELECTION STRATEGY:
-1. Identify the key aspects/facets of the original question
-2. For each aspect, identify which documents address it
-3. Select documents to maximize coverage across ALL aspects
-4. Prefer documents that uniquely cover an aspect over redundant ones
+- Sub-query coverage is a SECONDARY goal - prioritize answer content first
+- Do NOT penalize multiple chunks from the same source if they contain different answer details
+- The goal is to maximize information needed for answer generation, not topic diversity
 
 Return:
 - selected_document_ids: List of exactly {k} document IDs (e.g., ["doc_0", "doc_3", "doc_7"])
-- coverage_analysis: Brief explanation of how selected docs cover the question's aspects
-- per_doc_reasoning: For each selected doc, which aspect/sub-query it primarily addresses"""
+- coverage_analysis: Brief explanation of how selected docs provide answer content
+- per_doc_reasoning: For each selected doc, what specific answer content it provides"""
 
 
 GPT5_PROMPT = """Select documents for answering a complex question.
@@ -64,18 +64,17 @@ SUB-QUERIES (decomposed for parallel retrieval):
 CANDIDATES:
 {doc_list}
 
-TASK: Select exactly {k} documents that TOGETHER best cover ALL aspects.
+TASK: Select exactly {k} documents with the best ANSWER CONTENT.
 
-CRITERIA:
-1. Coverage: Docs should address different sub-queries/aspects
-2. Relevance: Each doc contains SPECIFIC information that answers part of the question
-   - "Related to topic" != "Contains the answer"
-3. Non-redundancy: Avoid duplicate information
-4. Complementarity: Fill gaps left by other selections
+CRITERIA (priority order):
+1. **Answer Content**: Docs with SPECIFIC factual info that directly answers parts of the question (definitions, methods, results, comparisons)
+2. **Depth over Breadth**: Multiple chunks from same source with complementary details >> diverse superficial coverage
+3. **Evidence Quality**: Concrete details >> general topic discussion
+4. **Coverage**: Secondary - ensure aspects covered, but never sacrifice answer content for diversity
 
-KEY: Select a SET for coverage, not rank individuals.
+KEY: "Contains the answer" >> "Related to topic". Multiple chunks from same source is OK if they have different answer details.
 
 Return:
 - selected_document_ids: Exactly {k} document IDs (e.g., ["doc_0", "doc_3"])
-- coverage_analysis: How selected docs cover the question's aspects
-- per_doc_reasoning: Per doc, which aspect it addresses"""
+- coverage_analysis: How selected docs provide answer content
+- per_doc_reasoning: Per doc, what specific answer content it provides"""

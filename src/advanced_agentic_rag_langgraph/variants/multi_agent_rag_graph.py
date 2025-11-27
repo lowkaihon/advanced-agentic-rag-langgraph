@@ -1,31 +1,52 @@
 """
-Multi-Agent RAG Graph - Orchestrator-Worker Pattern.
+Multi-Agent RAG Graph (20 Features) - Orchestrator-Worker Pattern.
 
-For complex queries requiring multi-faceted retrieval:
-- Decomposes query into 2-4 sub-queries
-- Parallel retrieval workers (full pipeline with retry)
-- RRF fusion across worker results
-- Single answer generation from merged context
+For complex queries requiring multi-faceted retrieval.
+Decomposes query into sub-queries, parallel worker retrieval, RRF fusion.
+
+Features (20 = +3 over Advanced):
+
+Inherited from Advanced (17):
+1. Semantic vector search
+2. Query expansion (multi-variant)
+3. Hybrid retrieval (semantic + BM25)
+4. RRF fusion
+5. CrossEncoder reranking
+6. Conversational query rewriting
+7. LLM-based strategy selection
+8. Two-stage reranking (CrossEncoder -> LLM-as-judge)
+9. Retrieval quality gates (8 issue types)
+10. Answer quality evaluation (8 issue types)
+11. Adaptive thresholds (65%/50%)
+12. Query rewriting loop (issue-specific feedback)
+13. Early strategy switching (off_topic/wrong_domain)
+14. Generation retry loop (adaptive temperature)
+15. NLI-based hallucination detection
+16. Refusal detection
+17. Conversation context preservation
+
+Multi-Agent Specific (+3):
+18. Complexity classification (simple vs complex routing)
+19. Query decomposition (2-4 sub-queries)
+20. Parallel worker retrieval with RRF merge + LLM coverage selection
+
+Graph Structure: 7 nodes, orchestrator-worker pattern
+- conversational_rewrite_node
+- classify_complexity_node (orchestrator decision)
+- decompose_query_node (orchestrator)
+- retrieval_worker (parallel workers via Send API)
+- merge_results_node (synthesizer with RRF + LLM coverage)
+- answer_generation_node
+- evaluate_answer_node
+
+Routing Functions:
+- assign_workers: Fan-out to parallel retrieval workers
+- route_after_evaluation: Generation retry or end
 
 Pattern: Orchestrator-Worker (LangGraph docs)
 https://docs.langchain.com/oss/python/langgraph/workflows-agents
 
-Architecture:
-    START -> classify_complexity -> decompose_query -> [assign_workers via Send]
-                                                            |
-                                               +------------+------------+
-                                               |            |            |
-                                        retrieval_worker (parallel, N instances)
-                                               |            |            |
-                                               +------------+------------+
-                                                            |
-                                                     merge_results
-                                                            |
-                                                   answer_generation
-                                                            |
-                                                    evaluate_answer
-                                                            |
-                                                           END
+All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
 """
 
 from typing import TypedDict, Optional, Literal, Annotated

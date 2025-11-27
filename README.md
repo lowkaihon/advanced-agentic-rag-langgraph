@@ -354,13 +354,14 @@ See `evaluation/tier_comparison_report.md` for detailed results.
 
 ## Architecture Tier Comparison
 
-Showcase the value of advanced RAG architecture through 3-tier A/B testing. All tiers use the same **BUDGET model tier** (gpt-4o-mini) to isolate architectural improvements from model quality differences.
+Showcase the value of advanced RAG architecture through 4-tier A/B testing. All tiers use the same **BUDGET model tier** (gpt-4o-mini) to isolate architectural improvements from model quality differences.
 
 | Tier | Features | Graph Structure | Description |
 |------|----------|-----------------|-------------|
 | **Basic** | 1 feature | Simplest (2 nodes, no routing) | Semantic vector search, top-k chunks, no reranking |
 | **Intermediate** | 5 features (+4) | Linear (4 nodes, no routing) | + Query expansion, hybrid retrieval, CrossEncoder reranking, RRF fusion |
 | **Advanced** | 17 features (+12) | Full agentic (7 nodes, 2 routers) | + Strategy selection, two-stage reranking, NLI hallucination detection, quality gates, adaptive loops |
+| **Multi-Agent** | 20 features (+3) | Orchestrator-worker (7 nodes, parallel) | + Query decomposition, parallel retrieval workers, cross-agent RRF fusion |
 
 ### Key Differentiators
 
@@ -384,10 +385,15 @@ Showcase the value of advanced RAG architecture through 3-tier A/B testing. All 
 - Refusal detection
 - Conversation context preservation (multi-turn)
 
+**Advanced -> Multi-Agent (+3 features):**
+- Complexity classification (simple vs complex routing)
+- Query decomposition (2-4 sub-queries)
+- Parallel worker retrieval with cross-agent RRF merge + LLM coverage selection
+
 ### Run Comparison Test
 
 ```bash
-# Architecture comparison test (~5-10 min, portfolio showcase)
+# Architecture comparison test (~70-85 min, portfolio showcase)
 uv run python tests/integration/test_architecture_comparison.py
 ```
 
@@ -402,7 +408,8 @@ uv run python tests/integration/test_architecture_comparison.py
 **Expected Progression:**
 - Basic -> Intermediate: +10-15% improvement (hybrid search, query expansion, reranking)
 - Intermediate -> Advanced: +30-50% improvement (NLI, strategy switching, adaptive loops, quality gates)
-- Basic -> Advanced: +45-75% overall improvement
+- Advanced -> Multi-Agent: +5-15% improvement (query decomposition, parallel retrieval, cross-agent fusion)
+- Basic -> Multi-Agent: +50-90% overall improvement
 
 ### Example Usage
 
