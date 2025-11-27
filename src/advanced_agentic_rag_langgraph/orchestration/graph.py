@@ -1,6 +1,7 @@
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 from advanced_agentic_rag_langgraph.core import AdvancedRAGState
+from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
 from advanced_agentic_rag_langgraph.orchestration.nodes import (
     conversational_rewrite_node,
     query_expansion_node,
@@ -145,7 +146,8 @@ def build_advanced_rag_graph():
         }
     )
 
-    checkpointer = MemorySaver()
+    # Skip checkpointer when running under LangGraph API (provides its own persistence)
+    checkpointer = None if is_langgraph_api_environment() else MemorySaver()
     graph = builder.compile(checkpointer=checkpointer)
 
     return graph

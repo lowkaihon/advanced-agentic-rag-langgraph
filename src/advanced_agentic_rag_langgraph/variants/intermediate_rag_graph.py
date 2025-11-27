@@ -29,6 +29,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
 from advanced_agentic_rag_langgraph.retrieval import expand_query
 from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import CrossEncoderReRanker
 
@@ -252,7 +253,8 @@ def build_intermediate_rag_graph():
     builder.add_edge("rerank", "generate")
     builder.add_edge("generate", END)
 
-    checkpointer = MemorySaver()
+    # Skip checkpointer when running under LangGraph API (provides its own persistence)
+    checkpointer = None if is_langgraph_api_environment() else MemorySaver()
     return builder.compile(checkpointer=checkpointer)
 
 

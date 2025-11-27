@@ -1,0 +1,14 @@
+{
+    "dockerfile_lines": [],
+    "graphs": {
+      "basic_rag_graph": "./src/advanced_agentic_rag_langgraph/variants/basic_rag_graph.py:basic_rag_graph",
+      "intermediate_rag_graph": "./src/advanced_agentic_rag_langgraph/variants/intermediate_rag_graph.py:intermediate_rag_graph",
+      "advanced_rag_graph": "./src/advanced_agentic_rag_langgraph/variants/advanced_rag_graph.py:advanced_rag_graph",
+      "multi_agent_rag_graph": "./src/advanced_agentic_rag_langgraph/variants/multi_agent_rag_graph.py:multi_agent_rag_graph"
+    },
+    "python_version": "3.11",
+    "env": ".env",
+    "dependencies": [
+      "."
+    ]
+  }

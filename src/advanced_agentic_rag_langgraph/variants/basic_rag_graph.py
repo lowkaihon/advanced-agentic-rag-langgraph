@@ -26,6 +26,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from advanced_agentic_rag_langgraph.core import setup_retriever
+from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 
@@ -151,7 +152,8 @@ def build_basic_rag_graph():
     builder.add_edge("retrieve", "generate")
     builder.add_edge("generate", END)
 
-    checkpointer = MemorySaver()
+    # Skip checkpointer when running under LangGraph API (provides its own persistence)
+    checkpointer = None if is_langgraph_api_environment() else MemorySaver()
     return builder.compile(checkpointer=checkpointer)
 
 

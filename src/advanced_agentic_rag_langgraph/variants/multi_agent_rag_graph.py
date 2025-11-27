@@ -34,7 +34,7 @@ Graph Structure: 7 nodes, orchestrator-worker pattern
 - conversational_rewrite_node
 - classify_complexity_node (orchestrator decision)
 - decompose_query_node (orchestrator)
-- retrieval_worker (parallel workers via Send API)
+- retrieval_subagent (parallel workers via Send API)
 - merge_results_node (synthesizer with RRF + LLM coverage)
 - answer_generation_node
 - evaluate_answer_node
@@ -49,7 +49,7 @@ https://docs.langchain.com/oss/python/langgraph/workflows-agents
 All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
 """
 
-from typing import TypedDict, Optional, Literal, Annotated
+from typing import TypedDict, Optional, Literal, Annotated, Union
 import operator
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -59,6 +59,7 @@ from langgraph.types import Send
 
 from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
 from advanced_agentic_rag_langgraph.retrieval import expand_query, rewrite_query
 from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
 from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
@@ -154,9 +155,6 @@ class RetrievalSubgraphState(TypedDict):
     retrieval_quality_score: Optional[float]
     retrieval_quality_issues: Optional[list[str]]
     retrieval_improvement_suggestion: Optional[str]
-
-    # Output
-    final_docs: Optional[list]
 
 
 # ========== STRUCTURED OUTPUT SCHEMAS ==========
@@ -316,6 +314,14 @@ Return is_complex=True if decomposition would improve retrieval coverage."""
     }
 
 
+def route_after_complexity(state: MultiAgentRAGState) -> Union[Literal["decompose_query"], list[Send]]:
+    """Route based on complexity: complex -> decompose, simple -> direct to workers."""
+    if state.get("is_complex_query", True):
+        return "decompose_query"
+    # Simple query: skip decomposition, fan out directly to single worker
+    return assign_workers(state)
+
+
 # ========== QUERY DECOMPOSITION (ORCHESTRATOR) ==========
 
 def decompose_query_node(state: MultiAgentRAGState) -> dict:
@@ -390,8 +396,9 @@ def assign_workers(state: MultiAgentRAGState) -> list[Send]:
 
     Returns list[Send] for parallel execution via LangGraph Send API.
     Each worker receives its sub-query and corpus stats.
+    Falls back to baseline_query for simple queries that skip decomposition.
     """
-    sub_queries = state.get("sub_queries", [])
+    sub_queries = state.get("sub_queries") or [state.get("baseline_query", state.get("user_question", ""))]
     corpus_stats = state.get("corpus_stats", {})
 
     print(f"\n{'='*60}")
@@ -400,7 +407,7 @@ def assign_workers(state: MultiAgentRAGState) -> list[Send]:
     print(f"{'='*60}\n")
 
     return [
-        Send("retrieval_worker", {
+        Send("retrieval_subagent", {
             "sub_query": sq,
             "corpus_stats": corpus_stats,
             "worker_index": i,
@@ -415,9 +422,9 @@ def _build_retrieval_subgraph():
     """
     Build isolated retrieval subgraph with self-correction loop.
 
-    Flow: decide_strategy -> query_expansion -> retrieve -> [quality check]
+    Flow: decide_strategy -> query_expansion -> retrieve_with_expansion -> [quality check]
                                                                |
-                                            [>= 0.6 OR attempts >= 2] -> finalize
+                                            [>= 0.6 OR attempts >= 2] -> END
                                             [< 0.6 AND attempts < 2] -> rewrite -> query_expansion
     """
     builder = StateGraph(RetrievalSubgraphState)
@@ -425,38 +432,36 @@ def _build_retrieval_subgraph():
     # Nodes
     builder.add_node("decide_strategy", _subgraph_decide_strategy_node)
     builder.add_node("query_expansion", _subgraph_query_expansion_node)
-    builder.add_node("retrieve", _subgraph_retrieve_node)
+    builder.add_node("retrieve_with_expansion", _subgraph_retrieve_node)
     builder.add_node("rewrite_and_refine", _subgraph_rewrite_node)
-    builder.add_node("finalize", _subgraph_finalize_node)
 
     # Flow
     builder.add_edge(START, "decide_strategy")
     builder.add_edge("decide_strategy", "query_expansion")
-    builder.add_edge("query_expansion", "retrieve")
+    builder.add_edge("query_expansion", "retrieve_with_expansion")
 
     builder.add_conditional_edges(
-        "retrieve",
+        "retrieve_with_expansion",
         _subgraph_route_after_retrieval,
         {
-            "finalize": "finalize",
+            END: END,
             "rewrite_and_refine": "rewrite_and_refine",
         }
     )
 
     builder.add_edge("rewrite_and_refine", "query_expansion")
-    builder.add_edge("finalize", END)
 
     return builder.compile()
 
 
-def _subgraph_route_after_retrieval(state: RetrievalSubgraphState) -> Literal["finalize", "rewrite_and_refine"]:
+def _subgraph_route_after_retrieval(state: RetrievalSubgraphState) -> str:
     """Pure router for subgraph retrieval quality check."""
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
 
     # Max 2 attempts (aligned with main graph)
     if quality >= 0.6 or attempts >= 2:
-        return "finalize"
+        return END
     return "rewrite_and_refine"
 
 
@@ -592,20 +597,13 @@ Issues: {', '.join(issues) if issues else 'None'}"""
     }
 
 
-def _subgraph_finalize_node(state: RetrievalSubgraphState) -> dict:
-    """Package final documents for return to parent."""
-    return {
-        "final_docs": state.get("retrieved_docs", []),
-    }
-
-
 # Build subgraph once
 retrieval_subgraph = _build_retrieval_subgraph()
 
 
 # ========== RETRIEVAL WORKER NODE ==========
 
-def retrieval_worker(state: WorkerState) -> dict:
+def retrieval_subagent(state: WorkerState) -> dict:
     """
     Worker that executes full retrieval pipeline for a sub-query.
 
@@ -629,7 +627,7 @@ def retrieval_worker(state: WorkerState) -> dict:
             "retrieval_attempts": 0,
         })
 
-        docs = result.get("final_docs", [])
+        docs = result.get("retrieved_docs", [])
         quality = result.get("retrieval_quality_score", 0)
 
         print(f"Worker {worker_index} complete: {len(docs)} docs, quality: {quality:.0%}")
@@ -1010,7 +1008,7 @@ def build_multi_agent_rag_graph():
     builder.add_node("conversational_rewrite", conversational_rewrite_node)
     builder.add_node("classify_complexity", classify_complexity_node)
     builder.add_node("decompose_query", decompose_query_node)
-    builder.add_node("retrieval_worker", retrieval_worker)
+    builder.add_node("retrieval_subagent", retrieval_subagent)
     builder.add_node("merge_results", merge_results_node)
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("evaluate_answer", evaluate_answer_node)
@@ -1018,17 +1016,26 @@ def build_multi_agent_rag_graph():
     # ========== FLOW ==========
     builder.add_edge(START, "conversational_rewrite")
     builder.add_edge("conversational_rewrite", "classify_complexity")
-    builder.add_edge("classify_complexity", "decompose_query")
+
+    # Complexity routing: complex -> decompose, simple -> direct to workers
+    builder.add_conditional_edges(
+        "classify_complexity",
+        route_after_complexity,
+        {
+            "decompose_query": "decompose_query",
+            "retrieval_subagent": "retrieval_subagent",
+        }
+    )
 
     # Orchestrator -> Workers (parallel via Send)
     builder.add_conditional_edges(
         "decompose_query",
         assign_workers,
-        ["retrieval_worker"]
+        ["retrieval_subagent"]
     )
 
     # Workers -> Synthesizer
-    builder.add_edge("retrieval_worker", "merge_results")
+    builder.add_edge("retrieval_subagent", "merge_results")
 
     # Synthesizer -> Answer Generation
     builder.add_edge("merge_results", "answer_generation")
@@ -1046,7 +1053,8 @@ def build_multi_agent_rag_graph():
         }
     )
 
-    checkpointer = MemorySaver()
+    # Skip checkpointer when running under LangGraph API (provides its own persistence)
+    checkpointer = None if is_langgraph_api_environment() else MemorySaver()
     return builder.compile(checkpointer=checkpointer)
 
 
