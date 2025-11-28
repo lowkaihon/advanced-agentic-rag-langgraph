@@ -54,11 +54,10 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **Evaluation & Quality Assurance**
 - Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
 - NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification → hallucination feedback lists specific unsupported claims for targeted regeneration
-- Comprehensive metrics: Recall@K, Precision@K, F1@K, nDCG, MRR, Hit Rate
-- RAGAS integration: Faithfulness, Context Recall, Context Precision, Answer Relevancy
+- Comprehensive metrics: F1@K, Precision@K, Recall@K, MRR, nDCG
 - Golden dataset: 20 validated examples with graded relevance (0-3 scale)
-- Retrieval quality evaluation: Issue-specific detection (partial_coverage, missing_key_info, incomplete_context, domain_misalignment, low_confidence, mixed_relevance, off_topic, wrong_domain)
-- Answer quality evaluation (vRAG-Eval framework): Relevance, Completeness, Accuracy scoring with 8 issue types (incomplete_synthesis, lacks_specificity, missing_details, unsupported_claims, partial_answer, wrong_focus, retrieval_limited, contextual_gaps) and adaptive thresholds (65% for good retrieval, 50% for poor)
+- Retrieval quality evaluation: Issue-specific detection (missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic)
+- Answer quality evaluation (vRAG-Eval framework): Relevance, Completeness, Accuracy scoring with 5 issue types (incomplete_synthesis, lacks_specificity, missing_details, partial_answer, wrong_focus) and adaptive thresholds (65% for good retrieval, 50% for poor)
 
 **Intelligent Adaptation**
 - Document profiling: Stratified sampling (5K tokens), regex signal pre-detection, +15-27 pt accuracy gains

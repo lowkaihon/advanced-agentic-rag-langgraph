@@ -35,6 +35,7 @@ Outputs:
 
 import json
 import os
+import time
 import warnings
 import logging
 import argparse
@@ -175,6 +176,7 @@ def run_tier_on_golden_dataset(
                     "messages": [],
                     "sub_agent_results": [],  # Required for operator.add reducer
                     "ground_truth_doc_ids": ground_truth_docs,
+                    "k_final": k_final,  # 4 for standard, 6 for hard dataset
                 }
 
             # Run graph
@@ -335,6 +337,8 @@ def generate_comparison_report(
     test_timestamp: str = None,
     current_tier = None,
     tier_info: Dict = None,
+    tiers: List[str] = None,
+    tier_durations: Dict[str, float] = None,
 ) -> str:
     """
     Generate markdown comparison report with delta analysis.
@@ -544,7 +548,7 @@ independent of model quality**:
 
 ### Question-by-Question Comparison
 
-{_format_question_by_question_comparison(basic_results, intermediate_results, advanced_results, multi_agent_results, k=k)}
+{_format_question_by_question_comparison(basic_results, intermediate_results, advanced_results, multi_agent_results, k=k, tiers=tiers)}
 
 ---
 
@@ -567,6 +571,12 @@ independent of model quality**:
 - **Generation Attempts:** Retry metrics for Advanced/Multi-Agent tiers only
 
 **Evaluation:** Offline evaluation using ground truth relevance labels
+
+---
+
+## Test Duration
+
+{_format_duration_table(tier_durations, tiers)}
 
 ---
 
@@ -597,6 +607,44 @@ def _get_winner_4(basic: float, intermediate: float, advanced: float, multi_agen
     }
     winner = max(scores, key=scores.get)
     return f"{winner} ({scores[winner]:.1%})"
+
+
+def _format_duration(seconds: float) -> str:
+    """Format seconds as Xm Ys or Xs."""
+    if seconds >= 60:
+        mins = int(seconds // 60)
+        secs = int(seconds % 60)
+        return f"{mins}m {secs}s"
+    return f"{seconds:.1f}s"
+
+
+def _format_duration_table(tier_durations: Dict[str, float], tiers: List[str] = None) -> str:
+    """Format tier durations as markdown table."""
+    if tier_durations is None:
+        return "*Timing data not available*"
+
+    if tiers is None:
+        tiers = ['basic', 'intermediate', 'advanced', 'multi_agent']
+
+    lines = []
+    lines.append("| Tier | Time |")
+    lines.append("|------|------|")
+
+    tier_names = {
+        'basic': 'Basic',
+        'intermediate': 'Intermediate',
+        'advanced': 'Advanced',
+        'multi_agent': 'Multi-Agent',
+    }
+
+    for tier in tiers:
+        if tier in tier_durations and tier_durations[tier] > 0:
+            lines.append(f"| {tier_names.get(tier, tier)} | {_format_duration(tier_durations[tier])} |")
+
+    if 'total' in tier_durations:
+        lines.append(f"| **Total** | **{_format_duration(tier_durations['total'])}** |")
+
+    return "\n".join(lines)
 
 
 def _format_top_examples(results: List[Dict], n: int = 5, k: int = 4) -> str:
@@ -644,10 +692,11 @@ def _format_question_by_question_comparison(
     intermediate_results: List[Dict],
     advanced_results: List[Dict],
     multi_agent_results: List[Dict],
-    k: int = 4
+    k: int = 4,
+    tiers: List[str] = None
 ) -> str:
     """
-    Format question-by-question comparison table across all 4 tiers.
+    Format question-by-question comparison table across selected tiers.
 
     Args:
         basic_results: Per-example results from Basic tier
@@ -655,51 +704,81 @@ def _format_question_by_question_comparison(
         advanced_results: Per-example results from Advanced tier
         multi_agent_results: Per-example results from Multi-Agent tier
         k: K value for F1@K display
+        tiers: List of tiers to include in table (default: all four)
 
     Returns:
         Markdown formatted table string
     """
-    lines = []
-    lines.append(f"| # | Question | Basic | Intermediate | Advanced | Multi-Agent |")
-    lines.append("|---|----------|-------|--------------|----------|-------------|")
+    if tiers is None:
+        tiers = ['basic', 'intermediate', 'advanced', 'multi_agent']
 
-    for i, (basic_r, inter_r, adv_r, multi_r) in enumerate(
-        zip(basic_results, intermediate_results, advanced_results, multi_agent_results), 1
-    ):
-        # Get question ID (truncate if too long)
-        question_id = basic_r.get("example_id", f"Q{i}")
+    # Map tier names to results and display info
+    tier_info = {
+        'basic': {'results': basic_results, 'header': 'Basic', 'sep': '-------', 'key': 'basic'},
+        'intermediate': {'results': intermediate_results, 'header': 'Intermediate', 'sep': '--------------', 'key': 'inter'},
+        'advanced': {'results': advanced_results, 'header': 'Advanced', 'sep': '----------', 'key': 'adv'},
+        'multi_agent': {'results': multi_agent_results, 'header': 'Multi-Agent', 'sep': '-------------', 'key': 'multi'},
+    }
+
+    # Filter to selected tiers with non-empty results
+    selected = [(t, tier_info[t]) for t in tiers if t in tier_info and tier_info[t]['results']]
+    if not selected:
+        return "*No results to display*"
+
+    # Build dynamic header
+    header_parts = ["#", "Question"] + [info['header'] for _, info in selected]
+    sep_parts = ["---", "----------"] + [info['sep'] for _, info in selected]
+
+    lines = []
+    lines.append("| " + " | ".join(header_parts) + " |")
+    lines.append("|" + "|".join(sep_parts) + "|")
+
+    # Determine number of rows from longest result list
+    max_len = max(len(info['results']) for _, info in selected)
+
+    for i in range(max_len):
+        # Get question ID from first available result
+        question_id = f"Q{i+1}"
+        for _, info in selected:
+            if i < len(info['results']):
+                question_id = info['results'][i].get("example_id", f"Q{i+1}")
+                break
         if len(question_id) > 35:
             question_id = question_id[:32] + "..."
 
-        # Extract F1 scores for winner determination
-        f1_scores = {
-            "basic": basic_r.get("f1_at_k", 0) if "error" not in basic_r else -1,
-            "inter": inter_r.get("f1_at_k", 0) if "error" not in inter_r else -1,
-            "adv": adv_r.get("f1_at_k", 0) if "error" not in adv_r else -1,
-            "multi": multi_r.get("f1_at_k", 0) if "error" not in multi_r else -1,
-        }
-        max_f1 = max(f1_scores.values())
+        # Collect F1 scores for winner determination (only from selected tiers)
+        f1_scores = {}
+        for tier_name, info in selected:
+            if i < len(info['results']):
+                r = info['results'][i]
+                f1_scores[info['key']] = r.get("f1_at_k", 0) if "error" not in r else -1
+            else:
+                f1_scores[info['key']] = -1
+        max_f1 = max(f1_scores.values()) if f1_scores else 0
 
         def format_cell(result: Dict, tier_key: str) -> str:
             """Format a single cell as F1/Sim/Fact with bold winner."""
-            if "error" in result:
+            if result is None or "error" in result:
                 return "-"
             f1 = result.get("f1_at_k", 0) * 100
             sim = result.get("semantic_similarity", 0) * 100
             fact = result.get("factual_accuracy", 0) * 100
 
             # Bold the F1 if it's the winner (or tied for winner)
-            is_winner = f1_scores[tier_key] == max_f1 and max_f1 > 0
+            is_winner = f1_scores.get(tier_key, -1) == max_f1 and max_f1 > 0
             f1_str = f"**{f1:.0f}**" if is_winner else f"{f1:.0f}"
 
             return f"{f1_str}/{sim:.0f}/{fact:.0f}"
 
-        basic_cell = format_cell(basic_r, "basic")
-        inter_cell = format_cell(inter_r, "inter")
-        adv_cell = format_cell(adv_r, "adv")
-        multi_cell = format_cell(multi_r, "multi")
+        # Build row with cells for selected tiers only
+        row_parts = [str(i + 1), question_id]
+        for _, info in selected:
+            if i < len(info['results']):
+                row_parts.append(format_cell(info['results'][i], info['key']))
+            else:
+                row_parts.append("-")
 
-        lines.append(f"| {i} | {question_id} | {basic_cell} | {inter_cell} | {adv_cell} | {multi_cell} |")
+        lines.append("| " + " | ".join(row_parts) + " |")
 
     lines.append("")
     lines.append(f"*F1/Sim/Fact = F1@{k} / Semantic Similarity / Factual Accuracy (%). Bold = best F1 for row.*")
@@ -709,13 +788,18 @@ def _format_question_by_question_comparison(
 
 # ========== MAIN TEST ==========
 
-def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "standard"):
+def test_architecture_comparison(
+    quick_mode: bool = False,
+    dataset_type: str = "standard",
+    tiers: List[str] = None
+):
     """
-    Main comparison test - run all 3 tiers on golden dataset.
+    Main comparison test - run selected tiers on golden dataset.
 
     Args:
         quick_mode: If True, evaluate only first 2 examples
         dataset_type: Dataset to evaluate ('standard' or 'hard')
+        tiers: List of tiers to run (default: all four)
 
     Generates:
     - evaluation/architecture_comparison_results_{dataset_type}_{timestamp}.json (raw data)
@@ -723,13 +807,17 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     - evaluation/architecture_comparison_results_{dataset_type}_latest.json (convenience copy)
     - evaluation/architecture_comparison_report_{dataset_type}_latest.md (convenience copy)
     """
+    # Default to all tiers if not specified
+    if tiers is None:
+        tiers = ['basic', 'intermediate', 'advanced', 'multi_agent']
+
     print("\n" + "="*80)
     print("4-TIER ARCHITECTURE COMPARISON TEST")
     print("="*80)
     current_tier = get_current_tier()
     tier_info = TIER_METADATA[current_tier]
     print(f"Model Tier: {current_tier.value.upper()} ({tier_info['description']})")
-    print("Tiers: Basic (1), Intermediate (5), Advanced (17), Multi-Agent (20 features)")
+    print(f"Selected Tiers: {', '.join(tiers)}")
     print(f"Dataset: {dataset_type}")
     print(f"Mode: {'Quick (2 examples)' if quick_mode else 'Full'}")
     print("="*80 + "\n")
@@ -771,46 +859,120 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     print(f"[OK] Retriever pre-built and injected into all tiers (k_final={k_final})")
     print(f"{'='*80}\n")
 
+    # Helper for empty metrics (used for skipped tiers)
+    def _empty_metrics(total_examples: int) -> Dict[str, float]:
+        return {
+            "avg_f1_at_k": 0.0,
+            "avg_precision_at_k": 0.0,
+            "avg_recall_at_k": 0.0,
+            "avg_groundedness": 0.0,
+            "avg_semantic_similarity": 0.0,
+            "avg_factual_accuracy": 0.0,
+            "avg_completeness": 0.0,
+            "total_examples": total_examples,
+            "successful_examples": 0,
+            "error_rate": 1.0,
+        }
+
+    # Count selected tiers for progress display
+    tier_count = len(tiers)
+    tier_idx = 0
+
+    # Initialize timing dict
+    tier_durations = {
+        'basic': 0.0,
+        'intermediate': 0.0,
+        'advanced': 0.0,
+        'multi_agent': 0.0,
+        'total': 0.0,
+    }
+    test_start_time = time.time()
+
     # Run Basic Tier
-    print(f"\n{'='*80}")
-    print("[1/4] Running BASIC tier (1 feature)...")
-    print(f"{'='*80}")
-    basic_results = run_tier_on_golden_dataset("basic", basic_rag_graph, dataset, k_final=k_final)
-    basic_metrics = calculate_tier_metrics(basic_results)
+    if 'basic' in tiers:
+        tier_idx += 1
+        print(f"\n{'='*80}")
+        print(f"[{tier_idx}/{tier_count}] Running BASIC tier (1 feature)...")
+        print(f"{'='*80}")
+        tier_start = time.time()
+        basic_results = run_tier_on_golden_dataset("basic", basic_rag_graph, dataset, k_final=k_final)
+        basic_metrics = calculate_tier_metrics(basic_results)
+        tier_durations['basic'] = time.time() - tier_start
+        print(f"[OK] Basic tier complete in {_format_duration(tier_durations['basic'])}")
+    else:
+        print(f"\n[SKIP] Basic tier not selected")
+        basic_results = []
+        basic_metrics = _empty_metrics(len(dataset))
 
     # Run Intermediate Tier
-    print(f"\n{'='*80}")
-    print("[2/4] Running INTERMEDIATE tier (5 features)...")
-    print(f"{'='*80}")
-    intermediate_results = run_tier_on_golden_dataset("intermediate", intermediate_rag_graph, dataset, k_final=k_final)
-    intermediate_metrics = calculate_tier_metrics(intermediate_results)
+    if 'intermediate' in tiers:
+        tier_idx += 1
+        print(f"\n{'='*80}")
+        print(f"[{tier_idx}/{tier_count}] Running INTERMEDIATE tier (5 features)...")
+        print(f"{'='*80}")
+        tier_start = time.time()
+        intermediate_results = run_tier_on_golden_dataset("intermediate", intermediate_rag_graph, dataset, k_final=k_final)
+        intermediate_metrics = calculate_tier_metrics(intermediate_results)
+        tier_durations['intermediate'] = time.time() - tier_start
+        print(f"[OK] Intermediate tier complete in {_format_duration(tier_durations['intermediate'])}")
+    else:
+        print(f"\n[SKIP] Intermediate tier not selected")
+        intermediate_results = []
+        intermediate_metrics = _empty_metrics(len(dataset))
 
     # Run Advanced Tier
-    print(f"\n{'='*80}")
-    print("[3/4] Running ADVANCED tier (17 features)...")
-    print(f"{'='*80}")
-    advanced_results = run_tier_on_golden_dataset("advanced", advanced_rag_graph, dataset, k_final=k_final)
-    advanced_metrics = calculate_tier_metrics(advanced_results)
+    if 'advanced' in tiers:
+        tier_idx += 1
+        print(f"\n{'='*80}")
+        print(f"[{tier_idx}/{tier_count}] Running ADVANCED tier (17 features)...")
+        print(f"{'='*80}")
+        tier_start = time.time()
+        advanced_results = run_tier_on_golden_dataset("advanced", advanced_rag_graph, dataset, k_final=k_final)
+        advanced_metrics = calculate_tier_metrics(advanced_results)
+        tier_durations['advanced'] = time.time() - tier_start
+        print(f"[OK] Advanced tier complete in {_format_duration(tier_durations['advanced'])}")
+    else:
+        print(f"\n[SKIP] Advanced tier not selected")
+        advanced_results = []
+        advanced_metrics = _empty_metrics(len(dataset))
 
     # Run Multi-Agent Tier
-    print(f"\n{'='*80}")
-    print("[4/4] Running MULTI-AGENT tier (20 features)...")
-    print(f"{'='*80}")
-    multi_agent_results = run_tier_on_golden_dataset("multi_agent", multi_agent_rag_graph, dataset, k_final=k_final)
-    multi_agent_tier_metrics = calculate_tier_metrics(multi_agent_results)
+    if 'multi_agent' in tiers:
+        tier_idx += 1
+        print(f"\n{'='*80}")
+        print(f"[{tier_idx}/{tier_count}] Running MULTI-AGENT tier (20 features)...")
+        print(f"{'='*80}")
+        tier_start = time.time()
+        multi_agent_results = run_tier_on_golden_dataset("multi_agent", multi_agent_rag_graph, dataset, k_final=k_final)
+        multi_agent_tier_metrics = calculate_tier_metrics(multi_agent_results)
+        tier_durations['multi_agent'] = time.time() - tier_start
+        print(f"[OK] Multi-Agent tier complete in {_format_duration(tier_durations['multi_agent'])}")
+    else:
+        print(f"\n[SKIP] Multi-Agent tier not selected")
+        multi_agent_results = []
+        multi_agent_tier_metrics = _empty_metrics(len(dataset))
+
+    # Calculate total duration
+    tier_durations['total'] = time.time() - test_start_time
 
     # Print summary
     k = k_final
-    print(f"\n{'='*120}")
+    print(f"\n{'='*130}")
     print("SUMMARY")
-    print(f"{'='*120}")
-    print(f"\n{'Tier':<15} {f'F1@{k}':<8} {'Ground':<8} {'Sim':<8} {'Fact':<8} {'Comp':<8} {'Retr Att':<10} {'Gen Att':<10}")
-    print("-" * 120)
-    print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
-    print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10}")
-    print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f}")
-    print(f"{'Multi-Agent':<15} {multi_agent_tier_metrics['avg_f1_at_k']:<8.1%} {multi_agent_tier_metrics['avg_groundedness']:<8.1%} {multi_agent_tier_metrics['avg_semantic_similarity']:<8.1%} {multi_agent_tier_metrics['avg_factual_accuracy']:<8.1%} {multi_agent_tier_metrics['avg_completeness']:<8.1%} {'-':<10} {multi_agent_tier_metrics.get('avg_generation_attempts', 1.0):<10.1f}")
-    print("=" * 120 + "\n")
+    print(f"{'='*130}")
+    print(f"\n{'Tier':<15} {f'F1@{k}':<8} {'Ground':<8} {'Sim':<8} {'Fact':<8} {'Comp':<8} {'Retr Att':<10} {'Gen Att':<10} {'Time':<10}")
+    print("-" * 130)
+    if 'basic' in tiers:
+        print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['basic']):<10}")
+    if 'intermediate' in tiers:
+        print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['intermediate']):<10}")
+    if 'advanced' in tiers:
+        print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['advanced']):<10}")
+    if 'multi_agent' in tiers:
+        print(f"{'Multi-Agent':<15} {multi_agent_tier_metrics['avg_f1_at_k']:<8.1%} {multi_agent_tier_metrics['avg_groundedness']:<8.1%} {multi_agent_tier_metrics['avg_semantic_similarity']:<8.1%} {multi_agent_tier_metrics['avg_factual_accuracy']:<8.1%} {multi_agent_tier_metrics['avg_completeness']:<8.1%} {'-':<10} {multi_agent_tier_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['multi_agent']):<10}")
+    print("-" * 130)
+    print(f"{'TOTAL':<15} {'':<8} {'':<8} {'':<8} {'':<8} {'':<8} {'':<10} {'':<10} {_format_duration(tier_durations['total']):<10}")
+    print("=" * 130 + "\n")
 
     # Save raw results with timestamp
     os.makedirs("evaluation", exist_ok=True)
@@ -862,7 +1024,7 @@ def test_architecture_comparison(quick_mode: bool = False, dataset_type: str = "
     report = generate_comparison_report(
         basic_metrics, intermediate_metrics, advanced_metrics, multi_agent_tier_metrics,
         basic_results, intermediate_results, advanced_results, multi_agent_results,
-        k_final, dataset_type, test_timestamp, current_tier, tier_info
+        k_final, dataset_type, test_timestamp, current_tier, tier_info, tiers, tier_durations
     )
 
     report_path = Path("evaluation") / f"architecture_comparison_report_{dataset_type}_{test_timestamp}.md"
@@ -897,6 +1059,13 @@ if __name__ == "__main__":
         action='store_true',
         help='Quick mode: evaluate only first 2 examples'
     )
+    parser.add_argument(
+        '--tiers',
+        nargs='+',
+        choices=['basic', 'intermediate', 'advanced', 'multi_agent'],
+        default=['basic', 'intermediate', 'advanced', 'multi_agent'],
+        help='Tiers to evaluate (default: all four). Example: --tiers advanced multi_agent'
+    )
     args = parser.parse_args()
 
     if args.quick:
@@ -908,4 +1077,4 @@ if __name__ == "__main__":
         print(f"[*] This will take approximately {expected_time}")
         print("[*] Use --quick flag for faster testing (~6-8 minutes)")
 
-    test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset)
+    test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset, tiers=args.tiers)

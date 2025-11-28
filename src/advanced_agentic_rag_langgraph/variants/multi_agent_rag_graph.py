@@ -1,41 +1,49 @@
 """
-Multi-Agent RAG Graph (20 Features) - Orchestrator-Worker Pattern.
+Multi-Agent RAG Graph - Orchestrator-Worker Pattern.
 
 For complex queries requiring multi-faceted retrieval.
-Decomposes query into sub-queries, parallel worker retrieval, RRF fusion.
+Decomposes query into sub-queries, parallel worker retrieval, LLM coverage selection.
 
-Features (20 = +3 over Advanced):
+Architecture: Workers inherit Advanced's core retrieval algorithms while being
+optimized for parallel execution. The orchestration layer adds complexity
+classification, query decomposition, and cross-agent fusion.
 
-Inherited from Advanced (17):
+Core Retrieval Algorithms (inherited from Advanced):
 1. Semantic vector search
-2. Query expansion (multi-variant)
+2. Query expansion (always applied - sub-queries already focused by decomposition)
 3. Hybrid retrieval (semantic + BM25)
-4. RRF fusion
+4. RRF fusion (within each worker)
 5. CrossEncoder reranking
-6. Conversational query rewriting
-7. LLM-based strategy selection
-8. Two-stage reranking (CrossEncoder -> LLM-as-judge)
-9. Retrieval quality gates (8 issue types)
-10. Answer quality evaluation (8 issue types)
-11. Adaptive thresholds (65%/50%)
-12. Query rewriting loop (issue-specific feedback)
-13. Early strategy switching (off_topic/wrong_domain)
-14. Generation retry loop (adaptive temperature)
-15. NLI-based hallucination detection
-16. Refusal detection
-17. Conversation context preservation
+6. LLM-as-judge reranking (two-stage)
+7. Retrieval quality evaluation
+8. Query rewriting loop (max 2 attempts per worker)
+9. LLM-based strategy selection
 
-Multi-Agent Specific (+3):
-18. Complexity classification (simple vs complex routing)
-19. Query decomposition (2-4 sub-queries)
-20. Parallel worker retrieval with RRF merge + LLM coverage selection
+Optimized for Parallel Execution (simplified from Advanced):
+- No expansion decision LLM (sub-queries are focused by decomposition)
+- No strategy revert validation (rare with 2-attempt max)
+- Reduced logging (no ground truth tracking per worker)
+
+Orchestration Features (main graph level):
+10. Conversational query rewriting
+11. Answer quality evaluation (5 issue types)
+12. Adaptive thresholds (65%/50%)
+13. Generation retry loop (adaptive temperature)
+14. NLI-based hallucination detection
+15. Refusal detection
+16. Conversation context preservation
+
+Multi-Agent Specific (+3 capabilities):
+17. Complexity classification (simple vs complex routing)
+18. Query decomposition (2-4 sub-queries)
+19. Parallel worker retrieval with LLM coverage selection
 
 Graph Structure: 7 nodes, orchestrator-worker pattern
 - conversational_rewrite_node
 - classify_complexity_node (orchestrator decision)
 - decompose_query_node (orchestrator)
 - retrieval_subagent (parallel workers via Send API)
-- merge_results_node (synthesizer with RRF + LLM coverage)
+- merge_results_node (synthesizer with LLM coverage selection)
 - answer_generation_node
 - evaluate_answer_node
 
@@ -68,7 +76,7 @@ from advanced_agentic_rag_langgraph.prompts import get_prompt
 from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
 from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
-
+from advanced_agentic_rag_langgraph.retrieval.multi_agent_merge_reranker import MultiAgentMergeReRanker
 
 # ========== GLOBALS ==========
 
@@ -119,6 +127,7 @@ class MultiAgentRAGState(TypedDict):
     # Evaluation support
     ground_truth_doc_ids: Optional[list]
     relevance_grades: Optional[dict]
+    k_final: Optional[int]  # 4 for standard dataset, 6 for hard dataset
 
     # Conversation history (LangGraph best practice)
     messages: Annotated[list[BaseMessage], operator.add]
@@ -276,20 +285,30 @@ def classify_complexity_node(state: MultiAgentRAGState) -> dict:
 
 Query: "{question}"
 
+DEFAULT BIAS (Important):
+- Prefer SIMPLE unless the query has clear opportunity for parallel retrieval from distinct sources
+- "Explain X in detail" or "How does X work?" = SIMPLE, even if X has many components
+- A single focused retrieval can get all relevant sections from ONE source
+- Decomposition adds overhead - only beneficial when comparing DIFFERENT entities
+
 COMPLEX INDICATORS (decomposition beneficial):
-- Comparative questions ("Compare X and Y", "differences between")
-- Multi-aspect queries ("What are the components AND how do they interact")
-- Cross-domain synthesis ("How does X in domain A relate to Y in domain B")
-- Questions requiring information from multiple document sections
-- Research questions with multiple sub-questions implied
+- Comparative questions ("Compare X and Y", "differences between", "X vs Y")
+- Cross-source synthesis (information must come from multiple distinct documents)
+- Questions with explicit conjunctions across topics ("How does A relate to B")
 
 SIMPLE INDICATORS (single retrieval sufficient):
-- Single-aspect factual lookup ("What is X?", "Define Y")
+- Single-source deep dives ("Explain X", "How does X work", "What are the components of X")
 - Procedural questions with linear steps ("How do I do X?")
-- Specific detail requests ("When was X published?")
-- Questions targeting a single concept or definition
+- Factual lookups ("What is X?", "Define Y", "When was X published?")
+- Questions about ONE concept, even if detailed or multi-part
 
-Return is_complex=True if decomposition would improve retrieval coverage."""
+KEY DISTINCTION:
+- "Explain the complete architecture of X" = SIMPLE (one topic, deep dive)
+- "Compare how X and Y approach the same problem" = COMPLEX (two entities, explicit comparison)
+- "What are all the components of X and how do they interact" = SIMPLE (still one topic)
+- "How does X in system A differ from X in system B" = COMPLEX (cross-system comparison)
+
+Return is_complex=True ONLY if decomposition would clearly improve retrieval by enabling parallel search across distinct sources."""
 
     try:
         result = structured_llm.invoke(prompt)
@@ -658,12 +677,15 @@ def retrieval_subagent(state: WorkerState) -> dict:
 
 def merge_results_node(state: MultiAgentRAGState) -> dict:
     """
-    Merge results from all parallel sub-agents using RRF + LLM coverage selection.
+    Merge results from all parallel sub-agents using LLM coverage selection.
 
     SYNTHESIZER in the orchestrator-worker pattern.
-    Two-stage merge:
-    1. RRF fusion to get top-12 candidates (fast pre-filter)
-    2. LLM coverage-aware selection to get top-6 (semantic understanding)
+    Single-stage merge: LLM coverage-aware selection understands the original
+    question + sub-queries and selects docs that ensure all aspects are covered.
+
+    Note: No RRF fusion - RRF rewards docs appearing in multiple workers, but
+    decomposed sub-queries target DISTINCT aspects, so overlap indicates
+    generic content, not relevance.
 
     Research: SetR/PureCover papers on coverage-based selection for multi-hop QA.
     """
@@ -685,8 +707,46 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
             "multi_agent_metrics": {"workers": 0, "total_docs": 0},
         }
 
-    # ========== STAGE 1: Cross-agent RRF fusion ==========
-    doc_ranks = {}
+    # ========== Single worker fast path ==========
+    if len(sub_agent_results) == 1:
+        # Single worker - docs already reranked by worker, just pass through
+        result = sub_agent_results[0]
+        docs = result.get("docs", [])
+        k_final = state.get("k_final", 4)
+        top_docs = docs[:k_final]
+        quality_score = result.get("quality_score", 0.0)
+
+        print(f"Single worker: Taking top-{k_final} of {len(docs)} docs directly (skip merge)")
+
+        # Ground truth tracking
+        ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
+        if ground_truth_doc_ids:
+            final_chunk_ids = [doc.metadata.get("id", "unknown") for doc in top_docs]
+            found = [cid for cid in ground_truth_doc_ids if cid in final_chunk_ids]
+            missing = [cid for cid in ground_truth_doc_ids if cid not in final_chunk_ids]
+            print(f"Expected chunks: Found {found if found else '[]'} | Missing {missing if missing else '[]'}")
+
+        docs_text = "\n---\n".join([
+            f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content}"
+            for doc in top_docs
+        ])
+
+        print(f"{'='*60}\n")
+        return {
+            "retrieved_docs": [docs_text],
+            "unique_docs_list": top_docs,
+            "retrieval_quality_score": quality_score,
+            "multi_agent_metrics": {
+                "workers": 1,
+                "total_unique_docs": len(docs),
+                "multi_agent_docs": 0,
+                "top_k_selected": len(top_docs),
+                "avg_quality": quality_score,
+                "merge_method": "single_worker_passthrough",
+            },
+        }
+
+    # ========== Collect unique docs (deduplicate by doc_id) ==========
     doc_objects = {}
     doc_agent_count = {}  # Track which docs appear in multiple agents
 
@@ -694,51 +754,41 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         worker_idx = result.get("worker_index", 0)
         docs = result.get("docs", [])
 
-        for rank, doc in enumerate(docs, start=1):
+        for doc in docs:
             doc_id = doc.metadata.get("id", doc.page_content[:50])
 
-            if doc_id not in doc_ranks:
-                doc_ranks[doc_id] = []
+            if doc_id not in doc_objects:
                 doc_objects[doc_id] = doc
                 doc_agent_count[doc_id] = set()
 
-            doc_ranks[doc_id].append(rank)
             doc_agent_count[doc_id].add(worker_idx)
 
-    # RRF scoring (no multi-agent boost - let LLM coverage selection handle diversity)
-    k = 60
-    rrf_scores = {}
-    for doc_id, ranks in doc_ranks.items():
-        rrf_scores[doc_id] = sum(1.0 / (rank + k) for rank in ranks)
+    # Cap at 20 unique docs for LLM selection (safety limit)
+    candidate_docs = list(doc_objects.values())[:20]
 
-    # Get top-12 candidates for LLM selection (or all if fewer)
-    sorted_doc_ids = sorted(rrf_scores.keys(), key=lambda x: rrf_scores[x], reverse=True)
-    candidate_docs = [doc_objects[doc_id] for doc_id in sorted_doc_ids[:12]]
-    fallback_doc_ids = [f"doc_{i}" for i in range(min(6, len(candidate_docs)))]
+    # k_final from state (4 for standard, 6 for hard dataset)
+    k_final = state.get("k_final", 4)
+    fallback_doc_ids = [f"doc_{i}" for i in range(min(k_final, len(candidate_docs)))]
 
-    print(f"Stage 1 (RRF): {len(doc_objects)} unique docs -> {len(candidate_docs)} candidates")
+    print(f"Deduplication: {sum(len(r.get('docs', [])) for r in sub_agent_results)} total -> {len(doc_objects)} unique -> {len(candidate_docs)} candidates")
 
-    # Ground truth tracking after RRF stage
+    # Ground truth tracking
     ground_truth_doc_ids = state.get("ground_truth_doc_ids", [])
     if ground_truth_doc_ids:
         candidate_chunk_ids = [doc.metadata.get("id", "unknown") for doc in candidate_docs]
-        found_in_rrf = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in candidate_chunk_ids]
-        missing_in_rrf = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in candidate_chunk_ids]
-        print(f"\nExpected chunks in RRF candidates:")
-        print(f"Found: {found_in_rrf if found_in_rrf else '[]'} | Missing: {missing_in_rrf if missing_in_rrf else '[]'}")
+        found = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in candidate_chunk_ids]
+        missing = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in candidate_chunk_ids]
+        print(f"Expected chunks: Found {found if found else '[]'} | Missing {missing if missing else '[]'}")
 
-    # ========== STAGE 2: LLM coverage-aware selection ==========
-    from advanced_agentic_rag_langgraph.retrieval.multi_agent_merge_reranker import MultiAgentMergeReRanker
-
-    coverage_reranker = MultiAgentMergeReRanker(top_k=6)
-    top_docs = coverage_reranker.select_for_coverage(
+    # ========== LLM coverage-aware selection (multi-worker only, single worker returns early) ==========
+    reranker = MultiAgentMergeReRanker(top_k=k_final)
+    top_docs = reranker.rerank(
         original_question=original_question,
         sub_queries=sub_queries or [],
         candidate_docs=candidate_docs,
         fallback_doc_ids=fallback_doc_ids,
     )
-
-    print(f"Stage 2 (LLM Coverage): {len(candidate_docs)} candidates -> {len(top_docs)} selected")
+    print(f"LLM Coverage: {len(candidate_docs)} candidates -> {len(top_docs)} selected")
 
     # Ground truth tracking after LLM coverage selection
     if ground_truth_doc_ids:
@@ -764,7 +814,7 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         "multi_agent_docs": sum(1 for count in doc_agent_count.values() if len(count) > 1),
         "top_k_selected": len(top_docs),
         "avg_quality": avg_quality,
-        "merge_method": "rrf_plus_llm_coverage",
+        "merge_method": "llm_coverage_selection",
     }
 
     print(f"Total unique docs: {len(doc_objects)}")

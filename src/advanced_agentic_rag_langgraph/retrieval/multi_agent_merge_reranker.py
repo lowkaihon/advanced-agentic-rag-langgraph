@@ -53,7 +53,7 @@ class MultiAgentMergeReRanker:
         )
         self.structured_llm = self.llm.with_structured_output(CoverageSelectionResult)
 
-    def select_for_coverage(
+    def rerank(
         self,
         original_question: str,
         sub_queries: list[str],

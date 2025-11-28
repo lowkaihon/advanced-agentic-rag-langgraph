@@ -15,6 +15,7 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
     
     # Initial state
     initial_state = {
+        "user_question": question,
         "baseline_query": question,
         "query_expansions": [],
         "active_query": question,
@@ -102,9 +103,9 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
 # Demo
 if __name__ == "__main__":
     test_questions = [
-        "What is the relationship between machine learning and deep learning?",
-        "How does LangGraph enable building stateful agents?",
-        "Explain retrieval-augmented generation and its benefits",
+        "What does CLIP stand for?",
+        "How does the attention mechanism work in Transformers?",
+        "How do consistency models differ from traditional diffusion models?",
     ]
     
     for question in test_questions:

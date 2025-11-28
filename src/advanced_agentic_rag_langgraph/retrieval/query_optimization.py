@@ -51,12 +51,27 @@ def expand_query(query: str) -> list[str]:
 
     Uses Pydantic schema for 95%+ parsing reliability vs 85-90% with regex.
     """
-    expansion_prompt = f"""For this question: "{query}"
-
-Generate 3 alternative phrasings that would help retrieve better information:
+    expansion_prompt = f"""Generate 3 alternative phrasings for a question to help retrieve better information:
 - One that emphasizes technical implementation and mechanisms
 - One that focuses on practical applications and use cases
 - One that targets underlying concepts and principles
+
+EXAMPLE 1:
+Question: "How does caching improve performance?"
+Variations:
+1. What are the technical mechanisms and implementation details of caching systems?
+2. What are practical use cases where caching provides performance benefits?
+3. What are the underlying principles of how caching reduces latency and load?
+
+EXAMPLE 2:
+Question: "What is the difference between authentication and authorization?"
+Variations:
+1. How are authentication and authorization technically implemented in security systems?
+2. What are practical scenarios where authentication vs authorization matters?
+3. What are the conceptual differences between verifying identity and granting permissions?
+
+NOW GENERATE FOR:
+Question: "{query}"
 
 Guidelines:
 - Preserve all technical terms, acronyms, and proper nouns EXACTLY as written
