@@ -2,7 +2,7 @@
 Multi-Agent RAG Graph - Orchestrator-Worker Pattern.
 
 For complex queries requiring multi-faceted retrieval.
-Decomposes query into sub-queries, parallel worker retrieval, LLM coverage selection.
+Decomposes query into sub-queries, parallel worker retrieval, LLM relevance scoring.
 
 Architecture: Workers inherit Advanced's core retrieval algorithms while being
 optimized for parallel execution. The orchestration layer adds complexity
@@ -36,14 +36,14 @@ Orchestration Features (main graph level):
 Multi-Agent Specific (+3 capabilities):
 17. Complexity classification (simple vs complex routing)
 18. Query decomposition (2-4 sub-queries)
-19. Parallel worker retrieval with LLM coverage selection
+19. Parallel worker retrieval with LLM relevance scoring
 
 Graph Structure: 7 nodes, orchestrator-worker pattern
 - conversational_rewrite_node
 - classify_complexity_node (orchestrator decision)
 - decompose_query_node (orchestrator)
 - retrieval_subagent (parallel workers via Send API)
-- merge_results_node (synthesizer with LLM coverage selection)
+- merge_results_node (synthesizer with LLM relevance scoring)
 - answer_generation_node
 - evaluate_answer_node
 
@@ -345,10 +345,10 @@ def route_after_complexity(state: MultiAgentRAGState) -> Union[Literal["decompos
 
 def decompose_query_node(state: MultiAgentRAGState) -> dict:
     """
-    Decompose complex query into 2-4 focused sub-queries.
+    Decompose complex query into focused sub-queries (2 preferred, 3-4 if necessary).
 
     ORCHESTRATOR in the orchestrator-worker pattern.
-    Each sub-query targets a distinct aspect for parallel retrieval.
+    Each sub-query targets a distinct SOURCE for parallel retrieval.
     """
     question = state.get("baseline_query", state.get("user_question", ""))
 
@@ -359,29 +359,43 @@ def decompose_query_node(state: MultiAgentRAGState) -> dict:
     )
     structured_llm = llm.with_structured_output(QueryDecomposition)
 
-    prompt = f"""Decompose this query into 2-4 focused sub-queries for parallel retrieval.
+    prompt = f"""Decompose this query into focused sub-queries for parallel retrieval.
 
 Query: "{question}"
 
-DECOMPOSITION GUIDELINES:
-1. Each sub-query targets a DISTINCT aspect of the original question
-2. Sub-queries are SELF-CONTAINED (can be understood without the original)
-3. Sub-queries are PARALLEL (not dependent on each other's results)
-4. Preserve technical terms and domain-specific vocabulary exactly
-5. Aim for 2-4 sub-queries (more is not always better)
+DECOMPOSITION PRINCIPLE:
+- Use the MINIMUM number of sub-queries needed (2 is ideal, 3-4 only if truly necessary)
+- Each sub-query should target a DIFFERENT SOURCE/DOCUMENT, not just a different aspect
+- If aspects can be answered from the SAME source, keep them in ONE sub-query
+
+WHEN TO USE 2 SUB-QUERIES (preferred):
+- "Compare X and Y" -> [query about X, query about Y]
+- "How does A differ from B" -> [query about A, query about B]
+
+WHEN TO USE 3-4 SUB-QUERIES (only if necessary):
+- Cross-system comparisons spanning 3+ distinct entities
+- Questions explicitly requiring synthesis from 3+ different sources
+
+GUIDELINES:
+1. Each sub-query targets a DISTINCT source/document
+2. Sub-queries are SELF-CONTAINED (understandable without original)
+3. Sub-queries are PARALLEL (not dependent on each other)
+4. Preserve technical terms exactly
 
 EXAMPLES:
-- "What are the benefits and limitations of renewable energy compared to fossil fuels?" ->
-  ["What are the main benefits of renewable energy sources?",
-   "What are the limitations or challenges of renewable energy?",
-   "What are the advantages and disadvantages of fossil fuels?"]
+- "Compare X and Y approaches" ->
+  ["What is the approach used in X?",
+   "What is the approach used in Y?"]
+  (2 sub-queries: each targets a different source)
 
-- "How does machine learning improve medical diagnosis accuracy?" ->
-  ["What machine learning techniques are used in medical diagnosis?",
-   "How is diagnostic accuracy measured in healthcare?",
-   "What improvements in accuracy have been achieved with ML-based diagnosis?"]
+- "How has technique T evolved across systems A, B, C, and D?" ->
+  ["How does T work in A?",
+   "How did B adapt T?",
+   "How does C apply T?",
+   "How does D use T?"]
+  (4 sub-queries: each targets a different system/source)
 
-Return sub-queries as a list of strings."""
+Return the minimum number of sub-queries needed."""
 
     try:
         result = structured_llm.invoke(prompt)
@@ -677,21 +691,18 @@ def retrieval_subagent(state: WorkerState) -> dict:
 
 def merge_results_node(state: MultiAgentRAGState) -> dict:
     """
-    Merge results from all parallel sub-agents using LLM coverage selection.
+    Merge results from all parallel sub-agents using LLM relevance scoring.
 
     SYNTHESIZER in the orchestrator-worker pattern.
-    Single-stage merge: LLM coverage-aware selection understands the original
-    question + sub-queries and selects docs that ensure all aspects are covered.
+    Single-stage merge: LLM scores each document 0-100 by relevance to the
+    original question, then sorts and takes top-k.
 
     Note: No RRF fusion - RRF rewards docs appearing in multiple workers, but
-    decomposed sub-queries target DISTINCT aspects, so overlap indicates
+    decomposed sub-queries target DISTINCT sources, so overlap indicates
     generic content, not relevance.
-
-    Research: SetR/PureCover papers on coverage-based selection for multi-hop QA.
     """
     sub_agent_results = state.get("sub_agent_results", [])
     original_question = state.get("baseline_query", state.get("user_question", ""))
-    sub_queries = state.get("sub_queries", [])
 
     print(f"\n{'='*60}")
     print(f"MERGE RESULTS (SYNTHESIZER)")
@@ -763,12 +774,11 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
 
             doc_agent_count[doc_id].add(worker_idx)
 
-    # Cap at 20 unique docs for LLM selection (safety limit)
-    candidate_docs = list(doc_objects.values())[:20]
+    # Cap at 24 unique docs for LLM selection (6 x 4 workers for hard dataset)
+    candidate_docs = list(doc_objects.values())[:24]
 
     # k_final from state (4 for standard, 6 for hard dataset)
     k_final = state.get("k_final", 4)
-    fallback_doc_ids = [f"doc_{i}" for i in range(min(k_final, len(candidate_docs)))]
 
     print(f"Deduplication: {sum(len(r.get('docs', [])) for r in sub_agent_results)} total -> {len(doc_objects)} unique -> {len(candidate_docs)} candidates")
 
@@ -780,17 +790,15 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         missing = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in candidate_chunk_ids]
         print(f"Expected chunks: Found {found if found else '[]'} | Missing {missing if missing else '[]'}")
 
-    # ========== LLM coverage-aware selection (multi-worker only, single worker returns early) ==========
+    # ========== LLM relevance scoring (multi-worker only, single worker returns early) ==========
     reranker = MultiAgentMergeReRanker(top_k=k_final)
     top_docs = reranker.rerank(
         original_question=original_question,
-        sub_queries=sub_queries or [],
         candidate_docs=candidate_docs,
-        fallback_doc_ids=fallback_doc_ids,
     )
-    print(f"LLM Coverage: {len(candidate_docs)} candidates -> {len(top_docs)} selected")
+    print(f"LLM Scoring: {len(candidate_docs)} candidates -> {len(top_docs)} selected")
 
-    # Ground truth tracking after LLM coverage selection
+    # Ground truth tracking after LLM relevance scoring
     if ground_truth_doc_ids:
         final_chunk_ids = [doc.metadata.get("id", "unknown") for doc in top_docs]
         found_in_final = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id in final_chunk_ids]
@@ -814,7 +822,7 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         "multi_agent_docs": sum(1 for count in doc_agent_count.values() if len(count) > 1),
         "top_k_selected": len(top_docs),
         "avg_quality": avg_quality,
-        "merge_method": "llm_coverage_selection",
+        "merge_method": "llm_relevance_scoring",
     }
 
     print(f"Total unique docs: {len(doc_objects)}")

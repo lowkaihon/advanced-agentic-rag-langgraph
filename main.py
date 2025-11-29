@@ -2,6 +2,8 @@ from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
 from advanced_agentic_rag_langgraph.core import setup_retriever
 import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
 import uuid
+import io
+from contextlib import redirect_stdout
 
 def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True):
     """Run the complete advanced RAG system with all techniques"""
@@ -37,48 +39,15 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
     print(f"{'='*70}")
     print(f"Question: {question}\n")
     
-    # Track execution
-    step_count = 0
-    
-    # Stream the graph execution
-    for step in advanced_rag_graph.stream(initial_state, config=config, stream_mode="updates"):
-        for node_name, node_state in step.items():
-            if node_name != "__root__":
-                step_count += 1
-                print(f"\n[Step {step_count}] {node_name.upper()}")
-                print("-" * 50)
-                
-                # Print node-specific info
-                if "query_expansions" in node_state and node_state["query_expansions"]:
-                    print(f"Query variations: {len(node_state['query_expansions'])}")
-                    for i, q in enumerate(node_state["query_expansions"][1:], 1):
-                        print(f"  {i}. {q[:60]}...")
-                
-                if "retrieval_strategy" in node_state:
-                    print(f"Strategy: {node_state['retrieval_strategy'].upper()}")
-                
-                if "retrieval_quality_score" in node_state and node_state["retrieval_quality_score"] > 0:
-                    quality = node_state["retrieval_quality_score"]
-                    bar = "#" * int(quality * 10) + "-" * (10 - int(quality * 10))
-                    print(f"Retrieval Quality: [{bar}] {quality:.0%}")
-                
-                if "active_query" in node_state and node_state["active_query"]:
-                    current_query = node_state["active_query"]
-                    baseline_query = node_state.get("baseline_query", "")
-                    if current_query != baseline_query:
-                        print(f"Rewritten Query: {current_query}")
-                
-                if "final_answer" in node_state and node_state["final_answer"]:
-                    answer = node_state["final_answer"]
-                    preview = answer[:100] + "..." if len(answer) > 100 else answer
-                    print(f"Answer: {preview}")
-                
-                if "confidence_score" in node_state and node_state["confidence_score"] > 0:
-                    conf = node_state["confidence_score"]
-                    print(f"Confidence: {conf:.0%}")
-                
-                if "retrieval_attempts" in node_state:
-                    print(f"Attempts: {node_state['retrieval_attempts']}")
+    # Stream the graph execution (nodes print their own detailed output)
+    if verbose:
+        for step in advanced_rag_graph.stream(initial_state, config=config, stream_mode="updates"):
+            pass  # Nodes handle their own output via print statements
+    else:
+        # Suppress node output when not verbose
+        with redirect_stdout(io.StringIO()):
+            for step in advanced_rag_graph.stream(initial_state, config=config, stream_mode="updates"):
+                pass
     
     # Get final state
     final_state = advanced_rag_graph.get_state(config)
@@ -104,8 +73,8 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
 if __name__ == "__main__":
     test_questions = [
         "What does CLIP stand for?",
-        "How does the attention mechanism work in Transformers?",
-        "How do consistency models differ from traditional diffusion models?",
+#        "How does the attention mechanism work in Transformers?",
+#        "How do consistency models differ from traditional diffusion models?",
     ]
     
     for question in test_questions:
