@@ -28,8 +28,8 @@ Orchestration Features (main graph level):
 10. Conversational query rewriting
 11. Answer quality evaluation (5 issue types)
 12. Adaptive thresholds (65%/50%)
-13. Generation retry loop (adaptive temperature)
-14. NLI-based hallucination detection
+13. Generation retry loop (structured feedback)
+14. HHEM-based hallucination detection
 15. Refusal detection
 16. Conversation context preservation
 
@@ -74,7 +74,7 @@ from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 from advanced_agentic_rag_langgraph.prompts import get_prompt
 from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
-from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
 from advanced_agentic_rag_langgraph.retrieval.multi_agent_merge_reranker import MultiAgentMergeReRanker
 
@@ -83,7 +83,7 @@ from advanced_agentic_rag_langgraph.retrieval.multi_agent_merge_reranker import 
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
-nli_detector = NLIHallucinationDetector()
+hhem_detector = HHEMHallucinationDetector()
 
 
 # ========== STATE SCHEMAS ==========
@@ -114,6 +114,7 @@ class MultiAgentRAGState(TypedDict):
     confidence_score: Optional[float]
     generation_attempts: Optional[int]
     retry_feedback: Optional[str]
+    previous_answer: Optional[str]  # Previous answer for retry context (enables targeted correction)
 
     # Answer evaluation
     is_refusal: Optional[bool]
@@ -278,37 +279,52 @@ def classify_complexity_node(state: MultiAgentRAGState) -> dict:
     llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity,
     )
     structured_llm = llm.with_structured_output(ComplexityDecision)
 
-    prompt = f"""Classify if this query requires multi-faceted retrieval (complex) or single-aspect lookup (simple).
+    prompt = f"""Classify if this query benefits from decomposition into focused sub-queries.
 
 Query: "{question}"
 
-DEFAULT BIAS (Important):
-- Prefer SIMPLE unless the query has clear opportunity for parallel retrieval from distinct sources
-- "Explain X in detail" or "How does X work?" = SIMPLE, even if X has many components
-- A single focused retrieval can get all relevant sections from ONE source
-- Decomposition adds overhead - only beneficial when comparing DIFFERENT entities
+SIMPLE (single retrieval sufficient):
+- Single-aspect questions: "What is X?", "How does X work?"
+- Focused lookups: "Define X", "When was X published?"
+- Questions targeting ONE specific thing
 
-COMPLEX INDICATORS (decomposition beneficial):
-- Comparative questions ("Compare X and Y", "differences between", "X vs Y")
-- Cross-source synthesis (information must come from multiple distinct documents)
-- Questions with explicit conjunctions across topics ("How does A relate to B")
+COMPLEX (decomposition beneficial):
+- Multi-aspect questions: "Explain X including A, B, and C" (3 aspects)
+- Comparative questions: "Compare X and Y" (2 entities)
+- Questions with multiple distinct retrieval targets
 
-SIMPLE INDICATORS (single retrieval sufficient):
-- Single-source deep dives ("Explain X", "How does X work", "What are the components of X")
-- Procedural questions with linear steps ("How do I do X?")
-- Factual lookups ("What is X?", "Define Y", "When was X published?")
-- Questions about ONE concept, even if detailed or multi-part
+===== FEW-SHOT EXAMPLES =====
 
-KEY DISTINCTION:
-- "Explain the complete architecture of X" = SIMPLE (one topic, deep dive)
-- "Compare how X and Y approach the same problem" = COMPLEX (two entities, explicit comparison)
-- "What are all the components of X and how do they interact" = SIMPLE (still one topic)
-- "How does X in system A differ from X in system B" = COMPLEX (cross-system comparison)
+Query: "What is X?"
+Classification: SIMPLE
+Reasoning: Single aspect, single retrieval target.
 
-Return is_complex=True ONLY if decomposition would clearly improve retrieval by enabling parallel search across distinct sources."""
+Query: "How does X work?"
+Classification: SIMPLE
+Reasoning: Single focused question about one thing.
+
+Query: "Explain X, including A, B, and C."
+Classification: COMPLEX
+Reasoning: Three distinct aspects (A, B, C) benefit from focused sub-queries.
+
+Query: "Compare X and Y."
+Classification: COMPLEX
+Reasoning: Two entities = two retrieval targets.
+
+Query: "What are the differences between X and Y?"
+Classification: COMPLEX
+Reasoning: Comparing two things = decompose into one query per entity.
+
+=============================
+
+KEY RULE: Count the distinct aspects/entities.
+- 1 aspect = SIMPLE
+- 2+ aspects = COMPLEX"""
 
     try:
         result = structured_llm.invoke(prompt)
@@ -345,10 +361,10 @@ def route_after_complexity(state: MultiAgentRAGState) -> Union[Literal["decompos
 
 def decompose_query_node(state: MultiAgentRAGState) -> dict:
     """
-    Decompose complex query into focused sub-queries (2 preferred, 3-4 if necessary).
+    Decompose complex query into focused sub-queries (one per aspect/entity).
 
     ORCHESTRATOR in the orchestrator-worker pattern.
-    Each sub-query targets a distinct SOURCE for parallel retrieval.
+    Sub-query count matches the number of distinct aspects in the original query.
     """
     question = state.get("baseline_query", state.get("user_question", ""))
 
@@ -356,46 +372,39 @@ def decompose_query_node(state: MultiAgentRAGState) -> dict:
     llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity,
     )
     structured_llm = llm.with_structured_output(QueryDecomposition)
 
-    prompt = f"""Decompose this query into focused sub-queries for parallel retrieval.
+    prompt = f"""Decompose this query into focused sub-queries (one per aspect/entity).
 
 Query: "{question}"
 
-DECOMPOSITION PRINCIPLE:
-- Use the MINIMUM number of sub-queries needed (2 is ideal, 3-4 only if truly necessary)
-- Each sub-query should target a DIFFERENT SOURCE/DOCUMENT, not just a different aspect
-- If aspects can be answered from the SAME source, keep them in ONE sub-query
+DECOMPOSITION RULE:
+- One sub-query per distinct aspect or entity mentioned
+- Count aspects explicitly mentioned in the query
 
-WHEN TO USE 2 SUB-QUERIES (preferred):
-- "Compare X and Y" -> [query about X, query about Y]
-- "How does A differ from B" -> [query about A, query about B]
+===== FEW-SHOT EXAMPLES =====
 
-WHEN TO USE 3-4 SUB-QUERIES (only if necessary):
-- Cross-system comparisons spanning 3+ distinct entities
-- Questions explicitly requiring synthesis from 3+ different sources
+Query: "Explain X, including A, B, and C."
+Sub-queries: ["What is A in X?", "What is B in X?", "What is C in X?"]
+Reasoning: Three aspects (A, B, C) = 3 sub-queries.
+
+Query: "Compare X and Y."
+Sub-queries: ["How does X work?", "How does Y work?"]
+Reasoning: Two entities = 2 sub-queries.
+
+Query: "What are the differences between X and Y?"
+Sub-queries: ["What is X?", "What is Y?"]
+Reasoning: Two entities = 2 sub-queries.
+
+=============================
 
 GUIDELINES:
-1. Each sub-query targets a DISTINCT source/document
-2. Sub-queries are SELF-CONTAINED (understandable without original)
-3. Sub-queries are PARALLEL (not dependent on each other)
-4. Preserve technical terms exactly
-
-EXAMPLES:
-- "Compare X and Y approaches" ->
-  ["What is the approach used in X?",
-   "What is the approach used in Y?"]
-  (2 sub-queries: each targets a different source)
-
-- "How has technique T evolved across systems A, B, C, and D?" ->
-  ["How does T work in A?",
-   "How did B adapt T?",
-   "How does C apply T?",
-   "How does D use T?"]
-  (4 sub-queries: each targets a different system/source)
-
-Return the minimum number of sub-queries needed."""
+1. One sub-query per aspect/entity (match the count in the original query)
+2. Sub-queries are SELF-CONTAINED
+3. Preserve technical terms exactly"""
 
     try:
         result = structured_llm.invoke(prompt)
@@ -456,9 +465,10 @@ def _build_retrieval_subgraph():
     Build isolated retrieval subgraph with self-correction loop.
 
     Flow: decide_strategy -> query_expansion -> retrieve_with_expansion -> [quality check]
-                                                               |
-                                            [>= 0.6 OR attempts >= 2] -> END
-                                            [< 0.6 AND attempts < 2] -> rewrite -> query_expansion
+                                          ^                    |
+                                          |   [>= 0.6 OR attempts >= 2] -> END
+                                          |   [off_topic/wrong_domain] -> query_expansion (strategy switch)
+                                          +-- [other issues] -> rewrite -> query_expansion
     """
     builder = StateGraph(RetrievalSubgraphState)
 
@@ -478,6 +488,7 @@ def _build_retrieval_subgraph():
         _subgraph_route_after_retrieval,
         {
             END: END,
+            "query_expansion": "query_expansion",
             "rewrite_and_refine": "rewrite_and_refine",
         }
     )
@@ -491,10 +502,16 @@ def _subgraph_route_after_retrieval(state: RetrievalSubgraphState) -> str:
     """Pure router for subgraph retrieval quality check."""
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
+    issues = state.get("retrieval_quality_issues", [])
 
     # Max 2 attempts (aligned with main graph)
     if quality >= 0.6 or attempts >= 2:
         return END
+
+    # Early strategy switch path (off_topic/wrong_domain on first attempt)
+    if ("off_topic" in issues or "wrong_domain" in issues) and attempts == 1:
+        return "query_expansion"
+
     return "rewrite_and_refine"
 
 
@@ -517,13 +534,39 @@ def _subgraph_decide_strategy_node(state: RetrievalSubgraphState) -> dict:
 
 
 def _subgraph_query_expansion_node(state: RetrievalSubgraphState) -> dict:
-    """Optimize and expand query for retrieval."""
+    """Optimize and expand query for retrieval, with early strategy switch detection."""
     query = state.get("active_query", state["sub_query"])
-    strategy = state.get("retrieval_strategy", "hybrid")
+    current_strategy = state.get("retrieval_strategy", "hybrid")
+
+    quality = state.get("retrieval_quality_score", 1.0)
+    attempts = state.get("retrieval_attempts", 0)
+    issues = state.get("retrieval_quality_issues", [])
+
+    # Check for early strategy switch (same logic as nodes.py)
+    early_switch = (quality < 0.6 and
+                    attempts == 1 and
+                    ("off_topic" in issues or "wrong_domain" in issues))
+
+    old_strategy = None
+    strategy_updates = {}
+
+    if early_switch:
+        old_strategy = current_strategy
+        next_strategy = "keyword" if current_strategy != "keyword" else "hybrid"
+
+        print(f"  [Worker] EARLY STRATEGY SWITCH: {current_strategy} -> {next_strategy}")
+        print(f"  [Worker] Reason: {', '.join(issues)}")
+
+        current_strategy = next_strategy
+        strategy_updates = {
+            "retrieval_strategy": next_strategy,
+        }
 
     optimized_query = optimize_query_for_strategy(
         query=query,
-        strategy=strategy,
+        strategy=current_strategy,
+        old_strategy=old_strategy,
+        issues=issues if early_switch else []
     )
 
     expansions = expand_query(optimized_query)
@@ -531,6 +574,7 @@ def _subgraph_query_expansion_node(state: RetrievalSubgraphState) -> dict:
     return {
         "retrieval_query": optimized_query,
         "query_expansions": expansions,
+        **strategy_updates,
     }
 
 
@@ -582,6 +626,8 @@ def _subgraph_retrieve_node(state: RetrievalSubgraphState) -> dict:
     quality_llm = ChatOpenAI(
         model=spec.name,
         temperature=spec.temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity,
     )
     structured_llm = quality_llm.with_structured_output(RetrievalQualityEvaluation)
 
@@ -792,7 +838,7 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
 
     # ========== LLM relevance scoring (multi-worker only, single worker returns early) ==========
     reranker = MultiAgentMergeReRanker(top_k=k_final)
-    top_docs = reranker.rerank(
+    top_docs, reranker_scores = reranker.rerank(
         original_question=original_question,
         candidate_docs=candidate_docs,
     )
@@ -806,9 +852,14 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         print(f"\nExpected chunks in final selection:")
         print(f"Found: {found_in_final if found_in_final else '[]'} | Missing: {missing_in_final if missing_in_final else '[]'}")
 
-    # Calculate average quality
-    quality_scores = [r.get("quality_score", 0) for r in sub_agent_results if r.get("docs")]
-    avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+    # Calculate average quality from LLM reranker scores (preferred) or worker scores (fallback)
+    if reranker_scores is not None:
+        # Use LLM reranker scores (0-100 scale -> 0-1 scale)
+        avg_quality = sum(reranker_scores) / len(reranker_scores) / 100
+    else:
+        # Fallback: use worker average (LLM scoring failed or not enough docs to rerank)
+        quality_scores = [r.get("quality_score", 0) for r in sub_agent_results if r.get("docs")]
+        avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
     # Format for answer generation
     docs_text = "\n---\n".join([
@@ -843,7 +894,12 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
 # ========== ANSWER GENERATION ==========
 
 def answer_generation_node(state: MultiAgentRAGState) -> dict:
-    """Generate answer from merged multi-agent context."""
+    """
+    Generate answer from merged multi-agent context.
+
+    Implements RAG best practices: quality-aware thresholds, XML markup, unified feedback.
+    Handles both initial generation and retries from combined evaluation.
+    """
     question = state.get("baseline_query", state.get("user_question", ""))
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
@@ -860,46 +916,71 @@ def answer_generation_node(state: MultiAgentRAGState) -> dict:
 
     if not context or context == "No context":
         return {
-            "final_answer": "I could not retrieve relevant documents to answer your question.",
+            "final_answer": "I apologize, but I could not retrieve any relevant documents to answer your question. Please try rephrasing your query or check if the information exists in the knowledge base.",
             "generation_attempts": generation_attempts,
             "messages": [AIMessage(content="Empty retrieval - no answer generated")],
         }
 
-    # Quality instruction
-    if generation_attempts > 1 and retry_feedback:
-        quality_instruction = f"""RETRY GENERATION (Attempt {generation_attempts}/3)
+    formatted_context = context
 
-Previous attempt had issues:
+    # Determine quality instruction and retry feedback based on scenario
+    # LLM best practices: System prompt = behavioral, User message = content
+    retry_feedback_content = ""  # Goes to user message via retry_feedback param
+
+    if generation_attempts > 1 and retry_feedback:
+        # RETRY MODE: Split behavioral guidance (system) from content (user message)
+        previous_answer = state.get("previous_answer", "")
+
+        # Behavioral guidance only (goes to system prompt)
+        quality_instruction = "RETRY: Focus on fixing the issues described in <retry_instructions>. Prioritize factual accuracy over comprehensiveness."
+
+        # Content with previous answer + issues (goes to user message)
+        retry_feedback_content = f"""Your previous answer was:
+---
+{previous_answer}
+---
+
+Issues with your previous answer:
 {retry_feedback}
 
-Generate improved answer addressing ALL issues above."""
-    elif retrieval_quality >= 0.8:
-        quality_instruction = f"High Confidence Retrieval (Score: {retrieval_quality:.0%}). Answer directly."
-    elif retrieval_quality >= 0.6:
-        quality_instruction = f"Medium Confidence Retrieval (Score: {retrieval_quality:.0%}). Acknowledge gaps."
+Generate an improved answer that fixes ALL issues above. Do not repeat the same unsupported claims."""
+
+        print(f"RETRY MODE:")
+        print(f"Feedback:\n{retry_feedback}\n")
     else:
-        quality_instruction = f"Low Confidence Retrieval (Score: {retrieval_quality:.0%}). Only answer what's supported."
+        # First generation - use quality-aware instructions
+        if retrieval_quality >= 0.8:
+            quality_instruction = f"""High Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are highly relevant and should contain the information needed to answer the question. Answer directly and confidently based on them."""
+        elif retrieval_quality >= 0.6:
+            quality_instruction = f"""Medium Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents are somewhat relevant but may have gaps in coverage. Use them to answer what you can, but explicitly acknowledge any limitations or missing information."""
+        else:
+            quality_instruction = f"""Low Confidence Retrieval (Score: {retrieval_quality:.0%})
+The retrieved documents may not fully address the question. Only answer what can be directly supported by the context. If the context is insufficient, clearly state: "The provided context does not contain enough information to answer this question completely." """
 
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
+    # System prompt = behavioral guidance, User message = content + retry feedback
     system_prompt, user_message = get_answer_generation_prompts(
-        hallucination_feedback="",
         quality_instruction=quality_instruction,
-        formatted_context=context,
+        formatted_context=formatted_context,
         question=question,
         is_gpt5=is_gpt5,
-        is_retry_after_hallucination=False,
-        unsupported_claims=None,
+        retry_feedback=retry_feedback_content,  # Content with previous answer + issues
     )
 
-    # Adaptive temperature
-    attempt_temperatures = {1: 0.3, 2: 0.7, 3: 0.5}
-    temperature = attempt_temperatures.get(generation_attempts, 0.7)
+    # Flat low temperature for groundedness preservation
+    # Quality improvements come from retry_feedback prompt guidance, not temperature randomness
+    # (Variable temp schedule removed after HHEM testing showed 0.7 hurt groundedness)
+    temperature = 0.3
 
     llm = ChatOpenAI(
         model=spec.name,
         temperature=temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity,
     )
     response = llm.invoke([
         {"role": "system", "content": system_prompt},
@@ -918,69 +999,133 @@ Generate improved answer addressing ALL issues above."""
 def _get_quality_fix_guidance(issues: list[str]) -> str:
     """Generate fix guidance based on quality issues."""
     guidance_map = {
-        "incomplete_synthesis": "Provide more comprehensive synthesis",
-        "lacks_specificity": "Include specific details",
-        "wrong_focus": "Re-read question and address primary intent",
-        "partial_answer": "Ensure all question parts are answered",
-        "missing_details": "Add more depth where context supports",
+        "incomplete_synthesis": "Provide more comprehensive synthesis of the relevant information",
+        "lacks_specificity": "Include specific details (numbers, dates, names, technical terms)",
+        "wrong_focus": "Re-read question and address the primary intent",
+        "partial_answer": "Ensure all question parts are answered completely",
+        "missing_details": "Add more depth and explanation where the context provides supporting information",
     }
     return "; ".join([guidance_map.get(issue, issue) for issue in issues])
 
 
 def evaluate_answer_node(state: MultiAgentRAGState) -> dict:
-    """Combined refusal + groundedness + quality evaluation."""
+    """
+    Combined refusal detection + groundedness + quality evaluation (single decision point).
+
+    Performs checks in sequence (with early exit on refusal):
+    1. Refusal detection (LLM-as-judge) - CHECK FIRST, exit early if refusal
+    2. HHEM-based hallucination detection (factuality)
+    3. LLM-as-judge quality assessment (sufficiency)
+
+    Returns unified decision: is answer good enough to return?
+    """
     answer = state.get("final_answer", "")
-    context = state.get("retrieved_docs", [""])[-1]
+    # Extract individual chunks for per-chunk HHEM verification (stays under 512 token limit)
+    unique_docs = state.get("unique_docs_list", [])
+    chunks = [doc.page_content for doc in unique_docs] if unique_docs else []
     question = state.get("baseline_query", state.get("user_question", ""))
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
     generation_attempts = state.get("generation_attempts", 0)
 
     print(f"\n{'='*60}")
-    print(f"ANSWER EVALUATION")
+    print(f"ANSWER EVALUATION (Refusal + Groundedness + Quality)")
     print(f"Generation attempt: {generation_attempts}")
+    print(f"Retrieval quality: {retrieval_quality:.0%}")
 
-    # 1. Refusal detection
-    refusal_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.0)
+    # ==== 1. REFUSAL DETECTION (LLM-as-judge) - Check FIRST ====
+
+    # Detect if LLM refused to answer due to insufficient context
+    refusal_llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0.0,  # Deterministic for classification
+    )
     refusal_checker = refusal_llm.with_structured_output(RefusalCheck)
 
     try:
         refusal_result = refusal_checker.invoke([{
             "role": "system",
-            "content": "Detect if the answer is a FULL REFUSAL (no substantive information provided)."
+            "content": """You are evaluating whether an AI assistant FULLY REFUSED to answer a question due to insufficient context.
+
+IMPORTANT DISTINCTION:
+- FULL REFUSAL: No substantive answer provided, only acknowledges insufficiency (e.g., "The provided context does not contain enough information to answer this question.")
+- PARTIAL ANSWER: Provides some information from context BUT acknowledges limitations/gaps (e.g., "Based on the documents, X is true, though the context doesn't provide information about Y.")
+
+The assistant was instructed to use this phrase for FULL REFUSALS:
+"The provided context does not contain enough information to answer this question."
+
+ONLY flag as refusal if the answer provides NO substantive information."""
         }, {
             "role": "user",
-            "content": f"Question: {question}\n\nAnswer: {answer}\n\nIs this a full refusal?"
+            "content": f"""Question: {question}
+
+Answer: {answer}
+
+Determine if the assistant FULLY REFUSED (provided NO answer):
+
+FULL REFUSAL indicators (return refused=True):
+- Answer provides NO substantive information at all
+- Only acknowledges that context is insufficient without providing any facts
+- Examples: "I cannot answer this question", "The context doesn't contain this information"
+
+PARTIAL ANSWER indicators (return refused=False):
+- Contains ANY facts, details, or explanations from the context
+- Even if it acknowledges gaps (e.g., "X uses dropout... however, the learning rate schedule is not covered")
+- Provides some useful information even if incomplete
+
+CRITICAL: Presence of limitation phrases does NOT make it a refusal if substantive information is also provided.
+
+Return:
+- refused: True ONLY if complete refusal with NO substantive answer
+- reasoning: Explain whether answer provided substantive information or only acknowledged insufficiency"""
         }])
         is_refusal = refusal_result["refused"]
+        refusal_reasoning = refusal_result["reasoning"]
     except Exception as e:
+        print(f"Warning: Refusal detection failed: {e}. Defaulting to not refused.")
         is_refusal = False
+        refusal_reasoning = f"Detection failed: {e}"
 
+    print(f"Refusal detection: {'REFUSED' if is_refusal else 'ATTEMPTED'} - {refusal_reasoning}")
+
+    # Early exit if refusal detected (skip expensive checks)
     if is_refusal:
-        print(f"Refusal detected - terminating")
+        print(f"Skipping groundedness and quality checks (refusal detected)")
         print(f"{'='*60}\n")
         return {
-            "is_refusal": True,
+            "is_refusal": True,  # Terminal state
             "is_answer_sufficient": False,
-            "groundedness_score": 1.0,
+            "groundedness_score": 1.0,  # Refusal is perfectly grounded (no unsupported claims)
             "has_hallucination": False,
             "unsupported_claims": [],
             "confidence_score": 0.0,
+            "answer_quality_reasoning": "Evaluation skipped (LLM refused to answer)",
+            "answer_quality_issues": [],
             "retry_feedback": "",
-            "messages": [AIMessage(content="Refusal detected")],
+            "messages": [AIMessage(content=f"Refusal detected: {refusal_reasoning}")],
         }
 
-    # 2. Groundedness check
-    groundedness_result = nli_detector.verify_groundedness(answer, context)
+    # ==== 2. GROUNDEDNESS CHECK (HHEM) ====
+
+    # Run HHEM groundedness check with per-chunk verification
+    groundedness_result = hhem_detector.verify_groundedness(answer, chunks)
     groundedness_score = groundedness_result.get("groundedness_score", 1.0)
     has_hallucination = groundedness_score < 0.8
     unsupported_claims = groundedness_result.get("unsupported_claims", [])
     print(f"Groundedness: {groundedness_score:.0%}")
 
-    # 3. Quality check
-    quality_threshold = 0.5 if retrieval_quality < 0.6 else 0.65
+    # ==== 3. QUALITY CHECK (LLM-as-judge) ====
+
+    retrieval_quality_issues = state.get("retrieval_quality_issues", [])
+    has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
+    quality_threshold = 0.5 if (retrieval_quality < 0.6 or has_missing_info) else 0.65
 
     spec = get_model_for_task("answer_quality_eval")
-    quality_llm = ChatOpenAI(model=spec.name, temperature=spec.temperature)
+    quality_llm = ChatOpenAI(
+        model=spec.name,
+        temperature=spec.temperature,
+        reasoning_effort=spec.reasoning_effort,
+        verbosity=spec.verbosity,
+    )
     structured_llm = quality_llm.with_structured_output(AnswerQualityEvaluation)
 
     evaluation_prompt = get_prompt(
@@ -988,7 +1133,7 @@ def evaluate_answer_node(state: MultiAgentRAGState) -> dict:
         question=question,
         answer=answer,
         retrieval_quality=f"{retrieval_quality:.0%}",
-        retrieval_issues="None",
+        retrieval_issues=', '.join(retrieval_quality_issues) if retrieval_quality_issues else 'None',
         quality_threshold_pct=quality_threshold*100,
         quality_threshold_low_pct=(quality_threshold-0.15)*100,
         quality_threshold_minus_1_pct=quality_threshold*100-1,
@@ -998,42 +1143,71 @@ def evaluate_answer_node(state: MultiAgentRAGState) -> dict:
     try:
         evaluation = structured_llm.invoke(evaluation_prompt)
         confidence = evaluation["confidence_score"] / 100
+        reasoning = evaluation["reasoning"]
         quality_issues = evaluation["issues"]
     except Exception as e:
+        print(f"Warning: Answer evaluation failed: {e}. Using conservative fallback.")
+        evaluation = {
+            "is_relevant": True,
+            "is_complete": False,
+            "is_accurate": True,
+            "confidence_score": 50,
+            "reasoning": f"Evaluation failed: {e}",
+            "issues": ["evaluation_error"]
+        }
         confidence = 0.5
-        quality_issues = []
+        reasoning = evaluation["reasoning"]
+        quality_issues = evaluation["issues"]
 
-    is_quality_sufficient = confidence >= quality_threshold
-    print(f"Quality: {confidence:.0%}")
+    is_quality_sufficient = (
+        evaluation["is_relevant"] and
+        evaluation["is_complete"] and
+        evaluation["is_accurate"] and
+        confidence >= quality_threshold
+    )
 
-    # 4. Combined decision
+    print(f"Quality: {confidence:.0%} ({'sufficient' if is_quality_sufficient else 'insufficient'})")
+    if quality_issues:
+        print(f"Issues: {', '.join(quality_issues)}")
+
+    # ==== 4. COMBINED DECISION ====
+
     has_issues = has_hallucination or not is_quality_sufficient
 
+    # Build unified feedback for retry - PRIORITIZE groundedness over quality
     retry_feedback_parts = []
     if has_hallucination:
+        # Hallucination detected: Only give grounding feedback (ignore quality issues)
+        # Rationale: Quality can't improve until grounding is fixed; mixed feedback is contradictory
         retry_feedback_parts.append(
             f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
-            f"Unsupported claims: {', '.join(unsupported_claims)}"
+            f"Unsupported claims: {', '.join(unsupported_claims)}\n"
+            f"Fix: ONLY state facts explicitly in retrieved context. If information is missing, acknowledge the limitation rather than adding unsupported details."
         )
-    if not is_quality_sufficient:
+    elif not is_quality_sufficient:
+        # No hallucination, but quality issues: Safe to push for improvements
         retry_feedback_parts.append(
             f"QUALITY ISSUES:\n"
             f"Problems: {', '.join(quality_issues)}\n"
             f"Fix: {_get_quality_fix_guidance(quality_issues)}"
         )
 
-    print(f"Decision: {'RETRY' if has_issues else 'SUFFICIENT'}")
+    retry_feedback = "\n\n".join(retry_feedback_parts) if retry_feedback_parts else ""
+
+    print(f"Combined decision: {'RETRY' if has_issues else 'SUFFICIENT'}")
     print(f"{'='*60}\n")
 
     return {
         "is_answer_sufficient": not has_issues,
-        "is_refusal": False,
         "groundedness_score": groundedness_score,
         "has_hallucination": has_hallucination,
         "unsupported_claims": unsupported_claims,
         "confidence_score": confidence,
+        "answer_quality_reasoning": reasoning,
         "answer_quality_issues": quality_issues,
-        "retry_feedback": "\n\n".join(retry_feedback_parts) if retry_feedback_parts else "",
+        "retry_feedback": retry_feedback,
+        "previous_answer": answer if has_issues else None,  # Store for retry context
+        "is_refusal": False,  # Only reached for non-refusals (early exit handles refusals)
         "messages": [AIMessage(content=f"Evaluation: {groundedness_score:.0%} grounded, {confidence:.0%} quality")],
     }
 

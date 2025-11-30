@@ -8,8 +8,8 @@ An advanced Agentic RAG system that autonomously adapts its retrieval strategy a
 
 ## Key Results
 
-- **4-tier architecture comparison**: Basic -> Multi-Agent shows [X]% F1@6 improvement on complex queries
-- **Budget tier (GPT-4o-mini)** demonstrates architecture value independent of model quality
+- **2.3x retrieval accuracy** (F1@4: 13.1% -> 29.6%) with budget models only
+- Demonstrates architectural value independent of model quality
 - [Full evaluation details](#evaluation)
 
 ## Table of Contents
@@ -41,7 +41,7 @@ The system autonomously plans next steps based on intermediate results:
 **This System**: Two self-correction loops with quality gates
 
 - **Retrieval Loop**: Poor quality (<0.6) -> 5 issue types + LLM improvement suggestion -> rewrite query or switch strategy (max 2 attempts)
-- **Generation Loop**: Consolidated evaluation (refusal + NLI hallucination + quality) -> unified feedback -> regenerate with adaptive temperature (max 3 attempts)
+- **Generation Loop**: Consolidated evaluation (refusal + HHEM hallucination + quality) -> unified feedback -> regenerate with low temperature (max 3 attempts)
 - **Early Strategy Switching**: off_topic/wrong_domain detected -> immediate strategy switch (saves 30-50% tokens)
 
 ### 3. Context Management
@@ -69,7 +69,7 @@ The system autonomously plans next steps based on intermediate results:
 - **PreQRAG**: Strategy-specific query optimization (13-14% MRR improvement)
 - **RAG-Fusion**: Multi-query retrieval with RRF ranking fusion (3-5% MRR improvement)
 - **vRAG-Eval**: Answer quality evaluation with adaptive thresholds (65%/50% based on retrieval quality)
-- **NLI Hallucination Detection**: Claim decomposition + cross-encoder/nli-deberta-v3-base verification
+- **Hallucination Detection**: Claim decomposition + HHEM-2.1-Open verification (outperforms GPT-4)
 
 ## Architecture Overview
 
@@ -78,10 +78,6 @@ The system uses a 7-node LangGraph workflow with autonomous decision-making at e
 ### Advanced RAG (7 nodes, 2 routers, 2 self-correction loops)
 
 ![Advanced RAG Architecture](mermaid%20chart.png)
-
-### Multi-Agent RAG (Orchestrator-worker pattern with parallel retrieval)
-
-![Multi-Agent RAG Architecture](multi%20agent%20mermaid%20chart.png)
 
 **See [Interactive Demo](Advanced_Agentic_RAG.ipynb)** for routing logic deep-dive and live comparison runs.
 
@@ -94,8 +90,8 @@ The system uses a 7-node LangGraph workflow with autonomous decision-making at e
 | `query_expansion` | Generates query variations, optimizes for strategy |
 | `retrieve_with_expansion` | RRF fusion + two-stage reranking + quality evaluation |
 | `rewrite_and_refine` | Query rewriting using LLM-generated improvement suggestions |
-| `answer_generation` | Structured RAG prompting with adaptive temperature |
-| `evaluate_answer` | Consolidated refusal + NLI hallucination + quality assessment |
+| `answer_generation` | Structured RAG prompting with quality-aware instructions |
+| `evaluate_answer` | Consolidated refusal + HHEM hallucination + quality assessment |
 
 ## Features
 
@@ -151,11 +147,11 @@ The Advanced tier implements 17 features across retrieval, generation, and evalu
 </details>
 
 <details>
-<summary><strong>NLI-Based Hallucination Detection</strong></summary>
+<summary><strong>HHEM-Based Hallucination Detection</strong></summary>
 
 - Claim decomposition: LLM extracts individual claims from answers
-- NLI verification: cross-encoder/nli-deberta-v3-base validates each claim
-- Groundedness threshold: 0.8 (unsupported claims trigger regeneration)
+- HHEM verification: vectara/hallucination_evaluation_model (HHEM-2.1-Open) validates each claim
+- Groundedness threshold: 0.5 (unsupported claims trigger regeneration)
 </details>
 
 <details>
@@ -174,15 +170,15 @@ All tiers use the same **budget model tier** (GPT-4o-mini) to isolate architectu
 |------|----------|---------------|
 | **Basic** | 1 | Semantic search only, direct LLM generation |
 | **Intermediate** | 5 | + Query expansion, hybrid retrieval, CrossEncoder reranking, RRF fusion |
-| **Advanced** | 17 | + Strategy selection, two-stage reranking, NLI detection, quality gates, self-correction loops |
-| **Multi-Agent** | 20 | + Query decomposition, parallel retrieval workers, cross-agent RRF merge |
+| **Advanced** | 17 | + Strategy selection, two-stage reranking, HHEM detection, quality gates, self-correction loops |
+| **Multi-Agent** | 20 | + Query decomposition, parallel retrieval workers, cross-agent LLM relevance scoring |
 
 **Run the comparison yourself:** See [Advanced_Agentic_RAG.ipynb](Advanced_Agentic_RAG.ipynb)
 
 ### When to Use Each Tier
 
 - **Basic**: Simple factual lookups, low latency requirements
-- **Intermediate**: Production workloads with quality requirements
+- **Intermediate**: Enhanced retrieval for predictable latency
 - **Advanced**: Complex domains where query understanding matters
 - **Multi-Agent**: Research synthesis, multi-faceted questions
 
@@ -228,7 +224,7 @@ MODEL_TIER=premium   # Maximum quality
 - **LLMs**: OpenAI GPT-4o-mini/GPT-5-mini/GPT-5.1/GPT-5-nano (configurable)
 - **PDF Processing**: PyMuPDF
 - **Reranking**: sentence-transformers (CrossEncoder)
-- **Hallucination Detection**: cross-encoder/nli-deberta-v3-base
+- **Hallucination Detection**: HHEM-2.1-Open (vectara/hallucination_evaluation_model)
 - **Package Manager**: uv
 
 ## Evaluation
@@ -236,7 +232,7 @@ MODEL_TIER=premium   # Maximum quality
 ### Metrics
 
 - **Retrieval**: F1@K, Precision@K, Recall@K, MRR, nDCG
-- **Generation**: Groundedness (NLI-based), Semantic Similarity, Factual Accuracy, Completeness
+- **Generation**: Groundedness (HHEM-based), Semantic Similarity, Factual Accuracy, Completeness
 
 ### Golden Datasets
 
@@ -247,18 +243,30 @@ MODEL_TIER=premium   # Maximum quality
 
 ### Architecture Comparison Results
 
-Run the full comparison test:
-```bash
-uv run python tests/integration/test_architecture_comparison.py  # ~70-85 min
-```
+All tiers use **budget models** (GPT-4o-mini only) to isolate architectural improvements from model quality.
 
-Results saved to `evaluation/architecture_comparison_report.md`
+#### Standard Dataset (20 questions, k=4)
+
+| Tier | Precision@4 | Recall@4 | F1@4 | MRR | nDCG@4 |
+|------|-----|-----|------|-----|--------|
+| Basic | 10.0% | 23.8% | 13.1% | 0.204 | 0.191 |
+| Intermediate | 17.5% | 40.0% | 23.0% | 0.425 | 0.384 |
+| Advanced | 20.0% | 43.3% | 25.9% | 0.550 | 0.443 |
+| **Multi-Agent** | **23.8%** | **47.1%** | **29.6%** | **0.558** | **0.464** |
+
+#### Hard Dataset (10 questions, k=6, multi-document)
+
+| Tier | Precision@6 | Recall@6 | F1@6 | MRR | nDCG@6 |
+|------|-----|-----|------|-----|--------|
+| Basic | 25.0% | 35.6% | 29.0% | 0.553 | 0.365 |
+| Intermediate | 23.3% | 33.1% | 27.0% | 0.533 | 0.358 |
+| Advanced | 28.3% | 38.4% | 32.1% | 0.600 | 0.422 |
+| **Multi-Agent** | **31.7%** | **42.3%** | **35.7%** | **0.667** | **0.464** |
 
 ## Future Improvements
 
 - **HyDE**: Hypothetical document embeddings for better retrieval
 - **Step-back prompting**: Higher-level conceptual questions for multi-hop reasoning
-- **Fine-tuned NLI**: Train hallucination detector on RAGTruth dataset
 - **Chain-of-thought generation**: Structured reasoning with mandatory inline citations
 - **Context compression**: Reduce prompt tokens by 75% while maintaining accuracy
 - **LangSmith integration**: Production tracing, user feedback collection, quality dashboards

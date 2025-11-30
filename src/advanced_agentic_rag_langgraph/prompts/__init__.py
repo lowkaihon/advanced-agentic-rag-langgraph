@@ -9,7 +9,7 @@ Usage:
     from advanced_agentic_rag_langgraph.prompts import get_prompt
 
     # Automatically selects correct variant based on MODEL_TIER
-    prompt = get_prompt("nli_claim_decomposition", answer="...")
+    prompt = get_prompt("hhem_claim_decomposition", answer="...")
 """
 
 from typing import Optional
@@ -28,7 +28,7 @@ def get_prompt(task_name: str, **kwargs) -> str:
 
     Args:
         task_name: Task identifier matching prompt module name
-                  (e.g., "nli_claim_decomposition", "answer_quality_eval")
+                  (e.g., "hhem_claim_decomposition", "answer_quality_eval")
         **kwargs: Template variables for f-string formatting
 
     Returns:
@@ -36,7 +36,7 @@ def get_prompt(task_name: str, **kwargs) -> str:
 
     Example:
         >>> # Premium tier (GPT-5.1) loads GPT5_PROMPT variant
-        >>> prompt = get_prompt("nli_claim_decomposition", answer="BERT has 12 layers")
+        >>> prompt = get_prompt("hhem_claim_decomposition", answer="BERT has 12 layers")
 
         >>> # Budget tier (GPT-4o-mini) loads BASE_PROMPT variant
         >>> prompt = get_prompt("answer_quality_eval", question="...", answer="...")
@@ -45,8 +45,8 @@ def get_prompt(task_name: str, **kwargs) -> str:
     is_gpt5 = _is_gpt5_family(spec.name)
 
     # Import appropriate task module and get variant
-    if task_name == "nli_claim_decomposition":
-        from . import nli_claim_decomposition as module
+    if task_name == "hhem_claim_decomposition":
+        from . import hhem_claim_decomposition as module
         template = module.GPT5_PROMPT if is_gpt5 else module.BASE_PROMPT
 
     elif task_name == "answer_quality_eval":

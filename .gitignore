@@ -149,3 +149,6 @@ test_log*.txt
 scripts
 src/advanced_agentic_rag_langgraph/variants/archive/
 .langgraph_api/
+recalculate_metrics.py
+HHEM-2.1-Open Implementation Guide.md
+Implementing Vectara HHEM-2.1-Open in LangChain LangGraph.md

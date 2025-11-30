@@ -37,6 +37,12 @@ SCORING GUIDELINES:
 - 20-39: Mostly off-topic or too general
 - 0-19: Not relevant to the question
 
+COMPLETENESS REQUIREMENT:
+- You are scoring exactly {doc_count} documents
+- Score each document IN ORDER from doc_0 to doc_{last_doc_idx}
+- Your response MUST include exactly {doc_count} entries in scored_documents
+- Expected document IDs: {expected_ids}
+
 Return:
 - scored_documents: List with one entry per document containing:
   - document_id: Document identifier string (e.g., "doc_0", "doc_1")
@@ -65,6 +71,9 @@ SCORING:
 - 60-74: Related but lacks key details
 - 40-59: Tangential
 - 0-39: Off-topic
+
+COMPLETENESS: Score exactly {doc_count} documents IN ORDER (doc_0 to doc_{last_doc_idx}).
+Expected IDs: {expected_ids}
 
 Return:
 - scored_documents: Per doc: document_id, relevance_score (0-100), reasoning

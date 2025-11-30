@@ -84,7 +84,19 @@ class LLMMetadataReRanker:
 
             doc_list.append(doc_context)
 
-        ranking_prompt = get_prompt("llm_reranking", query=query, doc_list='\n'.join(doc_list))
+        # Pass document count info for completeness enforcement
+        doc_count = len(documents)
+        expected_ids = ", ".join([f"doc_{i}" for i in range(doc_count)])
+        last_doc_idx = doc_count - 1
+
+        ranking_prompt = get_prompt(
+            "llm_reranking",
+            query=query,
+            doc_list='\n'.join(doc_list),
+            doc_count=doc_count,
+            expected_ids=expected_ids,
+            last_doc_idx=last_doc_idx,
+        )
 
         # Prepare fallback scores (preserve CrossEncoder ranking order if available)
         if fallback_scores is None:

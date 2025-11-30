@@ -49,7 +49,7 @@ MINIMAL_PROMPT = "What is 2+2? Answer in one word."
 TASKS_TO_TEST = [
     "answer_generation",           # User-facing, critical
     "retrieval_quality_eval",      # Quality gate, medium reasoning
-    "nli_claim_decomposition",     # High reasoning in premium
+    "hhem_claim_decomposition",    # High reasoning in premium
     "expansion_decision",          # Uses gpt-5-nano in premium
 ]
 

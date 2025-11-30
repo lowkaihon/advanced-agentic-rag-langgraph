@@ -16,7 +16,7 @@ The agentic RAG system implements the "Dynamic Planning and Execution Agents" pa
 - **Conditional edges** that change behavior based on state (quality scores, detected issues, attempt counts)
 - **Quality-driven flow**: Each routing point evaluates intermediate results and autonomously decides next action (proceed/rewrite/switch/retry)
 
-**"Tools" in Broader Context**: In agentic RAG, "tools" = retrieval strategies (semantic/keyword/hybrid), processing techniques (reranking, NLI), not just LLM function-calling. The "intelligence" is deciding which to use when based on content analysis.
+**"Tools" in Broader Context**: In agentic RAG, "tools" = retrieval strategies (semantic/keyword/hybrid), processing techniques (reranking, HHEM), not just LLM function-calling. The "intelligence" is deciding which to use when based on content analysis.
 
 ## Key Design Patterns
 
@@ -41,7 +41,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Retrieval correction loop: poor retrieval quality (score <0.6) -> single correction cycle (max 2 attempts, research-backed CRAG/Self-RAG principle showing diminishing returns after first cycle)
   - Path A (off_topic/wrong_domain): Strategy switch (precision correction, pure strategy change)
   - Path B (other issues): Query rewrite with improvement_suggestion (coverage correction)
-- Generation retry loop: Consolidated evaluation in single node (refusal detection + NLI hallucination + quality assessment) -> unified feedback -> regenerate with adaptive temperature (0.3/0.7/0.5) -> retry (max 3 attempts)
+- Generation retry loop: Consolidated evaluation in single node (refusal detection + HHEM hallucination + quality assessment) -> unified feedback -> regenerate with low temperature (0.3) -> retry (max 3 attempts)
 - No re-retrieval after generation: Generation problems fixed with generation strategies, not by retrieving more documents (CRAG research principle)
 
 **Multi-Strategy Retrieval**
@@ -53,7 +53,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **Evaluation & Quality Assurance**
 - Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
-- NLI-based hallucination detection: Claim decomposition → cross-encoder/nli-deberta-v3-base verification → hallucination feedback lists specific unsupported claims for targeted regeneration
+- HHEM-based hallucination detection: Claim decomposition → vectara/hallucination_evaluation_model (HHEM-2.1-Open) verification → hallucination feedback lists specific unsupported claims for targeted regeneration
 - Comprehensive metrics: F1@K, Precision@K, Recall@K, MRR, nDCG
 - Golden dataset: 20 validated examples with graded relevance (0-3 scale)
 - Retrieval quality evaluation: Issue-specific detection (missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic)
@@ -150,11 +150,11 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 
 **Permanent tests:** `tests/integration/test_<name>.py`
 - Multiple test cases, meant to run repeatedly
-- Examples: test_nli_hallucination_detector.py, test_ragas_evaluation.py, test_golden_dataset_evaluation.py
+- Examples: test_hhem_hallucination_detector.py, test_ragas_evaluation.py, test_golden_dataset_evaluation.py
 
 **Temporary debugging:** Root directory with `debug_*.py` prefix (delete after use)
 - One-off exploration, no formal assertions
-- Example: debug_nli.py (deleted after understanding model output)
+- Example: debug_hhem.py (deleted after understanding model output)
 
 **Rule:** Permanent → tests/integration/, Temporary → root with debug_ prefix
 

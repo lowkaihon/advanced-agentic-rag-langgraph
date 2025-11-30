@@ -99,6 +99,12 @@ IMPORTANT:
 - Judge ONLY the intrinsic quality and appropriateness for THIS specific query
 - Prioritize documents whose TYPE matches the query intent (e.g., tutorial for "how to" questions)
 
+COMPLETENESS REQUIREMENT:
+- You are scoring exactly {doc_count} documents
+- Score each document IN ORDER from doc_0 to doc_{last_doc_idx}
+- Your response MUST include exactly {doc_count} entries in scored_documents
+- Expected document IDs: {expected_ids}
+
 Return a structured response with:
 - scored_documents: List of objects, one per document, each containing:
   - document_id: The document identifier string (e.g., "doc_0", "doc_1", "doc_2")
@@ -143,6 +149,9 @@ SCORING:
 - 40-59: Moderate (somewhat relevant, wrong type/level)
 - 20-39: Low (tangential, wrong type)
 - 0-19: Not relevant (wrong topic/type)
+
+COMPLETENESS: Score exactly {doc_count} documents IN ORDER (doc_0 to doc_{last_doc_idx}).
+Expected IDs: {expected_ids}
 
 Return:
 - scored_documents: List with one entry per document containing:

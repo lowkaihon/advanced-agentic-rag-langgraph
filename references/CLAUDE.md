@@ -155,21 +155,21 @@ This directory contains compiled research documents from Perplexity.ai and other
 - Implementing self-correction loops with quality gates and retry limits
 - Designing confidence-based routing (CRAG three-tier thresholds)
 - Optimizing retry limits and iteration counters (standard: 2-3 groundedness, 3-5 overall)
-- Implementing NLI-based hallucination detection for retry triggering
+- Implementing HHEM-based hallucination detection for retry triggering
 
 **Key Sections:**
 - Multi-query rewriting strategies (HyDE, DMQR-RAG, Step-back prompting)
 - CRAG confidence thresholds (High/Ambiguous/Low tiers)
 - Self-RAG reflection tokens (IsRelevant, isSupportive, IsUse)
 - Retry limit standards and iteration control
-- NLI hallucination detection patterns
+- HHEM hallucination detection patterns
 - Prompt modifications for retry (stricter grounding, temperature reduction)
 - Production framework implementations (LangChain, LlamaIndex, DSPy)
 
 **Implementation Status:**
 - [IMPLEMENTED] Three feedback loops (retrieval quality, answer quality, groundedness)
 - [IMPLEMENTED] Retry limits: 2 query rewrites, 3 retrieval attempts, 1 groundedness retry
-- [IMPLEMENTED] NLI-based hallucination detection in `src/validation/nli_hallucination_detector.py`
+- [IMPLEMENTED] HHEM-based hallucination detection in `src/validation/hhem_hallucination_detector.py`
 - [PARTIAL] Groundedness retry prompt strengthening (needs implementation)
 - [NOT IMPLEMENTED] CRAG three-tier confidence system
 - [NOT IMPLEMENTED] Self-RAG reflection tokens
@@ -177,7 +177,7 @@ This directory contains compiled research documents from Perplexity.ai and other
 **Related Code:**
 - `src/orchestration/graph.py` - Conditional routing and feedback loops (lines 16-146)
 - `src/orchestration/nodes.py` - Quality gates and retry logic
-- `src/validation/nli_hallucination_detector.py` - NLI verification for retry triggering
+- `src/validation/hhem_hallucination_detector.py` - HHEM verification for retry triggering
 
 **Notes:** Research validates current retry limits. Section 3b provides prompt-only hallucination correction techniques achieving 50-70% reduction with minimal overhead.
 
@@ -208,14 +208,14 @@ This directory contains compiled research documents from Perplexity.ai and other
 - [IMPLEMENTED] Answer quality evaluation in `src/orchestration/nodes.py:assess_answer()`
 - [IMPLEMENTED] Generation retry loop with max 3 attempts
 - [IMPLEMENTED] Adaptive temperature strategy (0.3/0.7/0.5 per attempt)
-- [IMPLEMENTED] NLI-based hallucination feedback for regeneration
+- [IMPLEMENTED] HHEM-based hallucination feedback for regeneration
 - [ALIGNED] 0.6 threshold matches system retrieval quality gates
 - [PARTIAL] Ensemble generation (not implemented, single-generation approach)
 
 **Related Code:**
 - `src/orchestration/nodes.py` - Answer generation and evaluation
 - `src/orchestration/graph.py` - Regeneration feedback loop (route_after_evaluation)
-- `src/validation/nli_hallucination_detector.py` - Claim-level verification
+- `src/validation/hhem_hallucination_detector.py` - Claim-level verification
 
 **Notes:** Validates system's 2-3 retry limit as optimal. Research confirms diminishing returns after 3 attempts. Core metrics align with system's vRAG-Eval framework.
 
@@ -391,17 +391,17 @@ This directory contains compiled research documents from Perplexity.ai and other
 - Context window requirements (8k+ tokens for long-form RAG)
 
 **Implementation Status:**
-- [IMPLEMENTED] Zero-shot NLI baseline (0.65-0.70 F1) using cross-encoder/nli-deberta-v3-base
-- [IMPLEMENTED] Research-backed label mapping and thresholds
-- [IMPLEMENTED] Claim decomposition + NLI verification pipeline
-- [PLANNED] Fine-tuning on RAGTruth for production (0.79-0.83 F1 target)
+- [MIGRATED] From zero-shot NLI to HHEM-2.1-Open (vectara/hallucination_evaluation_model)
+- [IMPLEMENTED] HHEM-based consistency scoring with per-chunk verification
+- [IMPLEMENTED] Claim decomposition + HHEM verification pipeline
+- [SUPERSEDED] Zero-shot NLI baseline replaced by HHEM for better paraphrase handling
 
 **Related Code:**
-- `src/validation/nli_hallucination_detector.py` - NLI detector implementation
+- `src/validation/hhem_hallucination_detector.py` - HHEM detector implementation
 - `src/orchestration/nodes.py` - Groundedness check node integration
-- `tests/integration/test_nli_hallucination_detector.py` - Validation tests
+- `tests/integration/test_hhem_hallucination_detector.py` - Validation tests
 
-**Notes:** Critical reference for understanding why zero-shot NLI cannot achieve 0.83 F1 and documenting production upgrade path via fine-tuning.
+**Notes:** Historical reference for understanding zero-shot NLI limitations. System migrated to HHEM-2.1-Open which handles paraphrases correctly and achieves better RAG factual consistency without fine-tuning.
 
 ---
 
@@ -795,7 +795,7 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Create evaluation datasets | RAG Golden Dataset Creation... | `test_pdf_pipeline.py`, `src/evaluation/` |
 | Integrate RAGAS metrics | RAGAS Integration... | Future: `src/evaluation/` |
 | Optimize reranking | CrossEncoder Implementation | `src/retrieval/retrievers.py` |
-| Implement NLI hallucination detection | NLI-Based Hallucination Detection... | `src/validation/nli_hallucination_detector.py` |
+| Implement HHEM hallucination detection | NLI-Based Hallucination Detection... | `src/validation/hhem_hallucination_detector.py` |
 | Plan production fine-tuning | NLI-Based Hallucination Detection... | Future: RAGTruth fine-tuning pipeline |
 | Improve PDF processing | RAG OCR Research Papers | `src/preprocessing/loaders.py` |
 | Understand LLM-as-judge | Best Practices for Evaluating... | `src/retrieval/retrievers.py:rerank_documents()` |

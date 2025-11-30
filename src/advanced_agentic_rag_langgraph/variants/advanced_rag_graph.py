@@ -28,10 +28,10 @@ Quality-Driven Routing (+3):
 Self-Correction Loops (+3):
 12. Query rewriting loop (issue-specific feedback, max 3)
 13. Early strategy switching (off_topic/wrong_domain)
-14. Generation retry loop (adaptive temperature)
+14. Generation retry loop (structured feedback)
 
 Anti-Hallucination (+2):
-15. NLI-based hallucination detection
+15. HHEM-based hallucination detection
 16. Refusal detection
 
 Multi-Turn (+1):

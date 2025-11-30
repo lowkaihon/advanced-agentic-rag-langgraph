@@ -12,16 +12,17 @@ Key principle: RAG systems should use ONLY retrieved context, no external knowle
 """
 
 # System prompt template (shared, but instructions differ)
-SYSTEM_PROMPT_TEMPLATE = """{hallucination_feedback}You are an AI assistant that answers questions based exclusively on retrieved documents. Your role is to provide accurate, well-grounded responses using only the information present in the provided context.
+SYSTEM_PROMPT_TEMPLATE = """You are an AI assistant that answers questions based exclusively on retrieved documents. Your role is to provide accurate, well-grounded responses using only the information present in the provided context.
 
 {quality_instruction}
 
 Core Instructions:
 1. Base your answer ONLY on the provided context - do not use external knowledge or make assumptions beyond what is explicitly stated
-2. If the context does not contain sufficient information to answer the question, clearly state: "The provided context does not contain enough information to answer this question."
-3. Provide direct, concise answers that extract and synthesize the relevant information
-4. When helpful for clarity or verification, you may reference specific documents (e.g., "Document 2 explains that..." or "According to the retrieved information...")
-5. Match your confidence level to the retrieval quality - acknowledge uncertainty when present"""
+2. Answer what the context supports, then explicitly note what aspects are not covered (e.g., "The context explains X and Y. However, it does not provide information about Z.")
+3. Only refuse entirely if the context contains NO relevant information at all
+4. Provide direct, concise answers that extract and synthesize the relevant information
+5. When helpful for clarity or verification, you may reference specific documents
+6. Match your confidence level to the retrieval quality - acknowledge uncertainty when present"""
 
 
 BASE_USER_MESSAGE = """<retrieved_context>
@@ -85,143 +86,56 @@ GPT5_USER_MESSAGE = """<retrieved_context>
 <answer>"""
 
 
-# RETRY variants for post-hallucination regeneration
-BASE_USER_MESSAGE_RETRY = """<retrieved_context>
-{formatted_context}
-</retrieved_context>
-
-<question>
-{question}
-</question>
-
-<warning>
-Your previous answer contained unsupported claims. Regenerate with stricter grounding:
-- Use ONLY information explicitly stated in the retrieved context
-- If information is uncertain or missing, acknowledge gaps clearly
-- Avoid inferences beyond what the documents state
-- Unsupported claims to avoid: {unsupported_claims}
-</warning>
-
-<instructions>
-Follow these steps to generate a properly grounded answer:
-
-STEP 1: UNDERSTAND THE QUESTION
-- Identify what information is being requested
-- Note if it's a single-part or multi-part question
-- Determine required level of detail
-
-STEP 2: LOCATE RELEVANT INFORMATION
-- Scan retrieved documents for relevant passages
-- Identify which documents contain key information
-- Note if information spans multiple documents
-
-STEP 3: STRICT VERIFICATION
-- Check if EVERY claim can be directly supported by the context
-- Assess which aspects of the question can be answered from context
-- Follow the quality-aware instructions in the system prompt based on retrieval confidence level (strict grounding required)
-- Do NOT make any assumptions or inferences beyond explicit statements
-
-STEP 4: SYNTHESIZE GROUNDED ANSWER
-- Combine ONLY information explicitly stated in retrieved passages
-- Ensure EVERY statement is directly grounded in retrieved context
-- Use clear, direct language
-- Maintain natural explanatory style (no forced citations)
-
-STEP 5: QUALITY CHECK
-- Verify answer addresses the question completely
-- Confirm ALL claims are explicitly supported by retrieved documents
-- Ensure NO external knowledge, assumptions, or inferences were used
-- Be explicit about any limitations in the available information
-</instructions>
-
-<answer>"""
-
-
-GPT5_USER_MESSAGE_RETRY = """<retrieved_context>
-{formatted_context}
-</retrieved_context>
-
-<question>
-{question}
-</question>
-
-<warning>
-Your previous answer contained unsupported claims. Regenerate with STRICT grounding:
-- Use ONLY information explicitly stated in the retrieved context
-- If information is uncertain or missing, acknowledge gaps clearly
-- Avoid inferences beyond what the documents state
-- Unsupported claims to avoid: {unsupported_claims}
-</warning>
-
-<instructions>
-1. Answer ONLY from <retrieved_context> - absolutely no external knowledge, assumptions, or inferences
-2. Follow the quality-aware instructions in the system prompt based on retrieval confidence level (STRICT grounding required)
-3. Provide a direct, accurate answer that synthesizes ONLY explicitly stated information
-4. Maintain natural explanatory style (no forced citations)
-5. Be explicit about any limitations in the available information
-</instructions>
-
-<answer>"""
-
-
 def get_answer_generation_prompts(
-    hallucination_feedback: str,
     quality_instruction: str,
     formatted_context: str,
     question: str,
     is_gpt5: bool = False,
-    is_retry_after_hallucination: bool = False,
-    unsupported_claims: list[str] | None = None
+    retry_feedback: str = "",
 ) -> tuple[str, str]:
     """
     Get system and user prompts for answer generation.
 
+    LLM best practices: System prompt = behavioral guidance, User message = task content.
+    - quality_instruction goes to system prompt (how to behave)
+    - retry_feedback goes to user message (turn-specific content with previous answer)
+
     Args:
-        hallucination_feedback: Prepended feedback if retry_needed=True
-        quality_instruction: Instructions based on retrieval quality
+        quality_instruction: Behavioral instructions based on retrieval quality or retry mode
         formatted_context: Retrieved documents formatted as context
         question: User's query
         is_gpt5: If True, use GPT5 variant (no CoT scaffolding)
-        is_retry_after_hallucination: If True, use stricter RETRY prompt variant
-        unsupported_claims: List of unsupported claims from hallucination detector (used in retry)
+        retry_feedback: Content for retry (previous answer + issues) - goes in user message
 
     Returns:
         Tuple of (system_prompt, user_message)
     """
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-        hallucination_feedback=hallucination_feedback,
         quality_instruction=quality_instruction
     )
 
-    # Format unsupported claims for retry prompt
-    claims_text = ""
-    if is_retry_after_hallucination and unsupported_claims:
-        claims_text = ", ".join(f'"{claim}"' for claim in unsupported_claims)
+    # Build retry block for user message (if retry)
+    retry_block = ""
+    if retry_feedback:
+        retry_block = f"""<retry_instructions>
+{retry_feedback}
+</retry_instructions>
+
+"""
 
     # Select appropriate user message template
-    if is_retry_after_hallucination:
-        if is_gpt5:
-            user_message = GPT5_USER_MESSAGE_RETRY.format(
-                formatted_context=formatted_context,
-                question=question,
-                unsupported_claims=claims_text
-            )
-        else:
-            user_message = BASE_USER_MESSAGE_RETRY.format(
-                formatted_context=formatted_context,
-                question=question,
-                unsupported_claims=claims_text
-            )
+    if is_gpt5:
+        user_message_content = GPT5_USER_MESSAGE.format(
+            formatted_context=formatted_context,
+            question=question
+        )
     else:
-        if is_gpt5:
-            user_message = GPT5_USER_MESSAGE.format(
-                formatted_context=formatted_context,
-                question=question
-            )
-        else:
-            user_message = BASE_USER_MESSAGE.format(
-                formatted_context=formatted_context,
-                question=question
-            )
+        user_message_content = BASE_USER_MESSAGE.format(
+            formatted_context=formatted_context,
+            question=question
+        )
+
+    # Prepend retry block to user message
+    user_message = retry_block + user_message_content
 
     return system_prompt, user_message

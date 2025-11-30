@@ -56,7 +56,7 @@ class MultiAgentMergeReRanker:
         original_question: str,
         candidate_docs: list[Document],
         fallback_scores: list[float] = None,
-    ) -> list[Document]:
+    ) -> tuple[list[Document], list[float] | None]:
         """
         Score and rank documents by relevance to the original question.
 
@@ -66,13 +66,14 @@ class MultiAgentMergeReRanker:
             fallback_scores: Fallback scores if LLM fails (position-based)
 
         Returns:
-            List of top-k Documents sorted by relevance score
+            Tuple of (top-k Documents, their scores 0-100).
+            Scores is None if fallback was used (LLM failed or incomplete).
         """
         if not candidate_docs:
-            return []
+            return [], None
 
         if len(candidate_docs) <= self.top_k:
-            return candidate_docs
+            return candidate_docs, None  # No reranking needed, no scores
 
         from advanced_agentic_rag_langgraph.prompts import get_prompt
 
@@ -88,10 +89,18 @@ class MultiAgentMergeReRanker:
             content_preview = doc.page_content[:1000]
             doc_list.append(f"{doc_id}: [Source: {source}]\n{content_preview}")
 
+        # Pass document count info for completeness enforcement
+        doc_count = len(candidate_docs)
+        expected_ids = ", ".join([f"doc_{i}" for i in range(doc_count)])
+        last_doc_idx = doc_count - 1
+
         prompt = get_prompt(
             "multi_agent_merge_reranking",
             original_question=original_question,
             doc_list="\n\n".join(doc_list),
+            doc_count=doc_count,
+            expected_ids=expected_ids,
+            last_doc_idx=last_doc_idx,
         )
 
         # Log input candidates
@@ -107,6 +116,8 @@ class MultiAgentMergeReRanker:
         # Prepare fallback scores (position-based if not provided)
         if fallback_scores is None:
             fallback_scores = [100 - (i * 5) for i in range(len(candidate_docs))]
+
+        used_llm_scores = False  # Track if we got valid LLM scores
 
         try:
             result = self.structured_llm.invoke([HumanMessage(content=prompt)])
@@ -131,6 +142,7 @@ class MultiAgentMergeReRanker:
             else:
                 # Complete scoring - use LLM scores
                 scores = [score_map[i] for i in range(len(candidate_docs))]
+                used_llm_scores = True
 
         except Exception as e:
             print(f"Warning: Reranking failed: {e}. Using fallback scores.")
@@ -150,10 +162,13 @@ class MultiAgentMergeReRanker:
         )
 
         # Log final selection
+        top_k = ranked[:self.top_k]
         print(f"\nFinal selection (top-{self.top_k}):")
-        for i, (doc, score) in enumerate(ranked[:self.top_k]):
+        for i, (doc, score) in enumerate(top_k):
             chunk_id = doc.metadata.get("id", "unknown")
             print(f"  {i+1}. {chunk_id} (score: {score:.1f})")
         print(f"{'='*60}\n")
 
-        return [doc for doc, score in ranked[:self.top_k]]
+        top_k_docs = [doc for doc, _ in top_k]
+        top_k_scores = [score for _, score in top_k] if used_llm_scores else None
+        return top_k_docs, top_k_scores

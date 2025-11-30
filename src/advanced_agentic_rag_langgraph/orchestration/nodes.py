@@ -13,7 +13,7 @@ from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stat
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
-from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
 from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
 from advanced_agentic_rag_langgraph.prompts import get_prompt
 from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
@@ -24,7 +24,7 @@ import json
 adaptive_retriever = None
 conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
-nli_detector = NLIHallucinationDetector()
+hhem_detector = HHEMHallucinationDetector()
 
 
 # ============ STRUCTURED OUTPUT SCHEMAS ============
@@ -663,15 +663,27 @@ def answer_generation_node(state: dict) -> dict:
 
     formatted_context = context
 
-    # Determine quality instruction based on retry scenario
-    if generation_attempts > 1 and retry_feedback:
-        # Unified retry with combined feedback from evaluation
-        quality_instruction = f"""RETRY GENERATION (Attempt {generation_attempts}/3)
+    # Determine quality instruction and retry feedback based on scenario
+    # LLM best practices: System prompt = behavioral, User message = content
+    retry_feedback_content = ""  # Goes to user message via retry_feedback param
 
-Previous attempt had issues:
+    if generation_attempts > 1 and retry_feedback:
+        # RETRY MODE: Split behavioral guidance (system) from content (user message)
+        previous_answer = state.get("previous_answer", "")
+
+        # Behavioral guidance only (goes to system prompt)
+        quality_instruction = "RETRY: Focus on fixing the issues described in <retry_instructions>. Prioritize factual accuracy over comprehensiveness."
+
+        # Content with previous answer + issues (goes to user message)
+        retry_feedback_content = f"""Your previous answer was:
+---
+{previous_answer}
+---
+
+Issues with your previous answer:
 {retry_feedback}
 
-Generate improved answer addressing ALL issues above while using the same retrieved context."""
+Generate an improved answer that fixes ALL issues above. Do not repeat the same unsupported claims."""
 
         print(f"RETRY MODE:")
         print(f"Feedback:\n{retry_feedback}\n")
@@ -690,30 +702,19 @@ The retrieved documents may not fully address the question. Only answer what can
     spec = get_model_for_task("answer_generation")
     is_gpt5 = spec.name.lower().startswith("gpt-5")
 
-    # For unified retry, feedback is already in quality_instruction (no duplication)
-    hallucination_feedback = ""  # Unified retry - feedback already in quality_instruction
-    is_retry_after_hallucination = "HALLUCINATION DETECTED" in retry_feedback if retry_feedback else False
-
+    # System prompt = behavioral guidance, User message = content + retry feedback
     system_prompt, user_message = get_answer_generation_prompts(
-        hallucination_feedback=hallucination_feedback,
         quality_instruction=quality_instruction,
         formatted_context=formatted_context,
         question=question,
         is_gpt5=is_gpt5,
-        is_retry_after_hallucination=is_retry_after_hallucination,
-        unsupported_claims=None  # Claims already in retry_feedback
+        retry_feedback=retry_feedback_content,  # Content with previous answer + issues
     )
 
-    # Adaptive temperature based on attempt number (research: 10-15% quality improvement)
-    # Attempt 1 (0.3): Conservative, faithful, reduces initial hallucinations
-    # Attempt 2 (0.7): Exploratory, diverse synthesis approaches
-    # Attempt 3 (0.5): Balanced, leverages lessons from previous attempts
-    attempt_temperatures = {
-        1: 0.3,  # Conservative first attempt
-        2: 0.7,  # Exploratory retry
-        3: 0.5   # Balanced final attempt
-    }
-    temperature = attempt_temperatures.get(generation_attempts, 0.7)
+    # Flat low temperature for groundedness preservation
+    # Quality improvements come from retry_feedback prompt guidance, not temperature randomness
+    # (Variable temp schedule removed after HHEM testing showed 0.7 hurt groundedness)
+    temperature = 0.3
 
     llm = ChatOpenAI(
         model=spec.name,
@@ -752,13 +753,15 @@ def evaluate_answer_node(state: dict) -> dict:
 
     Performs checks in sequence (with early exit on refusal):
     1. Refusal detection (LLM-as-judge) - CHECK FIRST, exit early if refusal
-    2. NLI-based hallucination detection (factuality)
+    2. HHEM-based hallucination detection (factuality)
     3. LLM-as-judge quality assessment (sufficiency)
 
     Returns unified decision: is answer good enough to return?
     """
     answer = state.get("final_answer", "")
-    context = state.get("retrieved_docs", [""])[-1]
+    # Extract individual chunks for per-chunk HHEM verification (stays under 512 token limit)
+    unique_docs = state.get("unique_docs_list", [])
+    chunks = [doc.page_content for doc in unique_docs] if unique_docs else []
     question = state["baseline_query"]
     retrieval_quality = state.get("retrieval_quality_score", 0.7)
     generation_attempts = state.get("generation_attempts", 0)
@@ -799,18 +802,16 @@ Answer: {answer}
 Determine if the assistant FULLY REFUSED (provided NO answer):
 
 FULL REFUSAL indicators (return refused=True):
-- PRIMARY: Contains the instructed phrase: "The provided context does not contain enough information to answer this question."
-- SECONDARY: Semantically equivalent complete refusals:
-  - "I cannot answer this question based on the context"
-  - "The documents don't contain sufficient information to answer"
-  - "Unable to determine from the provided context"
-- KEY: Answer provides NO substantive information, only acknowledges insufficiency
+- Answer provides NO substantive information at all
+- Only acknowledges that context is insufficient without providing any facts
+- Examples: "I cannot answer this question", "The context doesn't contain this information"
 
 PARTIAL ANSWER indicators (return refused=False):
-- Provides SOME information from context (facts, details, explanations)
-- May acknowledge limitations (e.g., "however, the context doesn't cover...")
-- Attempts to answer what can be answered from available information
-- KEY: Contains actual content/information, not just refusal
+- Contains ANY facts, details, or explanations from the context
+- Even if it acknowledges gaps (e.g., "X uses dropout... however, the learning rate schedule is not covered")
+- Provides some useful information even if incomplete
+
+CRITICAL: Presence of limitation phrases does NOT make it a refusal if substantive information is also provided.
 
 Return:
 - refused: True ONLY if complete refusal with NO substantive answer
@@ -842,10 +843,10 @@ Return:
             "messages": [AIMessage(content=f"Refusal detected: {refusal_reasoning}")],
         }
 
-    # ==== 2. GROUNDEDNESS CHECK (NLI) ====
+    # ==== 2. GROUNDEDNESS CHECK (HHEM) ====
 
-    # Run NLI groundedness check for all answers
-    groundedness_result = nli_detector.verify_groundedness(answer, context)
+    # Run HHEM groundedness check with per-chunk verification
+    groundedness_result = hhem_detector.verify_groundedness(answer, chunks)
     groundedness_score = groundedness_result.get("groundedness_score", 1.0)
     has_hallucination = groundedness_score < 0.8
     unsupported_claims = groundedness_result.get("unsupported_claims", [])
@@ -912,15 +913,18 @@ Return:
 
     has_issues = has_hallucination or not is_quality_sufficient
 
-    # Build unified feedback for retry
+    # Build unified feedback for retry - PRIORITIZE groundedness over quality
     retry_feedback_parts = []
     if has_hallucination:
+        # Hallucination detected: Only give grounding feedback (ignore quality issues)
+        # Rationale: Quality can't improve until grounding is fixed; mixed feedback is contradictory
         retry_feedback_parts.append(
             f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
             f"Unsupported claims: {', '.join(unsupported_claims)}\n"
-            f"Fix: ONLY state facts explicitly in retrieved context."
+            f"Fix: ONLY state facts explicitly in retrieved context. If information is missing, acknowledge the limitation rather than adding unsupported details."
         )
-    if not is_quality_sufficient:
+    elif not is_quality_sufficient:
+        # No hallucination, but quality issues: Safe to push for improvements
         retry_feedback_parts.append(
             f"QUALITY ISSUES:\n"
             f"Problems: {', '.join(quality_issues)}\n"
@@ -941,6 +945,7 @@ Return:
         "answer_quality_reasoning": reasoning,
         "answer_quality_issues": quality_issues,
         "retry_feedback": retry_feedback,
+        "previous_answer": answer if has_issues else None,  # Store for retry context
         "is_refusal": False,  # Only reached for non-refusals (early exit handles refusals)
         "messages": [AIMessage(content=f"Evaluation: {groundedness_score:.0%} grounded, {confidence:.0%} quality")],
     }

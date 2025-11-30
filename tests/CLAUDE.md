@@ -103,7 +103,7 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 | Before deployment/releases | test_golden_dataset_evaluation.py | 10-15min | Comprehensive metrics, regression detection, baseline validation |
 | Quick smoke test (reranking) | test_cross_encoder.py | 5-10s | CrossEncoder reranking verification |
 | Quick smoke test (groundedness) | test_groundedness.py | 10-15s | Hallucination detection verification |
-| After NLI detector changes | test_nli_hallucination_detector.py | 20-30s | NLI-based hallucination detection validation |
+| After HHEM detector changes | test_hhem_hallucination_detector.py | 20-30s | HHEM-based hallucination detection validation |
 | RAGAS quick validation | test_ragas_simple.py | 10-20s | RAGAS metrics smoke test |
 | RAGAS comprehensive | test_ragas_evaluation.py | 2-3min | RAGAS vs custom metrics comparison |
 | Portfolio architecture showcase | test_architecture_comparison.py | 70-85min | 4-tier A/B test (basic/intermediate/advanced/multi-agent) with F1@K, Groundedness, Similarity |
@@ -172,13 +172,13 @@ Quick verification that groundedness checking executes.
 
 ---
 
-### 7. test_nli_hallucination_detector.py (~20-30s)
-Validates NLI-based hallucination detector with research-backed implementation.
+### 7. test_hhem_hallucination_detector.py (~20-30s)
+Validates HHEM-based hallucination detector for RAG factual consistency.
 
-**Tests:** Claim decomposition, research-backed label mapping (entailment >0.7 → SUPPORTED), zero-shot baseline (F1: 0.65-0.70)
-**Run after:** Changes to NLI detector or model updates
-**Command:** `uv run python tests/integration/test_nli_hallucination_detector.py`
-**Test cases:** Semantically similar claims, factually incorrect, completely hallucinated, detailed NLI scores
+**Tests:** Claim decomposition, HHEM-2.1-Open consistency scoring, RAG-specific hallucination detection
+**Run after:** Changes to HHEM detector or model updates
+**Command:** `uv run python tests/integration/test_hhem_hallucination_detector.py`
+**Test cases:** Semantically similar claims, factually incorrect, completely hallucinated, per-chunk verification details
 
 ---
 
@@ -333,8 +333,8 @@ uv run python tests/integration/test_golden_dataset_evaluation.py
 uv run python tests/integration/test_cross_encoder.py
 uv run python tests/integration/test_groundedness.py
 
-# NLI hallucination detection test
-uv run python tests/integration/test_nli_hallucination_detector.py
+# HHEM hallucination detection test
+uv run python tests/integration/test_hhem_hallucination_detector.py
 
 # RAGAS evaluation tests
 uv run python tests/integration/test_ragas_simple.py

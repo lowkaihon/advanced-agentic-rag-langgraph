@@ -13,6 +13,8 @@ Set MODEL_TIER in .env.local to compare architectures at different quality/cost 
 
 Key Metrics:
 - F1@K: Retrieval quality (K=4 for standard, K=6 for hard datasets)
+- MRR: Mean Reciprocal Rank (position of first relevant document)
+- nDCG@K: Normalized DCG (ranking quality with graded relevance 0-3)
 - Groundedness: Anti-hallucination (% claims supported by context)
 - Semantic Similarity: How closely answer matches ground truth meaning
 - Factual Accuracy: Correctness of factual claims in answer
@@ -21,7 +23,7 @@ Key Metrics:
 
 Expected Progression:
 - Basic -> Intermediate: +10-15% (hybrid search, query expansion, reranking)
-- Intermediate -> Advanced: +30-50% (NLI, strategy switching, adaptive loops, quality gates)
+- Intermediate -> Advanced: +30-50% (HHEM, strategy switching, adaptive loops, quality gates)
 - Advanced -> Multi-Agent: +5-15% (query decomposition, parallel retrieval, cross-agent fusion)
 - Basic -> Multi-Agent: +50-90% overall
 
@@ -68,8 +70,9 @@ from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
     calculate_retrieval_metrics,
+    calculate_ndcg,
 )
-from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
 from advanced_agentic_rag_langgraph.core.model_config import get_current_tier, TIER_METADATA
 
 
@@ -92,7 +95,7 @@ TIER_CONFIGS = {
         "name": "Advanced RAG",
         "features": 17,
         "graph": advanced_rag_graph,
-        "description": "Full agentic with NLI, strategy switching, and adaptive loops",
+        "description": "Full agentic with HHEM, strategy switching, and adaptive loops",
     },
     "multi_agent": {
         "name": "Multi-Agent RAG",
@@ -134,11 +137,12 @@ def run_tier_on_golden_dataset(
         print(f"{'='*70}\n")
 
     results = []
-    nli_detector = NLIHallucinationDetector()
+    hhem_detector = HHEMHallucinationDetector()
 
     for i, example in enumerate(dataset, 1):
         query = example["question"]  # Fixed: golden dataset uses "question" not "query"
         ground_truth_docs = example["relevant_doc_ids"]
+        relevance_grades = example.get("relevance_grades", {})  # For nDCG calculation
 
         if verbose:
             print(f"\n[{i}/{len(dataset)}] Processing: {example.get('id', query[:50])}")
@@ -201,14 +205,15 @@ def run_tier_on_golden_dataset(
             f1_at_k = metrics["f1_at_k"]
             precision = metrics["precision_at_k"]
             recall = metrics["recall_at_k"]
+            mrr = metrics["mrr"]
 
-            # Calculate groundedness using NLI (independent verification with graph-matching format)
+            # Calculate nDCG (uses graded relevance from golden dataset)
+            ndcg_at_k = calculate_ndcg(retrieved_docs, relevance_grades, k_final)
+
+            # Calculate groundedness using HHEM (per-chunk verification)
             if retrieved_docs and answer:
-                context = "\n---\n".join([
-                    f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content}"
-                    for doc in retrieved_docs[:k_final]
-                ])
-                groundedness_result = nli_detector.verify_groundedness(answer, context)
+                chunks = [doc.page_content for doc in retrieved_docs[:k_final]]
+                groundedness_result = hhem_detector.verify_groundedness(answer, chunks)
                 groundedness_score = groundedness_result["groundedness_score"]
             else:
                 groundedness_score = 0.0
@@ -245,6 +250,8 @@ def run_tier_on_golden_dataset(
                 "f1_at_k": f1_at_k,
                 "precision_at_k": precision,
                 "recall_at_k": recall,
+                "mrr": mrr,
+                "ndcg_at_k": ndcg_at_k,
                 "groundedness_score": groundedness_score,
                 "semantic_similarity": semantic_similarity,
                 "factual_accuracy": factual_accuracy,
@@ -262,6 +269,8 @@ def run_tier_on_golden_dataset(
                 "f1_at_k": 0.0,
                 "precision_at_k": 0.0,
                 "recall_at_k": 0.0,
+                "mrr": 0.0,
+                "ndcg_at_k": 0.0,
                 "groundedness_score": 0.0,
                 "semantic_similarity": 0.0,
                 "factual_accuracy": 0.0,
@@ -291,6 +300,8 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
             "avg_f1_at_k": 0.0,
             "avg_precision_at_k": 0.0,
             "avg_recall_at_k": 0.0,
+            "avg_mrr": 0.0,
+            "avg_ndcg_at_k": 0.0,
             "avg_groundedness": 0.0,
             "avg_semantic_similarity": 0.0,
             "avg_factual_accuracy": 0.0,
@@ -304,6 +315,8 @@ def calculate_tier_metrics(results: List[Dict]) -> Dict[str, float]:
         "avg_f1_at_k": sum(r["f1_at_k"] for r in valid_results) / len(valid_results),
         "avg_precision_at_k": sum(r["precision_at_k"] for r in valid_results) / len(valid_results),
         "avg_recall_at_k": sum(r["recall_at_k"] for r in valid_results) / len(valid_results),
+        "avg_mrr": sum(r["mrr"] for r in valid_results) / len(valid_results),
+        "avg_ndcg_at_k": sum(r["ndcg_at_k"] for r in valid_results) / len(valid_results),
         "avg_groundedness": sum(r["groundedness_score"] for r in valid_results) / len(valid_results),
         "avg_semantic_similarity": sum(r["semantic_similarity"] for r in valid_results) / len(valid_results),
         "avg_factual_accuracy": sum(r["factual_accuracy"] for r in valid_results) / len(valid_results),
@@ -410,12 +423,12 @@ architectural improvements.
 
 ## Metrics Comparison
 
-| Tier | Features | F1@{k} | Groundedness | Similarity | Factual | Complete | Retrieval Attempts | Generation Attempts |
-|------|----------|------|--------------|------------|---------|----------|--------------------|--------------------|
-| **Basic** | 1 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_semantic_similarity']:.1%} | {basic_metrics['avg_factual_accuracy']:.1%} | {basic_metrics['avg_completeness']:.1%} | - | - |
-| **Intermediate** | 5 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_semantic_similarity']:.1%} | {intermediate_metrics['avg_factual_accuracy']:.1%} | {intermediate_metrics['avg_completeness']:.1%} | - | - |
-| **Advanced** | 17 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_semantic_similarity']:.1%} | {advanced_metrics['avg_factual_accuracy']:.1%} | {advanced_metrics['avg_completeness']:.1%} | {advanced_metrics.get('avg_retrieval_attempts', 1.0):.1f} | {advanced_metrics.get('avg_generation_attempts', 1.0):.1f} |
-| **Multi-Agent** | 20 | {multi_agent_metrics['avg_f1_at_k']:.1%} | {multi_agent_metrics['avg_groundedness']:.1%} | {multi_agent_metrics['avg_semantic_similarity']:.1%} | {multi_agent_metrics['avg_factual_accuracy']:.1%} | {multi_agent_metrics['avg_completeness']:.1%} | - | {multi_agent_metrics.get('avg_generation_attempts', 1.0):.1f} |
+| Tier | Features | F1@{k} | MRR | nDCG@{k} | Groundedness | Similarity | Factual | Complete | Retrieval Attempts | Generation Attempts |
+|------|----------|------|-----|----------|--------------|------------|---------|----------|--------------------|--------------------|
+| **Basic** | 1 | {basic_metrics['avg_f1_at_k']:.1%} | {basic_metrics['avg_mrr']:.1%} | {basic_metrics['avg_ndcg_at_k']:.1%} | {basic_metrics['avg_groundedness']:.1%} | {basic_metrics['avg_semantic_similarity']:.1%} | {basic_metrics['avg_factual_accuracy']:.1%} | {basic_metrics['avg_completeness']:.1%} | - | - |
+| **Intermediate** | 5 | {intermediate_metrics['avg_f1_at_k']:.1%} | {intermediate_metrics['avg_mrr']:.1%} | {intermediate_metrics['avg_ndcg_at_k']:.1%} | {intermediate_metrics['avg_groundedness']:.1%} | {intermediate_metrics['avg_semantic_similarity']:.1%} | {intermediate_metrics['avg_factual_accuracy']:.1%} | {intermediate_metrics['avg_completeness']:.1%} | - | - |
+| **Advanced** | 17 | {advanced_metrics['avg_f1_at_k']:.1%} | {advanced_metrics['avg_mrr']:.1%} | {advanced_metrics['avg_ndcg_at_k']:.1%} | {advanced_metrics['avg_groundedness']:.1%} | {advanced_metrics['avg_semantic_similarity']:.1%} | {advanced_metrics['avg_factual_accuracy']:.1%} | {advanced_metrics['avg_completeness']:.1%} | {advanced_metrics.get('avg_retrieval_attempts', 1.0):.1f} | {advanced_metrics.get('avg_generation_attempts', 1.0):.1f} |
+| **Multi-Agent** | 20 | {multi_agent_metrics['avg_f1_at_k']:.1%} | {multi_agent_metrics['avg_mrr']:.1%} | {multi_agent_metrics['avg_ndcg_at_k']:.1%} | {multi_agent_metrics['avg_groundedness']:.1%} | {multi_agent_metrics['avg_semantic_similarity']:.1%} | {multi_agent_metrics['avg_factual_accuracy']:.1%} | {multi_agent_metrics['avg_completeness']:.1%} | - | {multi_agent_metrics.get('avg_generation_attempts', 1.0):.1f} |
 
 ---
 
@@ -451,7 +464,7 @@ architectural improvements.
 7. Query rewriting loop (issue-specific feedback, max 3)
 8. Early strategy switching (off_topic/wrong_domain detection)
 9. Generation retry loop (adaptive temperature 0.3/0.7/0.5)
-10. NLI-based hallucination detection
+10. HHEM-based hallucination detection
 11. Refusal detection
 12. Conversation context preservation (multi-turn)
 
@@ -489,7 +502,7 @@ architectural improvements.
 
 1. **Two-Stage Reranking:** CrossEncoder + LLM-as-judge provides better relevance filtering than CrossEncoder alone
 2. **Strategy Selection & Switching:** LLM chooses optimal retrieval strategy per query with dual-tier adaptive switching
-3. **NLI Hallucination Detection:** Catches and corrects unsupported claims that pass simple quality checks
+3. **HHEM Hallucination Detection:** Catches and corrects unsupported claims that pass simple quality checks
 4. **Root Cause Analysis:** Distinguishes LLM hallucination (regenerate) from retrieval gaps (re-retrieve)
 5. **Quality Gates & Retry Logic:** Binary retrieval assessment with adaptive retry (max 3 attempts) prevents wasted generation
 6. **Issue-Specific Feedback:** 8 retrieval issue types enable targeted query improvements with adaptive thresholds
@@ -515,7 +528,7 @@ independent of model quality**:
    hybrid search, and CrossEncoder reranking, showing {basic_to_intermediate_f1:.0f}% improvement in F1@{k}
    over basic semantic search
 
-2. **Advanced features multiply effectiveness:** Full agentic capabilities (NLI detection, dual-tier
+2. **Advanced features multiply effectiveness:** Full agentic capabilities (HHEM detection, dual-tier
    switching, adaptive retry, root cause analysis) provide an additional {intermediate_to_adv_f1:.0f}%
    F1@{k} improvement over Intermediate tier
 
@@ -559,12 +572,14 @@ independent of model quality**:
 **Architecture Tiers:**
 - **Basic (1 feature):** Semantic vector search only
 - **Intermediate (5 features):** Hybrid retrieval + CrossEncoder reranking
-- **Advanced (17 features):** Full agentic with NLI, strategy switching, adaptive loops
+- **Advanced (17 features):** Full agentic with HHEM, strategy switching, adaptive loops
 - **Multi-Agent (20 features):** Orchestrator-worker pattern with parallel retrieval
 
 **Metrics:**
-- **F1@{k}:** Harmonic mean of Precision@{k} and Recall@{k} (retrieval quality)
-- **Groundedness:** NLI-based verification (% claims supported by context)
+- **F1@{k}:** Harmonic mean of Precision@{k} and Recall@{k} (retrieval quality, binary relevance)
+- **MRR:** Mean Reciprocal Rank (position of first relevant document)
+- **nDCG@{k}:** Normalized DCG (ranking quality with graded relevance 0-3)
+- **Groundedness:** HHEM-based verification (% claims supported by context)
 - **Similarity:** Semantic similarity to ground truth answer (0-100%)
 - **Factual:** Factual accuracy of claims in answer (0-100%)
 - **Complete:** Coverage of key points from ground truth (0-100%)
@@ -865,6 +880,8 @@ def test_architecture_comparison(
             "avg_f1_at_k": 0.0,
             "avg_precision_at_k": 0.0,
             "avg_recall_at_k": 0.0,
+            "avg_mrr": 0.0,
+            "avg_ndcg_at_k": 0.0,
             "avg_groundedness": 0.0,
             "avg_semantic_similarity": 0.0,
             "avg_factual_accuracy": 0.0,
@@ -957,22 +974,22 @@ def test_architecture_comparison(
 
     # Print summary
     k = k_final
-    print(f"\n{'='*130}")
+    print(f"\n{'='*150}")
     print("SUMMARY")
-    print(f"{'='*130}")
-    print(f"\n{'Tier':<15} {f'F1@{k}':<8} {'Ground':<8} {'Sim':<8} {'Fact':<8} {'Comp':<8} {'Retr Att':<10} {'Gen Att':<10} {'Time':<10}")
-    print("-" * 130)
+    print(f"{'='*150}")
+    print(f"\n{'Tier':<15} {f'F1@{k}':<8} {'MRR':<8} {f'nDCG@{k}':<8} {'Ground':<8} {'Sim':<8} {'Fact':<8} {'Comp':<8} {'Retr Att':<10} {'Gen Att':<10} {'Time':<10}")
+    print("-" * 150)
     if 'basic' in tiers:
-        print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['basic']):<10}")
+        print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_mrr']:<8.1%} {basic_metrics['avg_ndcg_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['basic']):<10}")
     if 'intermediate' in tiers:
-        print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['intermediate']):<10}")
+        print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_mrr']:<8.1%} {intermediate_metrics['avg_ndcg_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['intermediate']):<10}")
     if 'advanced' in tiers:
-        print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['advanced']):<10}")
+        print(f"{'Advanced':<15} {advanced_metrics['avg_f1_at_k']:<8.1%} {advanced_metrics['avg_mrr']:<8.1%} {advanced_metrics['avg_ndcg_at_k']:<8.1%} {advanced_metrics['avg_groundedness']:<8.1%} {advanced_metrics['avg_semantic_similarity']:<8.1%} {advanced_metrics['avg_factual_accuracy']:<8.1%} {advanced_metrics['avg_completeness']:<8.1%} {advanced_metrics.get('avg_retrieval_attempts', 1.0):<10.1f} {advanced_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['advanced']):<10}")
     if 'multi_agent' in tiers:
-        print(f"{'Multi-Agent':<15} {multi_agent_tier_metrics['avg_f1_at_k']:<8.1%} {multi_agent_tier_metrics['avg_groundedness']:<8.1%} {multi_agent_tier_metrics['avg_semantic_similarity']:<8.1%} {multi_agent_tier_metrics['avg_factual_accuracy']:<8.1%} {multi_agent_tier_metrics['avg_completeness']:<8.1%} {'-':<10} {multi_agent_tier_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['multi_agent']):<10}")
-    print("-" * 130)
-    print(f"{'TOTAL':<15} {'':<8} {'':<8} {'':<8} {'':<8} {'':<8} {'':<10} {'':<10} {_format_duration(tier_durations['total']):<10}")
-    print("=" * 130 + "\n")
+        print(f"{'Multi-Agent':<15} {multi_agent_tier_metrics['avg_f1_at_k']:<8.1%} {multi_agent_tier_metrics['avg_mrr']:<8.1%} {multi_agent_tier_metrics['avg_ndcg_at_k']:<8.1%} {multi_agent_tier_metrics['avg_groundedness']:<8.1%} {multi_agent_tier_metrics['avg_semantic_similarity']:<8.1%} {multi_agent_tier_metrics['avg_factual_accuracy']:<8.1%} {multi_agent_tier_metrics['avg_completeness']:<8.1%} {'-':<10} {multi_agent_tier_metrics.get('avg_generation_attempts', 1.0):<10.1f} {_format_duration(tier_durations['multi_agent']):<10}")
+    print("-" * 150)
+    print(f"{'TOTAL':<15} {'':<8} {'':<8} {'':<8} {'':<8} {'':<8} {'':<8} {'':<8} {'':<10} {'':<10} {_format_duration(tier_durations['total']):<10}")
+    print("=" * 150 + "\n")
 
     # Save raw results with timestamp
     os.makedirs("evaluation", exist_ok=True)

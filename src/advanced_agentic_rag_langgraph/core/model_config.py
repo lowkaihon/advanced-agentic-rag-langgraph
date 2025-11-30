@@ -53,7 +53,7 @@ class TierConfig:
     - Sequential (user-facing latency): conversational_rewrite, expansion_decision,
       query_expansion, strategy_selection, answer_generation
     - Async (quality-critical): retrieval_quality_eval, llm_reranking,
-      nli_claim_decomposition, answer_quality_eval
+      hhem_claim_decomposition, answer_quality_eval
     - Retry paths: query_rewriting, strategy_optimization
     - Offline: ragas_evaluation
     - Multi-agent: complexity_classification, query_decomposition, multi_agent_merge_reranking
@@ -67,7 +67,7 @@ class TierConfig:
     strategy_optimization: ModelSpec
     llm_reranking: ModelSpec
     answer_generation: ModelSpec
-    nli_claim_decomposition: ModelSpec
+    hhem_claim_decomposition: ModelSpec
     answer_quality_eval: ModelSpec
     ragas_evaluation: ModelSpec
     # Multi-agent RAG tasks
@@ -145,7 +145,7 @@ BUDGET_TIER = TierConfig(
         verbosity="medium",
         few_shot_count=0  # Explicit structure in prompt
     ),
-    nli_claim_decomposition=ModelSpec(
+    hhem_claim_decomposition=ModelSpec(
         name="gpt-4o-mini",
         temperature=0,
         reasoning_effort=None,
@@ -263,7 +263,7 @@ BALANCED_TIER = TierConfig(
         verbosity="medium",
         few_shot_count=0  # Sequential, latency-sensitive
     ),
-    nli_claim_decomposition=ModelSpec(
+    hhem_claim_decomposition=ModelSpec(
         name="gpt-5-mini",
         temperature=0,
         reasoning_effort="medium",
@@ -378,7 +378,7 @@ PREMIUM_TIER = TierConfig(
         verbosity="low",  # Constrain verbose outputs
         few_shot_count=0
     ),
-    nli_claim_decomposition=ModelSpec(
+    hhem_claim_decomposition=ModelSpec(
         name="gpt-5.1",
         temperature=0,
         reasoning_effort="high",  # Critical task, leverage deep reasoning
@@ -464,7 +464,7 @@ def get_model_for_task(task_name: str) -> ModelSpec:
             Valid names: conversational_rewrite, expansion_decision, query_expansion,
             strategy_selection, retrieval_quality_eval, query_rewriting,
             strategy_optimization, llm_reranking, answer_generation,
-            nli_claim_decomposition, answer_quality_eval, ragas_evaluation
+            hhem_claim_decomposition, answer_quality_eval, ragas_evaluation
 
     Returns:
         ModelSpec with name, temperature, reasoning_effort, verbosity, few_shot_count
@@ -510,9 +510,9 @@ def get_prompt_for_task(task_name: str) -> str:
         Currently returns empty string. Will be implemented after basic tier system works.
 
     Example:
-        >>> get_prompt_for_task("nli_claim_decomposition")
-        # Premium tier (GPT-5.1): Returns prompts/nli_claim_decomposition_gpt5.txt
-        # Budget tier (GPT-4o-mini): Returns prompts/nli_claim_decomposition_base.txt
+        >>> get_prompt_for_task("hhem_claim_decomposition")
+        # Premium tier (GPT-5.1): Returns prompts/hhem_claim_decomposition_gpt5.txt
+        # Budget tier (GPT-4o-mini): Returns prompts/hhem_claim_decomposition_base.txt
     """
     # TODO: Implement prompt template loading in Phase 3
     # For now, prompts remain hardcoded in their respective modules

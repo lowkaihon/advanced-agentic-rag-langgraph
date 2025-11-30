@@ -50,7 +50,7 @@ import advanced_agentic_rag_langgraph.variants.multi_agent_rag_graph as multi_ag
 from advanced_agentic_rag_langgraph.core import setup_retriever
 from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics
-from advanced_agentic_rag_langgraph.validation import NLIHallucinationDetector
+from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
 from advanced_agentic_rag_langgraph.core.model_config import get_current_tier, TIER_METADATA
 
 
@@ -81,7 +81,7 @@ def run_multi_agent_on_golden_dataset(
         print(f"{'='*70}\n")
 
     results = []
-    nli_detector = NLIHallucinationDetector()
+    hhem_detector = HHEMHallucinationDetector()
 
     for i, example in enumerate(dataset, 1):
         query = example["question"]
@@ -119,13 +119,10 @@ def run_multi_agent_on_golden_dataset(
             precision = metrics["precision_at_k"]
             recall = metrics["recall_at_k"]
 
-            # Calculate groundedness using NLI
+            # Calculate groundedness using HHEM (per-chunk verification)
             if retrieved_docs and answer:
-                context = "\n---\n".join([
-                    f"[{doc.metadata.get('source', 'unknown')}] {doc.page_content}"
-                    for doc in retrieved_docs[:k_final]
-                ])
-                groundedness_result = nli_detector.verify_groundedness(answer, context)
+                chunks = [doc.page_content for doc in retrieved_docs[:k_final]]
+                groundedness_result = hhem_detector.verify_groundedness(answer, chunks)
                 groundedness_score = groundedness_result["groundedness_score"]
             else:
                 groundedness_score = 0.0
@@ -382,7 +379,7 @@ then merged using cross-agent RRF fusion.
 
 **Evaluation:**
 - **F1@{k_final}:** Harmonic mean of Precision and Recall
-- **Groundedness:** NLI-based verification of answer claims
+- **Groundedness:** HHEM-based verification of answer claims
 - **Similarity/Factual/Completeness:** LLM-as-judge comparison vs ground truth
 
 ---

@@ -1,7 +1,7 @@
 """
-NLI Claim Decomposition Prompts
+HHEM Claim Decomposition Prompts
 
-Used for hallucination detection via atomic claim extraction and NLI verification.
+Used for hallucination detection via atomic claim extraction and HHEM-2.1-Open verification.
 
 Research-backed optimizations:
 - GPT-4o-mini (BASE): Few-shot examples improve decomposition accuracy ~6%

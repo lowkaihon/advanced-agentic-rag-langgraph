@@ -1,5 +1,5 @@
 """Validation utilities for RAG quality assurance"""
 
-from .nli_hallucination_detector import NLIHallucinationDetector
+from .hhem_hallucination_detector import HHEMHallucinationDetector
 
-__all__ = ["NLIHallucinationDetector"]
+__all__ = ["HHEMHallucinationDetector"]

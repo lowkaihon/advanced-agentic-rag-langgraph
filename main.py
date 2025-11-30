@@ -72,9 +72,9 @@ def run_advanced_rag(question: str, thread_id: str = None, verbose: bool = True)
 # Demo
 if __name__ == "__main__":
     test_questions = [
-        "What does CLIP stand for?",
-#        "How does the attention mechanism work in Transformers?",
-#        "How do consistency models differ from traditional diffusion models?",
+        "What is multi-head attention?",
+        "How does Vision Transformer (ViT) divide images into patches?",
+        "How do consistency models differ from traditional diffusion models?",
     ]
     
     for question in test_questions:

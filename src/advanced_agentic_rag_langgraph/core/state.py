@@ -50,14 +50,15 @@ class AdvancedRAGState(TypedDict):
     is_answer_sufficient: Optional[bool]  # Quality gate: proceed to output or retry
     is_refusal: Optional[bool]  # Whether LLM refused to answer due to insufficient context (terminal state)
 
-    # === GROUNDEDNESS & HALLUCINATION (NLI-based detection) ===
+    # === GROUNDEDNESS & HALLUCINATION (HHEM-based detection) ===
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)
-    has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder NLI
-    unsupported_claims: Optional[list[str]]  # Specific claims failing NLI verification (for targeted regeneration)
+    has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder HHEM
+    unsupported_claims: Optional[list[str]]  # Specific claims failing HHEM verification (for targeted regeneration)
 
     # === GENERATION RETRY (Unified retry handling) ===
     generation_attempts: Optional[int]  # Generation attempt counter (max 3 total attempts = initial + 2 retries, resets per user question)
     retry_feedback: Optional[str]  # Combined groundedness + quality feedback for regeneration
+    previous_answer: Optional[str]  # Previous answer for retry context (enables targeted correction)
 
     # === EVALUATION METRICS (Golden Dataset Support) ===
     ground_truth_doc_ids: Optional[list]  # Relevant document IDs from test set

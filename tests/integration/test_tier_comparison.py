@@ -373,7 +373,7 @@ def generate_comparison_report(tier_results: Dict[str, Dict], output_dir: str = 
         "- Adaptive retrieval strategy selection",
         "- Two-stage reranking (CrossEncoder + LLM)",
         "- Self-correction loops with quality gates",
-        "- NLI-based hallucination detection",
+        "- HHEM-based hallucination detection",
         "",
         f"**Architecture Contribution:** F1@4={budget_f1:.1%}, Groundedness={budget_ground:.1%}",
         "",
