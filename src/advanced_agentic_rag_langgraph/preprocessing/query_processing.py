@@ -10,13 +10,7 @@ class ConversationalRewriter:
     """Rewrites queries using conversation history to make them self-contained."""
 
     def __init__(self, model: str = None, temperature: float = None):
-        """
-        Initialize conversational rewriter with tier-based model configuration.
-
-        Args:
-            model: Override model name (None = use tier config)
-            temperature: Override temperature (None = use tier config)
-        """
+        """Initialize with optional model/temperature overrides."""
         spec = get_model_for_task("conversational_rewrite")
         model = model or spec.name
         temperature = temperature if temperature is not None else spec.temperature

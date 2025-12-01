@@ -22,12 +22,7 @@ class LLMMetadataReRanker:
     """Rerank documents using LLM-as-Judge with metadata-aware relevance scoring."""
 
     def __init__(self, top_k: int = 4):
-        """
-        Initialize LLM metadata reranker with tier-based model configuration.
-
-        Args:
-            top_k: Number of top documents to return after reranking
-        """
+        """Initialize with tier-based model config."""
         self.top_k = top_k
 
         spec = get_model_for_task("llm_reranking")
@@ -41,17 +36,7 @@ class LLMMetadataReRanker:
         self.structured_llm = self.llm.with_structured_output(RankingResult)
 
     def rank(self, query: str, documents: list[Document], fallback_scores: list[float] = None) -> list[tuple[Document, float]]:
-        """
-        Rank documents using LLM with metadata-aware scoring.
-
-        Args:
-            query: Search query
-            documents: Documents to rank (typically pre-ranked by CrossEncoder)
-            fallback_scores: Optional fallback scores (e.g., from CrossEncoder) to use if LLM fails
-
-        Returns:
-            List of (document, score) tuples sorted by relevance, limited to top_k
-        """
+        """Rank documents using LLM with metadata-aware scoring. Returns (doc, score) tuples."""
         if not documents:
             return []
 

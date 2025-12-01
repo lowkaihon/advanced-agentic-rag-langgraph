@@ -1,34 +1,10 @@
-"""
-Hallucination detection for RAG systems using HHEM-2.1-Open.
-
-Uses Vectara's HHEM-2.1-Open (Hallucination Evaluation Model) to verify
-factual consistency of generated answers against retrieved context.
-
-Model: vectara/hallucination_evaluation_model (HHEM-2.1-Open)
-- #1 hallucination detection model on HuggingFace
-- Trained specifically for RAG factual consistency (not general NLI)
-- Outperforms GPT-3.5-Turbo and GPT-4 for hallucination detection
-- Outputs: Single consistency score (0=hallucination, 1=consistent)
-- Handles paraphrases correctly (unlike zero-shot NLI models)
-
-Architecture:
-1. Claim Decomposition: LLM extracts atomic factual claims from answer
-2. HHEM Verification: Verifies each claim against context
-3. Groundedness Score: Fraction of claims supported by context
-
-Why HHEM over Zero-Shot NLI:
-Zero-shot NLI (nli-deberta-v3-base) achieves only 0.65-0.70 F1 on RAG
-content due to paraphrase handling issues. Claims like "Adam optimizer
-was used" get flagged as NEUTRAL vs "We used the Adam optimizer" despite
-identical meaning. HHEM is specifically trained for semantic equivalence
-in RAG contexts, eliminating these false positives.
-"""
+"""HHEM-2.1-Open hallucination detector: claim decomposition + per-chunk consistency verification."""
 
 from typing import TypedDict, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-from transformers import AutoModelForSequenceClassification
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import torch
 import json
 import re
@@ -45,16 +21,7 @@ class ClaimDecomposition(TypedDict):
 
 
 class HHEMHallucinationDetector:
-    """
-    HHEM-based hallucination detector using claim decomposition + consistency verification.
-
-    Uses Vectara's HHEM-2.1-Open, the #1 hallucination detection model on HuggingFace.
-    HHEM is specifically trained for RAG factual consistency and handles paraphrases
-    correctly, unlike zero-shot NLI models which produce high false positive rates.
-
-    Output: Single consistency score (0=hallucination, 1=consistent)
-    Threshold: Claims with score >= threshold are considered SUPPORTED
-    """
+    """HHEM-based hallucination detector. Score 0=hallucination, 1=consistent."""
 
     def __init__(
         self,
@@ -62,22 +29,17 @@ class HHEMHallucinationDetector:
         llm_model: str = None,
         entailment_threshold: float = 0.5
     ):
-        """
-        Initialize HHEM-based hallucination detector with tier-based model configuration.
-
-        Uses HHEM-2.1-Open which outperforms GPT-3.5/GPT-4 for hallucination detection.
-
-        Args:
-            hhem_model_name: HHEM model for consistency verification (default: HHEM-2.1-Open)
-            llm_model: LLM for claim decomposition (None = use tier config)
-            entailment_threshold: Minimum consistency score to consider claim supported (0.5 = balanced)
-        """
+        """Initialize with HHEM model, LLM for claims, and support threshold (default 0.5)."""
         # HHEM-2.1 requires AutoModel, not CrossEncoder (shifted away from SentenceTransformers)
         self.hhem_model = AutoModelForSequenceClassification.from_pretrained(
             hhem_model_name,
             trust_remote_code=True
         )
         self.hhem_model.eval()  # Set to evaluation mode for inference
+
+        # Tokenizer for input truncation (HHEM max sequence length is 512 tokens)
+        # HHEM uses custom config that AutoTokenizer can't map, but it's based on FLAN-T5-Base
+        self.tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
 
         spec = get_model_for_task("hhem_claim_decomposition")
         llm_model = llm_model or spec.name
@@ -93,11 +55,7 @@ class HHEMHallucinationDetector:
         self.entailment_threshold = entailment_threshold
 
     def decompose_into_claims(self, answer: str) -> List[str]:
-        """
-        Decompose answer into atomic factual claims using LLM.
-
-        Each claim should be atomic (single fact), verifiable, and self-contained.
-        """
+        """Decompose answer into atomic factual claims using LLM."""
         from advanced_agentic_rag_langgraph.prompts import get_prompt
 
         decomposition_prompt = get_prompt("hhem_claim_decomposition", answer=answer)
@@ -111,15 +69,21 @@ class HHEMHallucinationDetector:
             return [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
 
     def verify_claim_entailment(self, claim: str, context: str) -> dict:
-        """
-        Verify if claim is supported by context using HHEM consistency model.
+        """Verify claim against context using HHEM. Auto-truncates to 512 token limit."""
+        # Token budget: 512 max - 5 special tokens ([CLS], [SEP], etc) - 7 safety margin = 500
+        MAX_TOTAL_TOKENS = 500
 
-        HHEM outputs a single consistency score (0=hallucination, 1=consistent),
-        not 3-class NLI labels. This is specifically designed for RAG factual
-        consistency and handles paraphrases correctly.
+        # Tokenize to count tokens
+        claim_tokens = self.tokenizer.encode(claim, add_special_tokens=False)
+        context_tokens = self.tokenizer.encode(context, add_special_tokens=False)
 
-        Returns dict with consistency_score, label, and supported flag.
-        """
+        # Calculate max context tokens (prioritize claim, truncate context if needed)
+        max_context_tokens = MAX_TOTAL_TOKENS - len(claim_tokens)
+
+        if len(context_tokens) > max_context_tokens:
+            context_tokens = context_tokens[:max_context_tokens]
+            context = self.tokenizer.decode(context_tokens, skip_special_tokens=True)
+
         # HHEM format: List[Tuple[premise, hypothesis]] = List[Tuple[context, claim]]
         pairs = [(context, claim)]
 
@@ -139,19 +103,7 @@ class HHEMHallucinationDetector:
         }
 
     def verify_groundedness(self, answer: str, chunks: List[str]) -> dict:
-        """
-        Verify groundedness of answer using per-chunk HHEM verification.
-
-        Per-chunk verification ensures each HHEM call stays under 512 tokens.
-        For each claim, verifies against all chunks and takes max score.
-
-        Args:
-            answer: The generated answer to verify
-            chunks: List of individual chunk texts (not concatenated)
-
-        Returns dict with claims, entailment_scores, supported flags, unsupported_claims,
-        groundedness_score (supported/total), claim_details, and reasoning.
-        """
+        """Verify answer groundedness via per-chunk claim verification. Returns groundedness_score."""
         if not answer or not chunks:
             return {
                 "claims": [],

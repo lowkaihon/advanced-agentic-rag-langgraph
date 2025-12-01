@@ -1,9 +1,4 @@
-"""
-Strategy selection using pure LLM classification.
-
-Previous implementation: 10 heuristic rules with 9 regex-based metrics.
-Simplified to pure LLM for better accuracy and maintainability.
-"""
+"""Pure LLM-based retrieval strategy selection (semantic/keyword/hybrid)."""
 
 from typing import Dict, Literal, Tuple, TypedDict
 from langchain_openai import ChatOpenAI
@@ -21,13 +16,7 @@ class StrategySelector:
     """Pure LLM-based retrieval strategy selection. Domain-agnostic, zero heuristics."""
 
     def __init__(self, model: str = None, temperature: float = None):
-        """
-        Initialize strategy selector with tier-based model configuration.
-
-        Args:
-            model: Override model name (None = use tier config)
-            temperature: Override temperature (None = use tier config)
-        """
+        """Initialize with tier-based model config. Override with explicit model/temperature."""
         spec = get_model_for_task("strategy_selection")
         model = model or spec.name
         temperature = temperature if temperature is not None else spec.temperature

@@ -1,15 +1,4 @@
-"""
-RAGAS (Retrieval-Augmented Generation Assessment) Evaluator for RAG Systems.
-
-This module provides integration with the RAGAS evaluation framework to assess
-RAG pipeline performance using industry-standard metrics.
-
-RAGAS Metrics:
-- Faithfulness: Measures if generated answers contain hallucinations
-- Context Recall: Determines if retrieved contexts cover ground truth
-- Context Precision: Evaluates if relevant contexts are ranked higher
-- Answer Relevancy: Measures how relevant the answer is to the question
-"""
+"""RAGAS Evaluator - Faithfulness, Context Recall/Precision, Answer Relevancy metrics."""
 
 import asyncio
 from typing import List, Dict, Optional, Any
@@ -30,11 +19,7 @@ from collections import defaultdict
 
 
 class RAGASEvaluator:
-    """
-    Wrapper for RAGAS evaluation framework.
-
-    Provides: Initialize metrics, evaluate single samples, batch evaluation, metric comparison.
-    """
+    """Wrapper for RAGAS evaluation framework."""
 
     def __init__(
         self,
@@ -42,14 +27,7 @@ class RAGASEvaluator:
         temperature: float = None,
         embedding_model: Optional[str] = None
     ):
-        """
-        Initialize RAGAS evaluator with tier-based model configuration.
-
-        Args:
-            llm_model: LLM for evaluation (None = use tier config)
-            temperature: Sampling temperature (None = use tier config)
-            embedding_model: Embedding model (None = use default text-embedding-3-small)
-        """
+        """Initialize with tier-based model config (overrides optional)."""
         spec = get_model_for_task("ragas_evaluation")
         llm_model = llm_model or spec.name
         temperature = temperature if temperature is not None else spec.temperature
@@ -200,11 +178,7 @@ def run_ragas_evaluation_on_golden(
     evaluator: Optional[RAGASEvaluator] = None,
     verbose: bool = True
 ) -> Dict[str, Any]:
-    """
-    Run complete RAGAS evaluation on golden dataset.
-
-    Returns: RAGAS metrics and per-example results
-    """
+    """Run RAGAS evaluation on golden dataset. Returns metrics and per-example results."""
     if evaluator is None:
         evaluator = RAGASEvaluator()
 
@@ -287,12 +261,7 @@ def compare_ragas_with_custom_metrics(
     custom_results: Dict,
     verbose: bool = True
 ) -> Dict[str, Any]:
-    """
-    Compare RAGAS metrics with custom evaluation metrics.
-
-    Analyzes: Faithfulness vs Groundedness, Context Precision vs Retrieval Quality,
-    Response Relevancy vs Answer Sufficiency.
-    """
+    """Compare RAGAS vs custom metrics (Faithfulness vs Groundedness, etc.)."""
     comparison = {
         'ragas_metrics': {},
         'custom_metrics': {},

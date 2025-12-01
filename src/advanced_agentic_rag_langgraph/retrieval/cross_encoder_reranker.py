@@ -1,21 +1,11 @@
-"""
-CrossEncoder-based document reranking for improved retrieval quality.
-
-Uses cross-encoder/ms-marco-MiniLM-L-6-v2 for fast, accurate relevance scoring.
-Processes query-document pairs jointly to capture semantic relationships.
-"""
+"""CrossEncoder-based document reranking using ms-marco-MiniLM-L-6-v2."""
 
 from typing import List, Tuple
 from langchain_core.documents import Document
 
 
 class CrossEncoderReRanker:
-    """
-    Rerank documents using CrossEncoder semantic similarity.
-
-    Performance: 20-35% accuracy improvement, 200-500ms latency, ~100x cost reduction vs LLM.
-    Model: ms-marco-MiniLM-L-6-v2 (200-300ms for 10-20 docs).
-    """
+    """Rerank documents using CrossEncoder semantic similarity."""
 
     def __init__(
         self,

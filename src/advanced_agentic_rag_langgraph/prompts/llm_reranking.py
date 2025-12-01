@@ -1,22 +1,4 @@
-"""
-LLM Metadata-Aware Reranking Prompts
-
-Second-stage reranking using LLM-as-judge with metadata intelligence.
-
-Research-backed optimizations:
-- GPT-4o-mini (BASE): Explicit document type taxonomy + scoring examples improve ranking ~8%
-- GPT-5 (GPT5): Streamlined criteria + concise type definitions leverage reasoning, ~10% improvement
-- Expected reranking accuracy: 0.85 (baseline) -> 0.88 (GPT-4o) -> 0.93 (GPT-5)
-
-Evaluation dimensions:
-- Content relevance: Does content contain SPECIFIC information that answers the query?
-  (Prioritize answer-containing chunks over topic-adjacent chunks)
-- Document type appropriateness: Right KIND of document?
-- Technical level match: Complexity matches query sophistication?
-- Domain alignment: Document domain matches query topic?
-
-Applied after first-stage cross-encoder reranking to top-10 candidates.
-"""
+"""LLM Metadata-Aware Reranking Prompts - second-stage LLM-as-judge scoring."""
 
 BASE_PROMPT = """Query: "{query}"
 

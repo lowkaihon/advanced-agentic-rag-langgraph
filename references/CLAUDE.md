@@ -405,6 +405,37 @@ This directory contains compiled research documents from Perplexity.ai and other
 
 ---
 
+### 9b. HHEM-2.1-Open Implementation Guide
+
+**File:** `HHEM-2.1-Open Guide.md`
+
+**Purpose:** Practical implementation guide for HHEM-2.1-Open - loading, scoring, and integration patterns
+
+**When to Use:**
+- Implementing HHEM with AutoModel (recommended) or Pipeline approaches
+- Integrating hallucination detection into LangChain/LangGraph workflows
+- Understanding score interpretation and threshold calibration
+
+**Key Sections:**
+- AutoModel vs Pipeline loading approaches
+- Score interpretation (0-0.3 hallucination, 0.5+ consistent)
+- Production wrapper class with batch evaluation
+- LangGraph self-correcting workflow pattern
+- Performance benchmarks (50-100ms/pair, <600MB RAM)
+
+**Implementation Status:**
+- [IMPLEMENTED] HHEM detector in `src/validation/hhem_hallucination_detector.py`
+- [IMPLEMENTED] Per-chunk verification with max-score aggregation
+- [IMPLEMENTED] Claim decomposition pipeline
+
+**Related Code:**
+- `src/validation/hhem_hallucination_detector.py` - Production implementation
+- `src/orchestration/nodes.py:evaluate_answer_node()` - Integration point
+
+**Notes:** Complements Document 9 (theoretical NLI background) with practical implementation patterns. Consolidated from two separate guides.
+
+---
+
 ### 10. RAG OCR Research Papers
 
 **File:** `RAG_OCR_Research_papers.md`
@@ -795,7 +826,7 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Create evaluation datasets | RAG Golden Dataset Creation... | `test_pdf_pipeline.py`, `src/evaluation/` |
 | Integrate RAGAS metrics | RAGAS Integration... | Future: `src/evaluation/` |
 | Optimize reranking | CrossEncoder Implementation | `src/retrieval/retrievers.py` |
-| Implement HHEM hallucination detection | NLI-Based Hallucination Detection... | `src/validation/hhem_hallucination_detector.py` |
+| Implement HHEM hallucination detection | HHEM-2.1-Open Guide (9b) | `src/validation/hhem_hallucination_detector.py` |
 | Plan production fine-tuning | NLI-Based Hallucination Detection... | Future: RAGTruth fine-tuning pipeline |
 | Improve PDF processing | RAG OCR Research Papers | `src/preprocessing/loaders.py` |
 | Understand LLM-as-judge | Best Practices for Evaluating... | `src/retrieval/retrievers.py:rerank_documents()` |
@@ -867,5 +898,5 @@ See `../CLAUDE.md` for comprehensive links to official documentation
 
 ---
 
-*Last Updated: 2025-11-27 (Added: 3 documents for evaluation calibration and multi-agent architecture -> 21 total documents)*
+*Last Updated: 2025-12-01 (Added: HHEM-2.1-Open Guide (9b) -> 22 total documents)*
 *Note: This guide uses ASCII-only characters per project guidelines (no emojis/unicode)*

@@ -1,22 +1,4 @@
-"""
-Answer Quality Evaluation Prompts
-
-Evaluates generated answers using vRAG-Eval framework (Correctness, Completeness, Honesty).
-
-Research-backed optimizations:
-- GPT-4o-mini (BASE): Detailed rubric + few-shot examples improve classification ~10-12%
-- GPT-5 (GPT5): Concise criteria + direct questions leverage reasoning, ~20-25% improvement
-- Expected accuracy: 75% (baseline) -> 78-80% (GPT-4o) -> 88-92% (GPT-5)
-
-Evaluation dimensions:
-- Relevance: Does answer address the question?
-- Completeness: Are all aspects covered?
-- Accuracy: Is answer factually correct?
-
-Adaptive thresholds:
-- Good retrieval (>=0.6): 65% quality threshold
-- Poor retrieval (<0.6): 50% quality threshold (compensates for limited context)
-"""
+"""Answer Quality Evaluation Prompts using vRAG-Eval framework."""
 
 BASE_PROMPT = """Evaluate this answer using the vRAG-Eval framework (Correctness, Completeness, Honesty).
 

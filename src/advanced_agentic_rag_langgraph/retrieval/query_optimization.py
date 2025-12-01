@@ -46,11 +46,7 @@ def _get_strategy_optimization_llm():
 
 
 def expand_query(query: str) -> list[str]:
-    """
-    Generate query variations using structured output.
-
-    Uses Pydantic schema for 95%+ parsing reliability vs 85-90% with regex.
-    """
+    """Generate query variations for multi-query retrieval."""
     expansion_prompt = f"""Generate 3 alternative phrasings for a question to help retrieve better information:
 - One that emphasizes technical implementation and mechanisms
 - One that focuses on practical applications and use cases

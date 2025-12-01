@@ -1,17 +1,4 @@
-"""
-HHEM Claim Decomposition Prompts
-
-Used for hallucination detection via atomic claim extraction and HHEM-2.1-Open verification.
-
-Research-backed optimizations:
-- GPT-4o-mini (BASE): Few-shot examples improve decomposition accuracy ~6%
-- GPT-5 (GPT5): Concise instructions leverage reasoning, ~18% improvement over baseline
-- Expected F1: 0.68 (baseline) -> 0.72 (GPT-4o) -> 0.80 (GPT-5)
-
-References:
-- Zero-shot NLI baseline: ~0.65-0.70 F1
-- Production with fine-tuning: ~0.79-0.83 F1 (requires RAGTruth dataset)
-"""
+"""HHEM Claim Decomposition Prompts - atomic claim extraction for hallucination detection."""
 
 BASE_PROMPT = """Extract all factual claims from this answer.
 

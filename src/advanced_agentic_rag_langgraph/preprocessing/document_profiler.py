@@ -1,9 +1,4 @@
-"""
-LLM-based document profiling using structured output.
-
-This module uses LLMs to profile full documents before chunking,
-generating rich metadata that informs retrieval strategy selection.
-"""
+"""LLM-based document profiling using structured output."""
 
 import re
 from typing import TypedDict, Literal
@@ -38,30 +33,14 @@ class DocumentProfile(TypedDict):
 
 
 class DocumentProfiler:
-    """
-    Profile documents using LLM with structured output.
-
-    Analyzes full documents before chunking to extract:
-    - Document type and structure
-    - Technical density and reading level
-    - Domain tags and key concepts
-    - Optimal retrieval strategy with confidence
-    - Presence of math and code
-    - Document summary
-    """
+    """Profile documents using LLM with structured output."""
 
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0):
-        """Initialize LLM-based document profiler."""
         self.llm = ChatOpenAI(model=model, temperature=temperature)
         self.structured_llm = self.llm.with_structured_output(DocumentProfile)
 
     def _detect_signals(self, doc_text: str) -> dict:
-        """
-        Quick regex-based signal detection (zero-cost preprocessing).
-
-        Detects presence of code and math patterns before LLM profiling,
-        allowing LLM to confirm and classify rather than discover from scratch.
-        """
+        """Quick regex-based signal detection for code and math patterns."""
         return {
             'has_code_signal': bool(re.search(
                 r'```|^def |^class |^function|import |#include|public class|private |protected ',
@@ -75,24 +54,7 @@ class DocumentProfiler:
         }
 
     def _stratified_sample(self, doc_text: str, target_tokens: int = 5000) -> str:
-        """
-        Sample document using stratified positional strategy.
-
-        Research-backed approach:
-        - First 30% of document: 40-50% of token budget (intro, abstract, metadata)
-        - Last 20% of document: 20-25% of token budget (conclusions, key takeaways)
-        - Middle sections: 25-30% of token budget (body content, technical details)
-
-        This maximizes coverage of metadata that appears at document boundaries
-        while ensuring middle sections are sampled for code/math/concepts.
-
-        Args:
-            doc_text: Full document text
-            target_tokens: Target token count (default: 5000 for optimal cost/accuracy)
-
-        Returns:
-            Stratified sample of document with section markers
-        """
+        """Sample document using stratified positional strategy (first 45%, middle 33%, last 22%)."""
         target_chars = target_tokens * 4
         doc_length = len(doc_text)
 
@@ -122,19 +84,7 @@ class DocumentProfiler:
         return f"{first_section}\n\n[... middle section sampled ...]\n\n{middle_section}\n\n[... final section sampled ...]\n\n{last_section}"
 
     def profile_document(self, doc_text: str, doc_id: str = None) -> DocumentProfile:
-        """
-        Profile a full document using LLM analysis with stratified sampling.
-
-        Uses research-backed stratified positional sampling (5000 tokens) and
-        regex-based signal pre-detection for optimal accuracy/cost trade-off.
-
-        Args:
-            doc_text: Full document text (before chunking)
-            doc_id: Optional document identifier
-
-        Returns:
-            DocumentProfile with structured metadata
-        """
+        """Profile a document using LLM analysis with stratified sampling."""
         # Quick signal detection (zero-cost preprocessing)
         signals = self._detect_signals(doc_text)
 

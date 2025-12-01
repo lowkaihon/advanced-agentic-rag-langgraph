@@ -1,8 +1,4 @@
-"""
-Document loader module for loading documents with profiling and metadata enrichment.
-
-This module handles document loading, profiling, and preparation for retrieval.
-"""
+"""Document loader with profiling and metadata enrichment."""
 
 from typing import List, Dict, Tuple
 from langchain_core.documents import Document

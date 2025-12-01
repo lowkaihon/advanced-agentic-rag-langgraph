@@ -1,46 +1,11 @@
-"""
-Prompt template system with model-specific variant support.
-
-Research-backed optimizations:
-- GPT-4o/GPT-4o-mini: Few-shot examples, explicit scaffolding, detailed rubrics
-- GPT-5 family: Concise instructions, no examples, trust internal reasoning
-
-Usage:
-    from advanced_agentic_rag_langgraph.prompts import get_prompt
-
-    # Automatically selects correct variant based on MODEL_TIER
-    prompt = get_prompt("hhem_claim_decomposition", answer="...")
-"""
+"""Prompt template system with model-specific variant support (GPT-4o vs GPT-5)."""
 
 from typing import Optional
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 
 def get_prompt(task_name: str, **kwargs) -> str:
-    """
-    Load prompt template with model-specific variant support.
-
-    Resolution logic:
-    1. Get model spec for task from tier configuration
-    2. Detect model family (GPT-5 vs base/GPT-4o)
-    3. Load appropriate variant (GPT5_PROMPT vs BASE_PROMPT)
-    4. Format with kwargs if provided
-
-    Args:
-        task_name: Task identifier matching prompt module name
-                  (e.g., "hhem_claim_decomposition", "answer_quality_eval")
-        **kwargs: Template variables for f-string formatting
-
-    Returns:
-        Formatted prompt string
-
-    Example:
-        >>> # Premium tier (GPT-5.1) loads GPT5_PROMPT variant
-        >>> prompt = get_prompt("hhem_claim_decomposition", answer="BERT has 12 layers")
-
-        >>> # Budget tier (GPT-4o-mini) loads BASE_PROMPT variant
-        >>> prompt = get_prompt("answer_quality_eval", question="...", answer="...")
-    """
+    """Load prompt template with model-specific variant (BASE or GPT5) based on current tier."""
     spec = get_model_for_task(task_name)
     is_gpt5 = _is_gpt5_family(spec.name)
 
@@ -79,21 +44,7 @@ def get_prompt(task_name: str, **kwargs) -> str:
 
 
 def _is_gpt5_family(model_name: str) -> bool:
-    """
-    Detect if model is GPT-5 family.
-
-    GPT-5 models need different prompting:
-    - No few-shot examples (can hurt performance)
-    - No Chain-of-Thought scaffolding (adds latency)
-    - Concise, unambiguous instructions
-    - Trust internal reasoning capabilities
-
-    Args:
-        model_name: Model identifier (e.g., "gpt-5.1", "gpt-4o-mini")
-
-    Returns:
-        True if GPT-5 family, False otherwise
-    """
+    """Detect if model is GPT-5 family (needs concise prompts, no few-shot)."""
     model_lower = model_name.lower()
     return model_lower.startswith("gpt-5") or model_lower.startswith("gpt5")
 

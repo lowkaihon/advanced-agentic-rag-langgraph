@@ -1,13 +1,4 @@
-"""
-LLM-based document reranking for Multi-Agent RAG merge stage.
-
-Scores documents from multi-worker retrieval by relevance to the original question.
-Uses same pattern as LLMMetadataReRanker: score each doc 0-100, sort, take top-k.
-
-Key differences from single-hop LLMMetadataReRanker:
-- Candidates come from multiple parallel workers
-- No metadata scoring (workers already did two-stage reranking)
-"""
+"""LLM-based document reranking for Multi-Agent RAG merge stage."""
 
 from typing import TypedDict
 from langchain_openai import ChatOpenAI
@@ -33,12 +24,7 @@ class MultiAgentMergeReRanker:
     """Score and rank documents from multi-worker retrieval results."""
 
     def __init__(self, top_k: int = 6):
-        """
-        Initialize relevance-based merge reranker.
-
-        Args:
-            top_k: Number of top documents to return after reranking
-        """
+        """Initialize with top_k documents to return."""
         self.top_k = top_k
 
         spec = get_model_for_task("multi_agent_merge_reranking")
@@ -57,18 +43,7 @@ class MultiAgentMergeReRanker:
         candidate_docs: list[Document],
         fallback_scores: list[float] = None,
     ) -> tuple[list[Document], list[float] | None]:
-        """
-        Score and rank documents by relevance to the original question.
-
-        Args:
-            original_question: The user's original question
-            candidate_docs: Candidates from all workers
-            fallback_scores: Fallback scores if LLM fails (position-based)
-
-        Returns:
-            Tuple of (top-k Documents, their scores 0-100).
-            Scores is None if fallback was used (LLM failed or incomplete).
-        """
+        """Score and rank documents. Returns (top-k docs, scores) or (docs, None) on fallback."""
         if not candidate_docs:
             return [], None
 

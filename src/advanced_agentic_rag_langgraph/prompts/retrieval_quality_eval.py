@@ -1,24 +1,4 @@
-"""
-Retrieval Quality Evaluation Prompts
-
-Evaluates CONTEXT SUFFICIENCY - whether retrieved documents contain
-the specific information needed to answer correctly.
-
-Research foundation (Google ICLR 2025, eRAG, CoV-RAG):
-- Relevance != Sufficiency: Topically related docs may lack specific answers
-- 66% hallucination rate with relevant-but-insufficient context (vs 10% no context)
-- LLMs recognize sufficient context well, but fail to abstain when insufficient
-
-Model-specific optimizations:
-- GPT-4o-mini (BASE): Explicit rubric + few-shot examples for calibration
-- GPT-5 (GPT5): Concise criteria leverage stronger reasoning
-
-Scoring thresholds (sufficiency-based):
-- 80-100: Sufficient (explicit answers present)
-- 60-79: Mostly sufficient (core answer explicit)
-- 40-59: Insufficient (related but missing key info) -> retry
-- 0-39: Irrelevant (wrong topic) -> strategy change
-"""
+"""Retrieval Quality Evaluation Prompts - evaluates context sufficiency (not just relevance)."""
 
 BASE_PROMPT = """Query: {query}
 

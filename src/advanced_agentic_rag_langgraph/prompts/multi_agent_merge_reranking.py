@@ -1,11 +1,4 @@
-"""
-LLM Document Scoring for Multi-Agent RAG Merge.
-
-Scores documents from multi-worker retrieval by relevance to the original question.
-Same pattern as llm_reranking.py: score each document 0-100, then sort.
-
-Applied after parallel workers return results to select final documents for generation.
-"""
+"""LLM Document Scoring for Multi-Agent RAG Merge - scores multi-worker retrieval results."""
 
 BASE_PROMPT = """Score documents for answering a question.
 

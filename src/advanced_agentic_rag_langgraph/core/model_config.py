@@ -1,16 +1,4 @@
-"""
-Model tier configuration for configurable LLM selection across RAG pipeline tasks.
-
-Implements research-backed optimizations:
-- GPT-5 family: Concise prompts, high reasoning_effort, low verbosity, no few-shot
-- GPT-4o-mini: Explicit scaffolding, few-shot examples, medium verbosity
-- Task-specific model allocation based on complexity and latency sensitivity
-
-References:
-- GPT-5 prompt optimization: https://dev.to/abhishek_gautam-01/steerable-prompts-prompt-engineering-for-the-gpt-5-era-480m
-- Chain-of-thought overhead: https://gail.wharton.upenn.edu/research-and-insights/tech-report-chain-of-thought/
-- Structured outputs: https://python.useinstructor.com/blog/2024/09/26/bad-schemas-could-break-your-llm-structured-outputs/
-"""
+"""Model tier configuration for LLM selection across RAG pipeline tasks."""
 
 from enum import Enum
 from dataclasses import dataclass
@@ -27,16 +15,7 @@ class ModelTier(str, Enum):
 
 @dataclass
 class ModelSpec:
-    """
-    Specification for LLM model configuration with tier-specific optimizations.
-
-    Attributes:
-        name: Model identifier (e.g., "gpt-4o-mini", "gpt-5.1")
-        temperature: Sampling temperature (0 for deterministic, 0.7 for creative)
-        reasoning_effort: GPT-5 reasoning depth ("minimal", "low", "medium", "high")
-        verbosity: Output length control ("low", "medium", "high")
-        few_shot_count: Number of examples to include in prompt (0 for GPT-5, 2-3 for GPT-4o-mini)
-    """
+    """LLM model configuration with tier-specific optimizations."""
     name: str
     temperature: float
     reasoning_effort: Optional[str] = None
@@ -46,18 +25,7 @@ class ModelSpec:
 
 @dataclass
 class TierConfig:
-    """
-    Complete tier configuration mapping 15 RAG tasks to model specs.
-
-    Task categories:
-    - Sequential (user-facing latency): conversational_rewrite, expansion_decision,
-      query_expansion, strategy_selection, answer_generation
-    - Async (quality-critical): retrieval_quality_eval, llm_reranking,
-      hhem_claim_decomposition, answer_quality_eval
-    - Retry paths: query_rewriting, strategy_optimization
-    - Offline: ragas_evaluation
-    - Multi-agent: complexity_classification, query_decomposition, multi_agent_merge_reranking
-    """
+    """Complete tier configuration mapping RAG tasks to model specs."""
     conversational_rewrite: ModelSpec
     expansion_decision: ModelSpec
     query_expansion: ModelSpec
@@ -436,17 +404,7 @@ TIER_CONFIGS = {
 # ========== PUBLIC API ==========
 
 def get_current_tier() -> ModelTier:
-    """
-    Get active tier from MODEL_TIER environment variable.
-
-    Returns:
-        ModelTier enum value (defaults to BUDGET if not set)
-
-    Example:
-        >>> os.environ["MODEL_TIER"] = "premium"
-        >>> get_current_tier()
-        ModelTier.PREMIUM
-    """
+    """Get active tier from MODEL_TIER env var (defaults to BUDGET)."""
     tier_str = os.getenv("MODEL_TIER", "budget").lower()
     try:
         return ModelTier(tier_str)
@@ -456,29 +414,7 @@ def get_current_tier() -> ModelTier:
 
 
 def get_model_for_task(task_name: str) -> ModelSpec:
-    """
-    Get model specification for a specific task in the current tier.
-
-    Args:
-        task_name: Task identifier matching TierConfig attribute names
-            Valid names: conversational_rewrite, expansion_decision, query_expansion,
-            strategy_selection, retrieval_quality_eval, query_rewriting,
-            strategy_optimization, llm_reranking, answer_generation,
-            hhem_claim_decomposition, answer_quality_eval, ragas_evaluation
-
-    Returns:
-        ModelSpec with name, temperature, reasoning_effort, verbosity, few_shot_count
-
-    Raises:
-        AttributeError: If task_name is not a valid task
-
-    Example:
-        >>> spec = get_model_for_task("answer_generation")
-        >>> spec.name
-        'gpt-4o-mini'  # In budget tier
-        >>> spec.reasoning_effort
-        None  # GPT-4o doesn't use reasoning_effort
-    """
+    """Get model specification for a task in the current tier."""
     tier = get_current_tier()
     config = TIER_CONFIGS[tier]
 
@@ -491,44 +427,8 @@ def get_model_for_task(task_name: str) -> ModelSpec:
         )
 
 
-def get_prompt_for_task(task_name: str) -> str:
-    """
-    Load prompt template for task with model-specific variant support.
-
-    Prompt resolution order:
-    1. Model-specific variant: prompts/{task_name}_{model_name}.txt
-    2. Fallback to base: prompts/{task_name}_base.txt
-
-    Args:
-        task_name: Task identifier for prompt lookup
-
-    Returns:
-        Prompt template string
-
-    Note:
-        This function is a placeholder for Phase 3 (prompt template system).
-        Currently returns empty string. Will be implemented after basic tier system works.
-
-    Example:
-        >>> get_prompt_for_task("hhem_claim_decomposition")
-        # Premium tier (GPT-5.1): Returns prompts/hhem_claim_decomposition_gpt5.txt
-        # Budget tier (GPT-4o-mini): Returns prompts/hhem_claim_decomposition_base.txt
-    """
-    # TODO: Implement prompt template loading in Phase 3
-    # For now, prompts remain hardcoded in their respective modules
-    return ""
-
-
 def reset_llm_cache():
-    """
-    Reset cached LLM instances when switching tiers in tests.
-
-    Note:
-        This is a placeholder for test infrastructure.
-        Individual modules should implement their own cache reset if needed.
-        Currently most modules create LLM instances per-class, so tier switching
-        works automatically via environment variable.
-    """
+    """Placeholder for resetting cached LLM instances when switching tiers."""
     # TODO: Implement if modules start caching LLM instances at module level
     pass
 

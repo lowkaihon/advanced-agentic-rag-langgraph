@@ -25,7 +25,7 @@ class AdvancedRAGState(TypedDict):
     query_expansions: Optional[list[str]]  # Query variants for multi-query fusion (generated from optimized retrieval_query)
 
     # === STRATEGY SELECTION & ADAPTATION ===
-    retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]
+    retrieval_strategy: Optional[Literal["semantic", "keyword", "hybrid"]]  # Selected approach based on query and corpus analysis
     corpus_stats: Optional[dict[str, Any]]  # Document profiling: technical_density, domain_distribution, has_code/math
     strategy_changed: Optional[bool]  # Signals early switch happened (for revert validation)
     strategy_switch_reason: Optional[str]  # Content-driven explanation (e.g., "off_topic detected -> keyword")
@@ -42,7 +42,7 @@ class AdvancedRAGState(TypedDict):
     retrieval_quality_score: Optional[float]  # 0.0-1.0 score from structured LLM evaluation
     retrieval_quality_reasoning: Optional[str]  # LLM explanation of quality score
     retrieval_quality_issues: Optional[list[str]]  # Issues: partial_coverage, missing_key_info, off_topic, wrong_domain, etc.
-    retrieval_improvement_suggestion: Optional[str]  # LLM-generated actionable query improvement (if quality < 60)
+    retrieval_improvement_suggestion: Optional[str]  # LLM-generated actionable query improvement (if quality < 0.6)
 
     # Answer Quality (vRAG-Eval framework with adaptive thresholds)
     answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation
@@ -52,7 +52,7 @@ class AdvancedRAGState(TypedDict):
 
     # === GROUNDEDNESS & HALLUCINATION (HHEM-based detection) ===
     groundedness_score: Optional[float]  # Percentage of claims supported by context (0.0-1.0)
-    has_hallucination: Optional[bool]  # Whether unsupported claims detected via cross-encoder HHEM
+    has_hallucination: Optional[bool]  # Whether unsupported claims detected via HHEM
     unsupported_claims: Optional[list[str]]  # Specific claims failing HHEM verification (for targeted regeneration)
 
     # === GENERATION RETRY (Unified retry handling) ===
@@ -67,4 +67,4 @@ class AdvancedRAGState(TypedDict):
 
     # === OUTPUT ===
     final_answer: Optional[str]
-    confidence_score: Optional[float]
+    confidence_score: Optional[float]  # Answer confidence from quality evaluation (0.0-1.0)

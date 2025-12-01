@@ -1,9 +1,4 @@
-"""
-PDF document loader with intelligent chunking for RAG.
-
-This module provides utilities for loading PDF documents, chunking them
-appropriately, and preparing them for the document profiling pipeline.
-"""
+"""PDF document loader with intelligent chunking for RAG."""
 
 import os
 from typing import List, Optional

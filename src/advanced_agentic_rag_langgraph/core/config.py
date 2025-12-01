@@ -90,20 +90,7 @@ def setup_retriever(
     verbose: bool = True,
     k_final: int = 4
 ) -> AdaptiveRetriever:
-    """
-    Initialize hybrid retriever with PDF documents from docs/ folder.
-
-    Process: Load full PDFs → Profile with LLM → Chunk → Attach metadata → Create retriever
-
-    Args:
-        pdfs: PDF filenames or paths (None = all PDFs in docs/)
-        chunk_size: Text chunk size in characters
-        chunk_overlap: Overlap between chunks
-        verbose: Print progress messages
-        k_final: Number of final documents after two-stage reranking (default: 4)
-
-    Returns: AdaptiveRetriever instance with profiled documents
-    """
+    """Initialize hybrid retriever from docs/ PDFs with profiling and metadata enrichment."""
     global _retriever_instance, _corpus_stats, _document_profiles
 
     if _retriever_instance is not None:

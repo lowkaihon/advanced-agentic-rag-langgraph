@@ -17,18 +17,7 @@ from typing import Literal
 # ========== RETRIEVAL ROUTING ==========
 
 def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
-    """
-    Pure router: Route based on retrieval quality with content-driven early strategy switching.
-
-    Implements dual-tier strategy switching:
-    - Early tier (here): Detects obvious strategy mismatches (off_topic, wrong_domain)
-    - Late tier (route_after_evaluation): Handles subtle insufficiency after answer generation
-
-    Research-backed CRAG pattern: confidence-based action triggering.
-
-    Note: Pure function - only reads state and returns routing decision.
-    State updates for early strategy switching happen in query_expansion_node.
-    """
+    """Route based on retrieval quality: generate, rewrite, or early strategy switch."""
     quality = state.get("retrieval_quality_score", 0)
     attempts = state.get("retrieval_attempts", 0)
     issues = state.get("retrieval_quality_issues", [])
@@ -63,28 +52,18 @@ def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation
 # ========== EVALUATION ROUTING ==========
 
 def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generation", "END"]:
-    """
-    Single routing decision: retry generation or end.
+    """Route after evaluation: retry generation or end (no re-retrieval after generation)."""
 
-    By this point, retrieval already validated upstream (quality >= 0.6 or attempts >= 2).
-    Therefore all answer issues = generation problems.
-
-    Research principle: "Fix generation problems with generation strategies, not by retrieving more documents."
-    """
-
-    # Priority 1: Refusal detected -> accept immediately (terminal state)
-    # Rationale: If LLM refuses despite quality-aware prompts, it's genuine limitation
+    # Refusal detected -> accept immediately (terminal state)
     if state.get("is_refusal", False):
         retrieval_quality = state.get("retrieval_quality_score", 0.7)
         print(f"\nRouting: END (LLM refused to answer, retrieval quality: {retrieval_quality:.0%})")
         return END
 
-    # Priority 2: Answer sufficient -> done
     if state.get("is_answer_sufficient"):
         print("\nRouting: END (answer sufficient)")
         return END
 
-    # Priority 3: Generation retry budget
     generation_attempts = state.get("generation_attempts", 0)
 
     if generation_attempts < 3:
@@ -98,21 +77,15 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generatio
 # ========== GRAPH BUILDER ==========
 
 def build_advanced_rag_graph():
-    """Build complete advanced RAG graph with all techniques"""
+    """Build the advanced RAG graph with self-correction loops."""
     builder = StateGraph(AdvancedRAGState)
 
-    # ========== CONVERSATIONAL PREPROCESSING ==========
+    # Nodes
     builder.add_node("conversational_rewrite", conversational_rewrite_node)
-
-    # ========== QUERY OPTIMIZATION STAGE ==========
     builder.add_node("query_expansion", query_expansion_node)
     builder.add_node("decide_strategy", decide_retrieval_strategy_node)
-
-    # ========== RETRIEVAL STAGE ==========
     builder.add_node("retrieve_with_expansion", retrieve_with_expansion_node)
     builder.add_node("rewrite_and_refine", rewrite_and_refine_node)
-
-    # ========== ANSWER STAGE ==========
     builder.add_node("answer_generation", answer_generation_node)
     builder.add_node("evaluate_answer", evaluate_answer_node)
 
@@ -132,11 +105,8 @@ def build_advanced_rag_graph():
     )
 
     builder.add_edge("rewrite_and_refine", "query_expansion")
-
-    # Simplified flow: answer_generation -> evaluate_answer (single evaluation node)
     builder.add_edge("answer_generation", "evaluate_answer")
 
-    # Single conditional routing: retry generation or end (no re-retrieval after generation)
     builder.add_conditional_edges(
         "evaluate_answer",
         route_after_evaluation,
@@ -146,7 +116,6 @@ def build_advanced_rag_graph():
         }
     )
 
-    # Skip checkpointer when running under LangGraph API (provides its own persistence)
     checkpointer = None if is_langgraph_api_environment() else MemorySaver()
     graph = builder.compile(checkpointer=checkpointer)
 

@@ -1,15 +1,4 @@
-"""
-Answer Generation Prompts
-
-Generates grounded answers using only retrieved context.
-
-Research-backed optimizations:
-- GPT-4o-mini (BASE): Explicit CoT scaffolding + step-by-step instructions
-- GPT-5 (GPT5): Concise instructions, no CoT (saves 20-80% latency for 2.9% accuracy gain)
-- Expected faithfulness: 72% (GPT-4o baseline) -> 80-85% (GPT-5, no CoT overhead)
-
-Key principle: RAG systems should use ONLY retrieved context, no external knowledge.
-"""
+"""Answer Generation Prompts - grounded answers using only retrieved context."""
 
 # System prompt template (shared, but instructions differ)
 SYSTEM_PROMPT_TEMPLATE = """You are an AI assistant that answers questions based exclusively on retrieved documents. Your role is to provide accurate, well-grounded responses using only the information present in the provided context.
@@ -93,23 +82,7 @@ def get_answer_generation_prompts(
     is_gpt5: bool = False,
     retry_feedback: str = "",
 ) -> tuple[str, str]:
-    """
-    Get system and user prompts for answer generation.
-
-    LLM best practices: System prompt = behavioral guidance, User message = task content.
-    - quality_instruction goes to system prompt (how to behave)
-    - retry_feedback goes to user message (turn-specific content with previous answer)
-
-    Args:
-        quality_instruction: Behavioral instructions based on retrieval quality or retry mode
-        formatted_context: Retrieved documents formatted as context
-        question: User's query
-        is_gpt5: If True, use GPT5 variant (no CoT scaffolding)
-        retry_feedback: Content for retry (previous answer + issues) - goes in user message
-
-    Returns:
-        Tuple of (system_prompt, user_message)
-    """
+    """Get (system_prompt, user_message) for answer generation."""
     system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
         quality_instruction=quality_instruction
     )

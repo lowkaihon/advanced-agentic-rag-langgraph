@@ -1,17 +1,4 @@
-"""
-Retrieval evaluation metrics for RAG systems.
-
-Implements standard information retrieval metrics:
-- Binary relevance: Recall@K, Precision@K, F1@K, Hit Rate, MRR
-- Graded relevance: nDCG@K (Normalized Discounted Cumulative Gain)
-- Answer quality: Answer Relevance (embedding-based similarity)
-
-These metrics enable:
-- Quantitative benchmarking
-- A/B testing of retrieval strategies
-- Regression testing with golden datasets
-- Systematic optimization
-"""
+"""Retrieval evaluation metrics: Recall@K, Precision@K, F1@K, MRR, nDCG, Answer Relevance."""
 
 from typing import List, Set, Dict, Optional
 from langchain_core.documents import Document
@@ -25,16 +12,7 @@ def calculate_retrieval_metrics(
     ground_truth_doc_ids: Set[str] | List[str],
     k: int
 ) -> Dict[str, float]:
-    """
-    Calculate standard retrieval metrics for binary relevance.
-
-    Returns: recall_at_k, precision_at_k, f1_at_k, hit_rate, mrr
-
-    Best Practices:
-    - Recall@K: Critical for RAG (missing relevant docs can't be fixed downstream)
-    - Precision@K: Important for quality (irrelevant docs waste LLM context)
-    - nDCG@K: Use when relevance is graded (not binary) via calculate_ndcg()
-    """
+    """Calculate recall_at_k, precision_at_k, f1_at_k, hit_rate, mrr for binary relevance."""
     if not ground_truth_doc_ids:
         return {
             "recall_at_k": 0.0,
@@ -87,20 +65,7 @@ def calculate_ndcg(
     relevance_grades: Dict[str, int],
     k: int
 ) -> float:
-    """
-    Calculate Normalized Discounted Cumulative Gain (nDCG@K).
-
-    Measures ranking quality for graded relevance (not binary).
-    Returns 0.0-1.0, where 1.0 is perfect ranking.
-
-    Formula: nDCG@K = DCG@K / IDCG@K
-    Where DCG@K = Σ(i=1 to K) [rel(i) / log2(i+1)]
-
-    Best Practices:
-    - Use 4-level grading: 0 (not relevant), 1 (marginal), 2 (relevant), 3 (highly relevant)
-    - nDCG particularly valuable for RAG (retrieval order affects LLM output quality)
-    - Combine with binary metrics (Recall@K) for comprehensive evaluation
-    """
+    """Calculate nDCG@K for graded relevance (0-3 scale). Returns 0.0-1.0."""
     if not relevance_grades:
         return 0.0
 
@@ -141,19 +106,7 @@ def calculate_answer_relevance(
     embeddings: Optional[OpenAIEmbeddings] = None,
     threshold: float = 0.7
 ) -> Dict[str, float]:
-    """
-    Calculate answer relevance using embedding similarity.
-
-    Uses cosine similarity between question and answer embeddings.
-    Detects off-topic responses even if factually correct.
-
-    Returns: relevance_score (0.0-1.0), is_relevant (>= threshold), relevance_category
-
-    Best Practices:
-    - Use alongside RAGAS ResponseRelevancy for comprehensive evaluation
-    - Threshold 0.7 works well for most cases
-    - Particularly useful for detecting query-answer misalignment in multi-turn conversations
-    """
+    """Calculate answer relevance via embedding cosine similarity (0.0-1.0)."""
     if embeddings is None:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
 

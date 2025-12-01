@@ -30,30 +30,21 @@ hhem_detector = HHEMHallucinationDetector()
 # ============ STRUCTURED OUTPUT SCHEMAS ============
 
 class ExpansionDecision(TypedDict):
-    """Structured output schema for query expansion decision.
-
-    Used with .with_structured_output() to ensure reliable LLM parsing.
-    """
+    """LLM structured output for query expansion decision."""
     decision: Literal["yes", "no"]
     reasoning: str
 
 
 class RetrievalQualityEvaluation(TypedDict):
-    """Structured output schema for retrieval quality assessment.
-
-    Used with .with_structured_output() to ensure reliable LLM parsing.
-    """
+    """LLM structured output for retrieval quality assessment."""
     quality_score: float
     reasoning: str
     issues: list[str]
-    improvement_suggestion: str  # Actionable query improvement if quality < 60
+    improvement_suggestion: str
 
 
 class AnswerQualityEvaluation(TypedDict):
-    """Structured output schema for answer quality assessment.
-
-    Mirrors RetrievalQualityEvaluation pattern for consistency.
-    """
+    """LLM structured output for answer quality assessment."""
     is_relevant: bool
     is_complete: bool
     is_accurate: bool
@@ -63,10 +54,7 @@ class AnswerQualityEvaluation(TypedDict):
 
 
 class RefusalCheck(TypedDict):
-    """Structured output schema for refusal detection.
-
-    Detects when LLM refuses to answer due to insufficient context.
-    """
+    """LLM structured output for refusal detection."""
     refused: bool
     reasoning: str
 
@@ -74,33 +62,7 @@ class RefusalCheck(TypedDict):
 # ========== HELPER FUNCTIONS ==========
 
 def _extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str, str]]:
-    """
-    Extract conversation history from messages list (LangGraph best practice).
-
-    Pairs HumanMessage/AIMessage to create conversation turns in the format
-    expected by ConversationalRewriter: [{"user": str, "assistant": str}, ...]
-
-    Only includes complete pairs (ignores trailing unpaired messages).
-
-    Args:
-        messages: List of BaseMessage objects (HumanMessage, AIMessage, etc.)
-
-    Returns:
-        List of conversation turns in format: [{"user": str, "assistant": str}]
-
-    Example:
-        >>> messages = [
-        ...     HumanMessage(content="What is RAG?"),
-        ...     AIMessage(content="RAG is Retrieval-Augmented Generation..."),
-        ...     HumanMessage(content="How does it work?"),
-        ...     AIMessage(content="It works by...")
-        ... ]
-        >>> _extract_conversation_history(messages)
-        [
-            {"user": "What is RAG?", "assistant": "RAG is..."},
-            {"user": "How does it work?", "assistant": "It works by..."}
-        ]
-    """
+    """Extract conversation history as [{"user": str, "assistant": str}, ...] pairs."""
     if not messages or len(messages) < 2:
         return []
 
@@ -122,12 +84,7 @@ def _extract_conversation_history(messages: list[BaseMessage]) -> list[dict[str,
     
 
 def _should_skip_expansion_llm(query: str) -> bool:
-    """
-    Use LLM to determine if query expansion would improve retrieval.
-
-    Domain-agnostic - works for any query type and corpus.
-    More accurate than heuristics - handles context and intent.
-    """
+    """Use LLM to determine if query expansion would improve retrieval."""
     spec = get_model_for_task("expansion_decision")
     expansion_llm = ChatOpenAI(
         model=spec.name,
@@ -182,12 +139,7 @@ Return your decision ('yes' or 'no') with brief reasoning."""
 # ============ CONVERSATIONAL QUERY REWRITING ============
 
 def conversational_rewrite_node(state: dict) -> dict:
-    """
-    Rewrite query using conversation history to make it self-contained.
-
-    This node runs before query expansion to ensure queries have proper context.
-    Extracts conversation from messages field (LangGraph best practice).
-    """
+    """Rewrite query using conversation history to make it self-contained."""
     question = state.get("user_question", "")
 
     # Extract conversation from messages (LangGraph best practice)
@@ -239,12 +191,7 @@ def conversational_rewrite_node(state: dict) -> dict:
 # ============ QUERY OPTIMIZATION STAGE ============
 
 def decide_retrieval_strategy_node(state: dict) -> dict:
-    """
-    Decide which retrieval strategy to use based on query and corpus characteristics.
-
-    Uses pure LLM classification for intelligent, domain-agnostic strategy selection.
-    Query optimization happens downstream in query_expansion_node (consolidates all optimization logic).
-    """
+    """Decide retrieval strategy (semantic/keyword/hybrid) based on query and corpus."""
     query = state["baseline_query"]
     corpus_stats = state.get("corpus_stats", {})
 
@@ -269,21 +216,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
 
 
 def query_expansion_node(state: dict) -> dict:
-    """
-    Optimize query for strategy, then conditionally expand.
-
-    ALL queries passing through this node get strategy-specific optimization.
-    This consolidates optimization logic in a single location.
-
-    Entry paths:
-    1. Initial turn: From decide_strategy (first question) - optimizes for selected strategy
-    2. Early switch: From route_after_retrieval (off_topic/wrong_domain detected) - switches strategy then optimizes
-    3. Query rewrite: From rewrite_and_refine (semantic query improvement) - optimizes rewritten query
-
-    NO LONGER HANDLES:
-    - Late strategy switching (removed - no re-retrieval after answer_generation)
-    - Hallucination-triggered re-retrieval (removed - unreachable code)
-    """
+    """Optimize query for strategy, then conditionally expand into variants."""
 
     quality = state.get("retrieval_quality_score", 1.0)
     attempts = state.get("retrieval_attempts", 0)
@@ -355,13 +288,7 @@ def query_expansion_node(state: dict) -> dict:
 # ============ ADAPTIVE RETRIEVAL STAGE ============
 
 def retrieve_with_expansion_node(state: dict) -> dict:
-    """
-    Retrieve documents using query expansions with RRF (Reciprocal Rank Fusion).
-
-    RRF aggregates rankings across multiple query variants to improve retrieval quality.
-    Formula: score(doc) = sum(1/(rank + k)) across all queries where doc appears.
-    Research shows 3-5% MRR improvement over naive deduplication.
-    """
+    """Retrieve documents using query expansions with RRF fusion and two-stage reranking."""
 
     global adaptive_retriever
     if adaptive_retriever is None:
@@ -590,12 +517,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============
 
 def rewrite_and_refine_node(state: dict) -> dict:
-    """
-    Rewrite query using LLM-generated improvement suggestion.
-
-    The retrieval quality evaluator provides specific, actionable feedback
-    that flows directly into query rewriting (closed-loop CRAG pattern).
-    """
+    """Rewrite query using LLM-generated improvement suggestion from retrieval evaluation."""
     query = state["active_query"]
     quality = state.get("retrieval_quality_score", 0)
     suggestion = state.get("retrieval_improvement_suggestion", "")
@@ -634,12 +556,7 @@ Issues detected: {', '.join(issues) if issues else 'None'}"""
 # ============ ANSWER GENERATION & EVALUATION ============
 
 def answer_generation_node(state: dict) -> dict:
-    """
-    Generate answer using structured RAG prompt with unified retry handling.
-
-    Implements RAG best practices: quality-aware thresholds, XML markup, unified feedback.
-    Handles both initial generation and retries from combined evaluation.
-    """
+    """Generate answer with quality-aware instructions and unified retry handling."""
 
     question = state["baseline_query"]
     context = state["retrieved_docs"][-1] if state.get("retrieved_docs") else "No context"
@@ -748,16 +665,7 @@ def get_quality_fix_guidance(issues: list[str]) -> str:
 
 
 def evaluate_answer_node(state: dict) -> dict:
-    """
-    Combined refusal detection + groundedness + quality evaluation (single decision point).
-
-    Performs checks in sequence (with early exit on refusal):
-    1. Refusal detection (LLM-as-judge) - CHECK FIRST, exit early if refusal
-    2. HHEM-based hallucination detection (factuality)
-    3. LLM-as-judge quality assessment (sufficiency)
-
-    Returns unified decision: is answer good enough to return?
-    """
+    """Combined refusal + groundedness (HHEM) + quality evaluation with unified retry decision."""
     answer = state.get("final_answer", "")
     # Extract individual chunks for per-chunk HHEM verification (stays under 512 token limit)
     unique_docs = state.get("unique_docs_list", [])

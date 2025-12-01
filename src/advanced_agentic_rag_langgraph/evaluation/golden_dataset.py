@@ -1,9 +1,4 @@
-"""
-Golden Dataset Management and Evaluation for RAG Systems.
-
-This module provides utilities for managing golden datasets and conducting
-offline evaluation of RAG pipelines using ground truth data.
-"""
+"""Golden Dataset Management and Evaluation for RAG Systems."""
 
 import json
 import os
@@ -16,12 +11,7 @@ from .retrieval_metrics import calculate_answer_relevance
 
 
 class GoldenDatasetManager:
-    """
-    Manage and validate golden datasets for RAG evaluation.
-
-    Features: Load/save datasets, filter by difficulty/query type/domain,
-    validate structure, verify chunk IDs, generate statistics.
-    """
+    """Manage and validate golden datasets for RAG evaluation."""
 
     def __init__(self, dataset_path: str):
         self.dataset_path = dataset_path
@@ -68,11 +58,7 @@ class GoldenDatasetManager:
         print(f"Saved {len(dataset)} examples to {self.dataset_path}")
 
     def validate_example(self, example: Dict) -> Tuple[bool, List[str]]:
-        """
-        Validate single example structure and completeness.
-
-        Returns: (is_valid, list_of_errors)
-        """
+        """Validate example structure. Returns (is_valid, list_of_errors)."""
         errors = []
 
         required_fields = [
@@ -275,11 +261,7 @@ def evaluate_on_golden_dataset(
     dataset: List[Dict],
     verbose: bool = True
 ) -> Dict:
-    """
-    Run RAG graph on golden dataset and calculate comprehensive metrics.
-
-    Returns: Aggregated metrics and per-example results
-    """
+    """Run RAG graph on golden dataset. Returns aggregated and per-example metrics."""
     if verbose:
         print(f"\n{'='*70}")
         print(f"GOLDEN DATASET EVALUATION")
@@ -443,11 +425,7 @@ def evaluate_on_golden_dataset(
 
 
 class AnswerComparison(BaseModel):
-    """
-    Structured output schema for comparing generated answers to ground truth.
-
-    Uses semantic field names and descriptions for 95%+ parsing accuracy with GPT-5.
-    """
+    """Structured output for LLM-based answer comparison."""
     semantic_similarity: float = Field(
         ge=0.0, le=1.0,
         description="How closely the generated answer matches ground truth meaning (0.0-1.0)"
@@ -470,15 +448,7 @@ def compare_answers(
     ground_truth: str,
     llm: Optional[ChatOpenAI] = None
 ) -> Dict:
-    """
-    Use LLM with structured output to compare generated answer to ground truth.
-
-    Uses GPT-5-mini with high reasoning effort and Pydantic schema validation
-    for 85-90% human agreement and 95%+ parsing accuracy. Prompt optimized for
-    GPT-5: concise instructions, XML markup, no CoT scaffolding.
-
-    Hardcoded for consistent, high-quality evaluation across all tier comparisons.
-    """
+    """Compare generated answer to ground truth using LLM (GPT-5-mini)."""
     if llm is None:
         llm = ChatOpenAI(
             model="gpt-5-mini",

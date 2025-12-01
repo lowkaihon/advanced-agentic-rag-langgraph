@@ -1,24 +1,4 @@
-"""
-Basic RAG Graph (1 Feature) - Simplest Possible RAG.
-
-Baseline implementation showing the absolute minimum viable RAG system.
-Just semantic search + answer generation, no optimizations.
-
-Features (1):
-1. Semantic vector search
-
-Graph Structure: 2 nodes, linear flow (no routing)
-- START -> retrieve -> generate -> END
-
-No query expansion - uses original query only.
-No hybrid search - semantic/vector search only.
-No RRF fusion - single query, single retrieval.
-No reranking - directly uses top-k chunks.
-No quality gates - assumes results are good enough.
-No retry logic - single pass only.
-
-All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
-"""
+"""Basic RAG (1 feature): semantic search + answer generation. Linear flow, no optimizations."""
 
 from typing import TypedDict, Optional
 from langchain_openai import ChatOpenAI

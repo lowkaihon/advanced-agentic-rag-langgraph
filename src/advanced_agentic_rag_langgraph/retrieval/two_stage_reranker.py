@@ -1,15 +1,4 @@
-"""
-Hybrid reranking combining CrossEncoder speed with LLM-as-judge quality.
-
-Two-stage reranking pipeline:
-1. CrossEncoder: Fast semantic filtering to top-10 documents (~200-300ms)
-2. LLM-as-judge: Metadata-aware quality scoring to final top-4 (~300-500ms)
-
-This architecture balances:
-- Speed: CrossEncoder pre-filters most documents quickly
-- Quality: LLM evaluates only top candidates with full metadata awareness
-- Cost: Expensive LLM scoring limited to 10 candidates instead of 20-50
-"""
+"""Two-stage reranking: CrossEncoder (top-10) then LLM-as-judge (top-4)."""
 
 from typing import List, Tuple
 from langchain_core.documents import Document
@@ -18,19 +7,7 @@ from .llm_metadata_reranker import LLMMetadataReRanker
 
 
 class TwoStageReRanker:
-    """
-    Two-stage hybrid reranking: CrossEncoder then LLM-as-judge.
-
-    Stage 1: CrossEncoder semantic filtering to top-10 (~375ms, ~$0.0001)
-    Stage 2: LLM-as-judge metadata-aware scoring to final top-4 (~400ms, ~$0.005)
-    Total: ~775ms, ~$0.006 per query
-
-    Benefits vs. LLM-only:
-    - 3-5x faster (650ms vs 2-5s)
-    - 5-10x cheaper ($0.006 vs $0.03-0.05)
-    - Maintains metadata-aware quality
-    - Combines semantic similarity with contextual appropriateness
-    """
+    """Two-stage hybrid reranking: CrossEncoder then LLM-as-judge."""
 
     def __init__(
         self,
@@ -52,11 +29,7 @@ class TwoStageReRanker:
         query: str,
         documents: List[Document]
     ) -> List[Tuple[Document, float]]:
-        """
-        Two-stage reranking: CrossEncoder then LLM-as-judge.
-
-        Returns list of (document, score) tuples sorted by relevance, limited to k_final.
-        """
+        """Return (document, score) tuples sorted by relevance, limited to k_final."""
         if not documents:
             return []
 
@@ -75,11 +48,7 @@ class TwoStageReRanker:
         query: str,
         documents: List[Document]
     ) -> dict:
-        """
-        Two-stage reranking with detailed stage information (for debugging).
-
-        Returns dict with final_ranked, stage1_count, stage2_count, and stage1_ranked.
-        """
+        """Rerank with stage info for debugging. Returns {final_ranked, stage1_count, ...}."""
         if not documents:
             return {
                 "final_ranked": [],
