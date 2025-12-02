@@ -6,6 +6,10 @@
 
 An advanced Agentic RAG system that autonomously adapts its retrieval strategy and reasoning process through dynamic decision-making, iterative self-correction, and intelligent tool selection. Built with LangGraph's StateGraph pattern, the system embeds autonomous reasoning into a 7-node workflow where routing functions and conditional edges provide distributed intelligence--no central "agent" orchestrator needed.
 
+## Demo
+
+https://github.com/user-attachments/assets/c4168ac9-3eb0-45dc-be67-895299d8a97e
+
 ## Key Results
 
 - **2.3x retrieval accuracy** (F1@4: 13.1% -> 29.6%) with budget models only
