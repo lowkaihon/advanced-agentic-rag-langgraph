@@ -90,39 +90,31 @@ Guidelines:
         return [query]
 
 
-def rewrite_query(query: str, retrieval_context: str = None) -> str:
+def rewrite_query(query: str, keywords: list[str]) -> str:
     """
-    Rewrite query to retrieve missing information identified by evaluation.
+    Inject keywords into query for improved retrieval.
 
-    The retrieval_context contains specific feedback from retrieval quality evaluation:
-    - Previous quality score
-    - Actionable improvement suggestion (what to add/modify)
-    - Detected issues for context
+    Args:
+        query: Original query to enhance
+        keywords: List of specific, non-tautological keywords to incorporate
+
+    Returns:
+        Rewritten query with keywords naturally incorporated
     """
-    context_info = ""
-    if retrieval_context:
-        context_info = f"""
+    if not keywords:
+        return query
 
-IMPROVEMENT CONTEXT:
-{retrieval_context}
+    rewrite_prompt = f"""Original query: {query}
 
-CRITICAL: Use the improvement suggestion above to guide your rewrite."""
+Keywords to incorporate: {', '.join(keywords)}
 
-    rewrite_prompt = f"""Rewrite this query to retrieve the missing information identified below.
-
-Original: "{query}"{context_info}
-
-Guidelines:
-- FOCUS on the improvement suggestion - incorporate the missing information it identifies
-- Add specific terms, entities, or concepts mentioned in the suggestion
-- Preserve technical terms and proper nouns exactly as written
-- Keep the query focused but complete enough to retrieve what was missing
-
-Return ONLY the rewritten query."""
+Rewrite the query to naturally include these keywords while preserving the original intent.
+Keep it concise (similar length to original). Output only the rewritten query."""
 
     llm = _get_rewriting_llm()
     response = llm.invoke(rewrite_prompt)
     return response.content.strip().strip('"\'')
+
 
 
 

@@ -42,7 +42,7 @@ class AdvancedRAGState(TypedDict):
     retrieval_quality_score: Optional[float]  # 0.0-1.0 score from structured LLM evaluation
     retrieval_quality_reasoning: Optional[str]  # LLM explanation of quality score
     retrieval_quality_issues: Optional[list[str]]  # Issues: partial_coverage, missing_key_info, off_topic, wrong_domain, etc.
-    retrieval_improvement_suggestion: Optional[str]  # LLM-generated actionable query improvement (if quality < 0.6)
+    keywords_to_inject: Optional[list[str]]  # Non-tautological keywords to inject into query (if quality < 0.6)
 
     # Answer Quality (vRAG-Eval framework with adaptive thresholds)
     answer_quality_reasoning: Optional[str]  # LLM explanation from answer evaluation

@@ -164,7 +164,7 @@ class RetrievalSubgraphState(TypedDict):
     # Quality
     retrieval_quality_score: Optional[float]
     retrieval_quality_issues: Optional[list[str]]
-    retrieval_improvement_suggestion: Optional[str]
+    keywords_to_inject: Optional[list[str]]
 
 
 # ========== STRUCTURED OUTPUT SCHEMAS ==========
@@ -186,7 +186,7 @@ class RetrievalQualityEvaluation(TypedDict):
     quality_score: float
     reasoning: str
     issues: list[str]
-    improvement_suggestion: str
+    keywords_to_inject: list[str]
 
 
 class AnswerQualityEvaluation(TypedDict):
@@ -637,12 +637,12 @@ def _subgraph_retrieve_node(state: RetrievalSubgraphState) -> dict:
         evaluation = structured_llm.invoke(quality_prompt)
         quality_score = evaluation["quality_score"] / 100
         quality_issues = evaluation["issues"]
-        improvement_suggestion = evaluation.get("improvement_suggestion", "")
+        keywords_to_inject = evaluation.get("keywords_to_inject", [])
     except Exception as e:
         print(f"  [Worker] Quality evaluation failed: {e}")
         quality_score = 0.5
         quality_issues = []
-        improvement_suggestion = ""
+        keywords_to_inject = []
 
     attempts = state.get("retrieval_attempts", 0) + 1
     print(f"  [Worker] Retrieved {len(final_docs)} docs, quality: {quality_score:.0%}, attempt: {attempts}/2")
@@ -651,26 +651,24 @@ def _subgraph_retrieve_node(state: RetrievalSubgraphState) -> dict:
         "retrieved_docs": final_docs,
         "retrieval_quality_score": quality_score,
         "retrieval_quality_issues": quality_issues,
-        "retrieval_improvement_suggestion": improvement_suggestion,
+        "keywords_to_inject": keywords_to_inject,
         "retrieval_attempts": attempts,
     }
 
 
 def _subgraph_rewrite_node(state: RetrievalSubgraphState) -> dict:
-    """Rewrite query based on quality issues."""
+    """Inject diagnostic-suggested keywords into query for improved retrieval."""
     query = state.get("active_query", state["sub_query"])
-    suggestion = state.get("retrieval_improvement_suggestion", "")
-    issues = state.get("retrieval_quality_issues", [])
+    keywords = state.get("keywords_to_inject", [])
 
-    retrieval_context = f"""Previous retrieval quality: {state.get('retrieval_quality_score', 0):.0%}
-Improvement needed: {suggestion}
-Issues: {', '.join(issues) if issues else 'None'}"""
+    if not keywords:
+        return {"active_query": query}
 
-    rewritten = rewrite_query(query, retrieval_context=retrieval_context)
-    print(f"  [Worker] Rewritten: {query[:50]}... -> {rewritten[:50]}...")
+    refined_query = rewrite_query(query, keywords)
+    print(f"  [Worker] Keywords injected: {query[:50]}... -> {refined_query[:50]}...")
 
     return {
-        "active_query": rewritten,
+        "active_query": refined_query,
         "query_expansions": [],
         "retrieval_query": None,
     }

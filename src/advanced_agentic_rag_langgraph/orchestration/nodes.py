@@ -3,7 +3,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
 from advanced_agentic_rag_langgraph.retrieval import (
     expand_query,
-    rewrite_query,
     AdaptiveRetriever,
     LLMMetadataReRanker,
     SemanticRetriever,
@@ -14,7 +13,7 @@ from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
 from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
 from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
-from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy
+from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy, rewrite_query
 from advanced_agentic_rag_langgraph.prompts import get_prompt
 from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
 import re
@@ -40,7 +39,7 @@ class RetrievalQualityEvaluation(TypedDict):
     quality_score: float
     reasoning: str
     issues: list[str]
-    improvement_suggestion: str
+    keywords_to_inject: list[str]
 
 
 class AnswerQualityEvaluation(TypedDict):
@@ -430,13 +429,13 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         quality_score = evaluation["quality_score"] / 100
         quality_reasoning = evaluation["reasoning"]
         quality_issues = evaluation["issues"]
-        improvement_suggestion = evaluation.get("improvement_suggestion", "")
+        keywords_to_inject = evaluation.get("keywords_to_inject", [])
     except Exception as e:
         print(f"Warning: Quality evaluation failed: {e}. Using neutral score.")
         quality_score = 0.5
         quality_reasoning = "Evaluation failed"
         quality_issues = []
-        improvement_suggestion = ""
+        keywords_to_inject = []
 
     retrieval_metrics = {}
     ground_truth_doc_ids = state.get("ground_truth_doc_ids")
@@ -506,7 +505,7 @@ def retrieve_with_expansion_node(state: dict) -> dict:
         "retrieval_quality_score": quality_score,
         "retrieval_quality_reasoning": quality_reasoning,
         "retrieval_quality_issues": quality_issues,
-        "retrieval_improvement_suggestion": improvement_suggestion,
+        "keywords_to_inject": keywords_to_inject,
         "retrieval_attempts": state.get("retrieval_attempts", 0) + 1,
         "unique_docs_list": unique_docs,
         "retrieval_metrics": retrieval_metrics,
@@ -517,40 +516,40 @@ def retrieve_with_expansion_node(state: dict) -> dict:
 # ============ REWRITING FOR INSUFFICIENT RESULTS ============
 
 def rewrite_and_refine_node(state: dict) -> dict:
-    """Rewrite query using LLM-generated improvement suggestion from retrieval evaluation."""
+    """Inject diagnostic-suggested keywords into query for improved retrieval."""
     query = state["active_query"]
     quality = state.get("retrieval_quality_score", 0)
-    suggestion = state.get("retrieval_improvement_suggestion", "")
+    keywords = state.get("keywords_to_inject", [])
     issues = state.get("retrieval_quality_issues", [])  # Keep for logging only
 
-    # LLM-generated suggestion is authoritative (no heuristic fallback)
-    retrieval_context = f"""Previous retrieval quality: {quality:.0%}
-
-Improvement needed: {suggestion}
-
-Issues detected: {', '.join(issues) if issues else 'None'}"""
-
     print(f"\n{'='*60}")
-    print(f"QUERY REWRITING")
+    print(f"KEYWORD INJECTION")
     print(f"Original query: {query}")
     print(f"Retrieval quality: {quality:.0%}")
-    print(f"Improvement suggestion: {suggestion}")
+    print(f"Keywords to inject: {keywords}")
     print(f"Issues detected: {', '.join(issues) if issues else 'None'}")
     print(f"{'='*60}\n")
 
-    rewritten = rewrite_query(query, retrieval_context=retrieval_context)
-    print(f"Rewritten query: {rewritten}")
-    print(f"Note: Query expansions cleared - will regenerate for rewritten query")
-    print(f"\nState clearing (semantic rewrite takes precedence):")
+    if not keywords:
+        # Fallback: no keywords suggested, return query unchanged
+        print(f"No keywords to inject - query unchanged")
+        return {"active_query": query}
+
+    # Use revamped rewrite_query from query_optimization.py
+    refined_query = rewrite_query(query, keywords)
+
+    print(f"Refined query: {refined_query}")
+    print(f"Note: Query expansions cleared - will regenerate for refined query")
+    print(f"\nState clearing (keyword injection):")
     print(f"  query_expansions: [] (will regenerate)")
     print(f"  retrieval_query: None (cleared to prevent stale optimization)")
-    print(f"  active_query: {rewritten} (semantic rewrite)\n")
+    print(f"  active_query: {refined_query} (with injected keywords)\n")
 
     return {
-        "active_query": rewritten,
+        "active_query": refined_query,
         "query_expansions": [],
-        "retrieval_query": None,  # Clear stale algorithm optimization (semantic rewrite takes precedence)
-        "messages": [AIMessage(content=f"Query rewritten: {query} -> {rewritten}")],
+        "retrieval_query": None,  # Clear stale algorithm optimization
+        "messages": [AIMessage(content=f"Query refined with keywords: {query} -> {refined_query}")],
     }
 
 # ============ ANSWER GENERATION & EVALUATION ============

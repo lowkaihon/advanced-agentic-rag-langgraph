@@ -40,7 +40,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **Self-Correction Loops**
 - Retrieval correction loop: poor retrieval quality (score <0.6) -> single correction cycle (max 2 attempts, research-backed CRAG/Self-RAG principle showing diminishing returns after first cycle)
   - Path A (off_topic/wrong_domain): Strategy switch (precision correction, pure strategy change)
-  - Path B (other issues): Query rewrite with improvement_suggestion (coverage correction)
+  - Path B (other issues): Keyword injection for query enrichment (coverage correction)
 - Generation retry loop: Consolidated evaluation in single node (refusal detection + HHEM hallucination + quality assessment) -> unified feedback -> regenerate with low temperature (0.3) -> retry (max 3 attempts)
 - No re-retrieval after generation: Generation problems fixed with generation strategies, not by retrieving more documents (CRAG research principle)
 

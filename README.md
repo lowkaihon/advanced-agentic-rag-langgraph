@@ -40,7 +40,7 @@ The system autonomously plans next steps based on intermediate results:
 **Traditional RAG**: Single-pass retrieval and generation
 **This System**: Two self-correction loops with quality gates
 
-- **Retrieval Loop**: Poor quality (<0.6) -> 5 issue types + LLM improvement suggestion -> rewrite query or switch strategy (max 2 attempts)
+- **Retrieval Loop**: Poor quality (<0.6) -> 5 issue types + keyword injection -> rewrite query or switch strategy (max 2 attempts)
 - **Generation Loop**: Consolidated evaluation (refusal + HHEM hallucination + quality) -> unified feedback -> regenerate with low temperature (max 3 attempts)
 - **Early Strategy Switching**: off_topic/wrong_domain detected -> immediate strategy switch (saves 30-50% tokens)
 
@@ -89,7 +89,7 @@ The system uses a 7-node LangGraph workflow with autonomous decision-making at e
 | `decide_strategy` | Selects optimal retrieval strategy (semantic/keyword/hybrid) |
 | `query_expansion` | Generates query variations, optimizes for strategy |
 | `retrieve_with_expansion` | RRF fusion + two-stage reranking + quality evaluation |
-| `rewrite_and_refine` | Query rewriting using LLM-generated improvement suggestions |
+| `rewrite_and_refine` | Query enrichment via keyword injection for improved retrieval |
 | `answer_generation` | Structured RAG prompting with quality-aware instructions |
 | `evaluate_answer` | Consolidated refusal + HHEM hallucination + quality assessment |
 
@@ -141,7 +141,7 @@ The Advanced tier implements 17 features across retrieval, generation, and evalu
 <details>
 <summary><strong>Quality Gates & Self-Correction</strong></summary>
 
-- **Retrieval Quality**: 5 issue types (partial_coverage, missing_key_info, incomplete_context, wrong_domain, off_topic) + LLM-generated improvement suggestions
+- **Retrieval Quality**: 5 issue types (partial_coverage, missing_key_info, incomplete_context, wrong_domain, off_topic) + keyword injection
 - **Answer Quality**: 5 issue types (incomplete_synthesis, lacks_specificity, missing_details, partial_answer, wrong_focus)
 - **Adaptive Thresholds**: 65% for good retrieval, 50% for poor retrieval
 </details>

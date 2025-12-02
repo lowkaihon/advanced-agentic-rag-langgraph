@@ -98,17 +98,26 @@ STRUCTURED OUTPUT:
   * "incomplete_context": Related info but can't definitively answer
   * "wrong_domain": Documents from different topic area
   * "off_topic": Documents don't address query
-- improvement_suggestion: If quality_score < 60, ONE specific actionable suggestion
-  for improving the query. Empty string if quality_score >= 60.
+- keywords_to_inject: If quality_score < 60, list of 2-5 specific keywords to inject into query.
+  Empty list [] if quality_score >= 60.
 
-IMPROVEMENT SUGGESTION GUIDELINES (only if quality_score < 60):
-- Be specific about WHAT is missing (e.g., "Enterprise pricing", "author names", "publication year")
-- Suggest HOW to modify the query (e.g., "Add X to query", "Rephrase to ask about Y")
-- One sentence maximum
-- Examples:
-  * "Add 'Enterprise tier pricing' to query - documents only cover Pro tier"
-  * "Include author names or publication year to narrow results"
-  * "Rephrase to ask about 'database architecture' instead of generic 'backend'"
+KEYWORDS TO INJECT GUIDELINES (only if quality_score < 60):
+
+CRITICAL ANTI-TAUTOLOGY CHECK:
+Before suggesting keywords to inject:
+1. List the KEY TERMS already present in the query
+2. Do NOT suggest adding terms that are semantically equivalent to existing terms
+3. Suggest DIFFERENT terms (synonyms, technical jargon, exact notation, domain-specific vocabulary)
+
+EXAMPLES:
+BAD: Query "company founding date" -> keywords_to_inject: ["when founded", "date established"]
+GOOD: Query "company founding date" -> keywords_to_inject: ["incorporated", "2015", "startup year"]
+
+BAD: Query "product pricing comparison" -> keywords_to_inject: ["price", "cost comparison"]
+GOOD: Query "product pricing comparison" -> keywords_to_inject: ["$49/month", "Pro tier", "Enterprise plan", "annual discount"]
+
+BAD: Query "author of the report" -> keywords_to_inject: ["who wrote", "writer"]
+GOOD: Query "author of the report" -> keywords_to_inject: ["John Smith", "research team", "contributors", "published by"]
 
 Return your evaluation as structured data."""
 
@@ -142,9 +151,12 @@ MISTAKES TO AVOID:
 
 Issues: missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic
 
+ANTI-TAUTOLOGY CHECK (for keywords_to_inject):
+- Do NOT suggest terms semantically equivalent to query terms
+- Suggest DIFFERENT terms: synonyms, jargon, exact notation, domain vocabulary
+
 Return:
 - quality_score (0-100): Based on SUFFICIENCY not relevance
 - reasoning (2-3 sentences: what IS vs ISN'T explicitly present)
 - issues (list, empty if none)
-- improvement_suggestion: If score < 60, ONE specific actionable query improvement. Empty if >= 60.
-  Be concrete: "Add 'X' to query" not "improve specificity"."""
+- keywords_to_inject: If score < 60, list of 2-5 specific non-tautological keywords. Empty list if >= 60."""
