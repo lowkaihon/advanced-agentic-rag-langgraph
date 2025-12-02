@@ -31,7 +31,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - 7 nodes with conditional edges (not linear pipeline)
 - Integrated metadata analysis within retrieval evaluation
 - **State management pattern**:
-  - `add_messages` for messages (conversation history), `operator.add` for: retrieved_docs, refinement_history
+  - `add_messages` for messages (conversation history), `operator.add` for: retrieved_docs
   - Direct replacement (no operator.add) for: query_expansions (regenerated fresh per iteration to ensure expansion-query alignment)
 - Quality gates determine routing: retrieval quality -> answer generation, answer quality -> retry/end
 - Single-use nodes: conversational_rewrite and decide_strategy used only on initial flow; retry paths skip them
@@ -55,7 +55,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 - Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
 - HHEM-based hallucination detection: Claim decomposition → vectara/hallucination_evaluation_model (HHEM-2.1-Open) verification → hallucination feedback lists specific unsupported claims for targeted regeneration
 - Comprehensive metrics: F1@K, Precision@K, Recall@K, MRR, nDCG
-- Golden dataset: 20 validated examples with graded relevance (0-3 scale)
+- Golden datasets: 30 validated examples across 2 datasets (Standard: 20, Hard: 10) with graded relevance (0-3 scale)
 - Retrieval quality evaluation: Issue-specific detection (missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic)
 - Answer quality evaluation (vRAG-Eval framework): Relevance, Completeness, Accuracy scoring with 5 issue types (incomplete_synthesis, lacks_specificity, missing_details, partial_answer, wrong_focus) and adaptive thresholds (65% for good retrieval, 50% for poor)
 
@@ -114,17 +114,14 @@ Get-ChildItem -Path . -Recurse -Directory -Filter __pycache__ | Remove-Item -Rec
 
 ### Testing
 ```bash
-# Fast tests (~1-2 min)
-uv run python tests/integration/test_pdf_pipeline.py
-uv run python tests/integration/test_adaptive_retrieval.py
+# Architecture comparison test (portfolio showcase)
+PYTHONIOENCODING=utf-8:replace uv run python tests/integration/test_architecture_comparison.py
 
-# Comprehensive evaluation (~10-15 min)
-uv run python tests/integration/test_golden_dataset_evaluation.py
-
-# Architecture comparison test (~70-85 min, portfolio showcase)
-uv run python tests/integration/test_architecture_comparison.py
+# Options:
+#   --dataset standard|hard   Dataset selection
+#   --tiers basic intermediate advanced multi_agent   Tier selection (default: all)
+#   --output-dir PATH             Results directory (default: evaluation/)
 ```
-See `tests/CLAUDE.md` for all 11 tests, selection matrix, and detailed documentation.
 
 ### Development
 ```bash
@@ -148,15 +145,14 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 
 ### Test File Organization
 
-**Permanent tests:** `tests/integration/test_<name>.py`
-- Multiple test cases, meant to run repeatedly
-- Examples: test_hhem_hallucination_detector.py, test_ragas_evaluation.py, test_golden_dataset_evaluation.py
+**Main test:** `tests/integration/test_architecture_comparison.py`
+- Comprehensive 4-tier architecture comparison (Basic/Intermediate/Advanced/Multi-Agent)
+- Evaluates on golden dataset with graded relevance
 
 **Temporary debugging:** Root directory with `debug_*.py` prefix (delete after use)
 - One-off exploration, no formal assertions
-- Example: debug_hhem.py (deleted after understanding model output)
 
-**Rule:** Permanent → tests/integration/, Temporary → root with debug_ prefix
+**Rule:** Main test in tests/integration/, temporary scripts in root with debug_ prefix
 
 ### Import Best Practices
 
@@ -172,7 +168,6 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 **Wrong**: Using PYTHONPATH (unnecessary with editable install)
 
 **Run with**: `uv run python <file>` or activate venv first
-See `tests/CLAUDE.md` for detailed explanation and common issues.
 
 **File paths**: Use same package-based resolution for project files:
 ```python
@@ -346,11 +341,19 @@ Router functions should be pure (deterministic output based only on state, no si
 https://docs.langchain.com/oss/python/langgraph/use-graph-api#conditional-branching
 Code Pattern:
 ```python
-# graph.py - Pure router
-def route_after_query_expansion(state: AdvancedRAGState) -> Literal["decide_strategy", "retrieve_with_expansion"]:
-    if state.get("strategy_changed", False):
-        return "retrieve_with_expansion"  # Skip strategy on retry
-    return "decide_strategy"  # Initial flow
+# graph.py - Pure router with three-way branching
+def route_after_retrieval(state: AdvancedRAGState) -> Literal["answer_generation", "rewrite_and_refine", "query_expansion"]:
+    quality = state.get("retrieval_quality_score", 0)
+    attempts = state.get("retrieval_attempts", 0)
+    issues = state.get("retrieval_quality_issues", [])
+
+    if quality >= 0.6:
+        return "answer_generation"
+    if attempts >= 2:
+        return "answer_generation"  # Max attempts
+    if ("off_topic" in issues or "wrong_domain" in issues) and attempts == 1:
+        return "query_expansion"  # Early strategy switch
+    return "rewrite_and_refine"  # Semantic rewrite
 ```
 
 **Error Handling** - Quality gates and retry policies over exceptions

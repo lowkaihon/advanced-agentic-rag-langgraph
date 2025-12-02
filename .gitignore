@@ -146,7 +146,7 @@ architecture_comparison_results*.json
 multi_agent_evaluation*.md
 multi_agent_evaluation*.json
 test_log*.txt
-scripts
 src/advanced_agentic_rag_langgraph/variants/archive/
 .langgraph_api/
 recalculate_metrics.py
+tests/integration/archive/

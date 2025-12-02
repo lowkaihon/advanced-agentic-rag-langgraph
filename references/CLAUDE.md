@@ -887,7 +887,6 @@ This directory contains compiled research documents from Perplexity.ai and other
 **Main Project Documentation:**
 - `../CLAUDE.md` - Project instructions and LangChain/LangGraph resources
 - `../README.md` - Project overview and setup
-- `../HANDOVER.md` - Implementation handover documentation
 
 **LangChain/LangGraph Documentation:**
 See `../CLAUDE.md` for comprehensive links to official documentation
