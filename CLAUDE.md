@@ -489,6 +489,15 @@ Use for: Deploying agents with real-time response streaming
 
 ---
 
+### Documentation Discovery
+
+**LangChain Documentation Index** [llms.txt] - AI-friendly sitemap of all LangChain docs
+https://docs.langchain.com/llms.txt
+Covers: Complete index of LangSmith, LangChain (JS/Python), LangGraph, and all integrations
+Use for: Discovering documentation not covered in this guide, finding new integrations
+
+---
+
 ## Troubleshooting
 
 **Retrieval returns irrelevant documents**

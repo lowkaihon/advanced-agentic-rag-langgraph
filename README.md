@@ -29,7 +29,7 @@ An advanced Agentic RAG system that autonomously adapts its retrieval strategy a
 This system demonstrates all four core characteristics that define Agentic RAG:
 
 ### 1. Autonomous Decision-Making
-**Traditional RAG**: Fixed pipeline (query -> retrieve -> generate)
+**Traditional RAG**: Fixed pipeline (query -> retrieve -> generate)<br>
 **This System**: Dynamic routing based on quality evaluation at 2 decision points
 
 The system autonomously plans next steps based on intermediate results:
@@ -37,7 +37,7 @@ The system autonomously plans next steps based on intermediate results:
 - `route_after_evaluation`: Evaluates answer quality, decides to retry generation or return result
 
 ### 2. Iterative Self-Correction
-**Traditional RAG**: Single-pass retrieval and generation
+**Traditional RAG**: Single-pass retrieval and generation<br>
 **This System**: Two self-correction loops with quality gates
 
 - **Retrieval Loop**: Poor quality (<0.6) -> 5 issue types + keyword injection -> rewrite query or switch strategy (max 2 attempts)
@@ -45,14 +45,14 @@ The system autonomously plans next steps based on intermediate results:
 - **Early Strategy Switching**: off_topic/wrong_domain detected -> immediate strategy switch (saves 30-50% tokens)
 
 ### 3. Context Management
-**Traditional RAG**: Stateless, no conversation memory
+**Traditional RAG**: Stateless, no conversation memory<br>
 **This System**: Persistent state across conversation turns
 
 - Conversational rewrite transforms follow-up queries into self-contained questions
 - MemorySaver checkpointer persists state across multi-turn conversations
 
 ### 4. Intelligent Tool Selection
-**Traditional RAG**: Single retrieval method
+**Traditional RAG**: Single retrieval method<br>
 **This System**: Three retrieval strategies with intelligent selection
 
 - **Strategies**: Semantic (FAISS), Keyword (BM25), Hybrid (RRF fusion)
