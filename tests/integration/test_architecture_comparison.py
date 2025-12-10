@@ -57,12 +57,14 @@ logging.getLogger("langchain").setLevel(logging.WARNING)
 
 from advanced_agentic_rag_langgraph.variants import (
     basic_rag_graph,
+    hyde_rag_graph,
     intermediate_rag_graph,
     advanced_rag_graph,
     multi_agent_rag_graph,
 )
 # Import modules to access global adaptive_retriever variables
 import advanced_agentic_rag_langgraph.variants.basic_rag_graph as basic_module
+import advanced_agentic_rag_langgraph.variants.hyde_rag_graph as hyde_module
 import advanced_agentic_rag_langgraph.variants.intermediate_rag_graph as intermediate_module
 import advanced_agentic_rag_langgraph.orchestration.nodes as advanced_module
 import advanced_agentic_rag_langgraph.variants.multi_agent_rag_graph as multi_agent_module
@@ -84,6 +86,12 @@ TIER_CONFIGS = {
         "features": 1,
         "graph": basic_rag_graph,
         "description": "Simplest RAG with semantic vector search, top-k chunks, no reranking",
+    },
+    "hyde": {
+        "name": "HyDE RAG",
+        "features": 2,
+        "graph": hyde_rag_graph,
+        "description": "Basic RAG with HyDE (Hypothetical Document Embeddings) query transformation",
     },
     "intermediate": {
         "name": "Intermediate RAG",
@@ -151,6 +159,12 @@ def run_tier_on_golden_dataset(
             # Different graphs have different state schemas
             # Initialize with required/accumulated fields per reference code pattern
             if tier_name == "basic":
+                initial_state = {
+                    "user_question": query,
+                    "retrieved_docs": [],  # Will be set by retrieve node
+                    "ground_truth_doc_ids": ground_truth_docs,
+                }
+            elif tier_name == "hyde":
                 initial_state = {
                     "user_question": query,
                     "retrieved_docs": [],  # Will be set by retrieve node
@@ -647,6 +661,7 @@ def _format_duration_table(tier_durations: Dict[str, float], tiers: List[str] = 
 
     tier_names = {
         'basic': 'Basic',
+        'hyde': 'HyDE',
         'intermediate': 'Intermediate',
         'advanced': 'Advanced',
         'multi_agent': 'Multi-Agent',
@@ -866,8 +881,9 @@ def test_architecture_comparison(
     print("    This avoids re-ingesting PDFs for each tier (saves 40-50% time)")
     shared_retriever = setup_retriever(k_final=k_final)
 
-    # Inject into all four variant modules
+    # Inject into all variant modules
     basic_module.adaptive_retriever = shared_retriever
+    hyde_module.adaptive_retriever = shared_retriever
     intermediate_module.adaptive_retriever = shared_retriever
     advanced_module.adaptive_retriever = shared_retriever
     multi_agent_module.adaptive_retriever = shared_retriever
@@ -898,6 +914,7 @@ def test_architecture_comparison(
     # Initialize timing dict
     tier_durations = {
         'basic': 0.0,
+        'hyde': 0.0,
         'intermediate': 0.0,
         'advanced': 0.0,
         'multi_agent': 0.0,
@@ -920,6 +937,22 @@ def test_architecture_comparison(
         print(f"\n[SKIP] Basic tier not selected")
         basic_results = []
         basic_metrics = _empty_metrics(len(dataset))
+
+    # Run HyDE Tier
+    if 'hyde' in tiers:
+        tier_idx += 1
+        print(f"\n{'='*80}")
+        print(f"[{tier_idx}/{tier_count}] Running HYDE tier (2 features)...")
+        print(f"{'='*80}")
+        tier_start = time.time()
+        hyde_results = run_tier_on_golden_dataset("hyde", hyde_rag_graph, dataset, k_final=k_final)
+        hyde_metrics = calculate_tier_metrics(hyde_results)
+        tier_durations['hyde'] = time.time() - tier_start
+        print(f"[OK] HyDE tier complete in {_format_duration(tier_durations['hyde'])}")
+    else:
+        print(f"\n[SKIP] HyDE tier not selected")
+        hyde_results = []
+        hyde_metrics = _empty_metrics(len(dataset))
 
     # Run Intermediate Tier
     if 'intermediate' in tiers:
@@ -981,6 +1014,8 @@ def test_architecture_comparison(
     print("-" * 150)
     if 'basic' in tiers:
         print(f"{'Basic':<15} {basic_metrics['avg_f1_at_k']:<8.1%} {basic_metrics['avg_mrr']:<8.1%} {basic_metrics['avg_ndcg_at_k']:<8.1%} {basic_metrics['avg_groundedness']:<8.1%} {basic_metrics['avg_semantic_similarity']:<8.1%} {basic_metrics['avg_factual_accuracy']:<8.1%} {basic_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['basic']):<10}")
+    if 'hyde' in tiers:
+        print(f"{'HyDE':<15} {hyde_metrics['avg_f1_at_k']:<8.1%} {hyde_metrics['avg_mrr']:<8.1%} {hyde_metrics['avg_ndcg_at_k']:<8.1%} {hyde_metrics['avg_groundedness']:<8.1%} {hyde_metrics['avg_semantic_similarity']:<8.1%} {hyde_metrics['avg_factual_accuracy']:<8.1%} {hyde_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['hyde']):<10}")
     if 'intermediate' in tiers:
         print(f"{'Intermediate':<15} {intermediate_metrics['avg_f1_at_k']:<8.1%} {intermediate_metrics['avg_mrr']:<8.1%} {intermediate_metrics['avg_ndcg_at_k']:<8.1%} {intermediate_metrics['avg_groundedness']:<8.1%} {intermediate_metrics['avg_semantic_similarity']:<8.1%} {intermediate_metrics['avg_factual_accuracy']:<8.1%} {intermediate_metrics['avg_completeness']:<8.1%} {'-':<10} {'-':<10} {_format_duration(tier_durations['intermediate']):<10}")
     if 'advanced' in tiers:
@@ -1009,6 +1044,10 @@ def test_architecture_comparison(
             "basic": {
                 "metrics": basic_metrics,
                 "results": basic_results,
+            },
+            "hyde": {
+                "metrics": hyde_metrics,
+                "results": hyde_results,
             },
             "intermediate": {
                 "metrics": intermediate_metrics,
@@ -1079,9 +1118,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--tiers',
         nargs='+',
-        choices=['basic', 'intermediate', 'advanced', 'multi_agent'],
+        choices=['basic', 'hyde', 'intermediate', 'advanced', 'multi_agent'],
         default=['basic', 'intermediate', 'advanced', 'multi_agent'],
-        help='Tiers to evaluate (default: all four). Example: --tiers advanced multi_agent'
+        help='Tiers to evaluate (default: basic, intermediate, advanced, multi_agent). Example: --tiers basic hyde'
     )
     args = parser.parse_args()
 
