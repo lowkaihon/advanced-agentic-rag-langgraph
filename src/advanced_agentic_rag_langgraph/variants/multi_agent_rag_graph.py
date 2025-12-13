@@ -534,7 +534,7 @@ def _subgraph_decide_strategy_node(state: RetrievalSubgraphState) -> dict:
 
 
 def _subgraph_query_expansion_node(state: RetrievalSubgraphState) -> dict:
-    """Optimize and expand query for retrieval, with early strategy switch detection."""
+    """Generate strategy-agnostic expansions, then optimize expansions[0] for strategy."""
     query = state.get("active_query", state["sub_query"])
     current_strategy = state.get("retrieval_strategy", "hybrid")
 
@@ -562,6 +562,10 @@ def _subgraph_query_expansion_node(state: RetrievalSubgraphState) -> dict:
             "retrieval_strategy": next_strategy,
         }
 
+    # 1. Expand FIRST (strategy-agnostic variants for RRF diversity)
+    expansions = expand_query(query)
+
+    # 2. Optimize for strategy
     optimized_query = optimize_query_for_strategy(
         query=query,
         strategy=current_strategy,
@@ -569,7 +573,8 @@ def _subgraph_query_expansion_node(state: RetrievalSubgraphState) -> dict:
         issues=issues if early_switch else []
     )
 
-    expansions = expand_query(optimized_query)
+    # 3. Replace expansions[0] with optimized version
+    expansions[0] = optimized_query
 
     return {
         "retrieval_query": optimized_query,
@@ -834,11 +839,15 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         missing = [chunk_id for chunk_id in ground_truth_doc_ids if chunk_id not in candidate_chunk_ids]
         print(f"Expected chunks: Found {found if found else '[]'} | Missing {missing if missing else '[]'}")
 
-    # ========== LLM relevance scoring (multi-worker only, single worker returns early) ==========
+    # ========== Set-wise coverage selection ==========
+    # Multi-agent merge only runs for complex queries (simple queries use single-worker fast path)
+    sub_queries = state.get("sub_queries", [])
+
     reranker = MultiAgentMergeReRanker(top_k=k_final)
-    top_docs, reranker_scores = reranker.rerank(
+    top_docs, _ = reranker.rerank(
         original_question=original_question,
         candidate_docs=candidate_docs,
+        sub_queries=sub_queries,
     )
     print(f"LLM Scoring: {len(candidate_docs)} candidates -> {len(top_docs)} selected")
 
@@ -850,14 +859,9 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         print(f"\nExpected chunks in final selection:")
         print(f"Found: {found_in_final if found_in_final else '[]'} | Missing: {missing_in_final if missing_in_final else '[]'}")
 
-    # Calculate average quality from LLM reranker scores (preferred) or worker scores (fallback)
-    if reranker_scores is not None:
-        # Use LLM reranker scores (0-100 scale -> 0-1 scale)
-        avg_quality = sum(reranker_scores) / len(reranker_scores) / 100
-    else:
-        # Fallback: use worker average (LLM scoring failed or not enough docs to rerank)
-        quality_scores = [r.get("quality_score", 0) for r in sub_agent_results if r.get("docs")]
-        avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
+    # Calculate average quality from worker scores (set_selection doesn't produce scores)
+    quality_scores = [r.get("quality_score", 0) for r in sub_agent_results if r.get("docs")]
+    avg_quality = sum(quality_scores) / len(quality_scores) if quality_scores else 0.0
 
     # Format for answer generation
     docs_text = "\n---\n".join([
@@ -871,7 +875,7 @@ def merge_results_node(state: MultiAgentRAGState) -> dict:
         "multi_agent_docs": sum(1 for count in doc_agent_count.values() if len(count) > 1),
         "top_k_selected": len(top_docs),
         "avg_quality": avg_quality,
-        "merge_method": "llm_relevance_scoring",
+        "merge_method": "set_selection",
     }
 
     print(f"Total unique docs: {len(doc_objects)}")
@@ -1221,7 +1225,7 @@ def route_after_evaluation(state: MultiAgentRAGState) -> Literal["answer_generat
         return END
 
     generation_attempts = state.get("generation_attempts", 0)
-    if generation_attempts < 3:
+    if generation_attempts < 2:  # reduce from 3 to 2 to quicken test
         print(f"\nRouting: answer_generation (attempt {generation_attempts + 1}/3)")
         return "answer_generation"
 

@@ -71,3 +71,44 @@ Expected IDs: {expected_ids}
 Return:
 - scored_documents: Per doc: document_id, relevance_score (0-100), reasoning
 - overall_reasoning: Brief summary"""
+
+
+# ========== COVERAGE-BASED SELECTION (for complex/comparative queries) ==========
+
+COVERAGE_PROMPT = """Select {k} documents that TOGETHER best answer the question.
+
+QUESTION: "{original_question}"
+
+ASPECTS (the question involves these facets):
+{sub_queries_list}
+
+DOCUMENTS:
+{doc_list}
+
+SELECTION GUIDANCE:
+1. **Relevance first**: Select documents with specific, answer-relevant content
+2. **Coverage-aware**: Consider whether the selected set addresses different facets of the question
+3. **Avoid redundancy**: Prefer variety over multiple docs saying the same thing
+
+Return:
+- selected_document_ids: List of exactly {k} document IDs (e.g., ["doc_0", "doc_2", "doc_5"])
+- selection_reasoning: Brief explanation of selection rationale"""
+
+
+GPT5_COVERAGE_PROMPT = """Select {k} documents that TOGETHER best answer the question.
+
+QUESTION: "{original_question}"
+
+ASPECTS: {sub_queries_list}
+
+DOCUMENTS:
+{doc_list}
+
+GUIDANCE:
+1. Relevance first (specific, answer-relevant content)
+2. Coverage-aware (consider different facets)
+3. Avoid redundancy (prefer variety)
+
+Return:
+- selected_document_ids: Exactly {k} doc IDs
+- selection_reasoning: Brief rationale"""

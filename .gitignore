@@ -150,3 +150,5 @@ src/advanced_agentic_rag_langgraph/variants/archive/
 .langgraph_api/
 recalculate_metrics.py
 tests/integration/archive/
+Best Practices for LLM-as-Judge Reranking in RAG Pipelines.md
+Marker PDF Parser for Local RAG Pipelines - 16GB RAM Considerations.md

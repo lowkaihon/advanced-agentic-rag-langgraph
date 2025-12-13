@@ -20,8 +20,19 @@ class RankingResult(TypedDict):
     overall_reasoning: str  # Brief summary of ranking approach
 
 
+class SetSelectionResult(TypedDict):
+    """Structured output for set-wise document selection (complex queries)."""
+    selected_document_ids: list[str]  # List of k document IDs (e.g., ["doc_0", "doc_2"])
+    selection_reasoning: str          # Brief explanation of selection rationale
+
+
 class MultiAgentMergeReRanker:
-    """Score and rank documents from multi-worker retrieval results."""
+    """Score and rank documents from multi-worker retrieval results.
+
+    Supports query-adaptive merge strategy:
+    - Simple queries: Individual pointwise scoring (precision-optimized)
+    - Complex queries: Set-wise coverage selection (coverage-optimized)
+    """
 
     def __init__(self, top_k: int = 6):
         """Initialize with top_k documents to return."""
@@ -36,20 +47,125 @@ class MultiAgentMergeReRanker:
             verbosity=spec.verbosity,
         )
         self.structured_llm = self.llm.with_structured_output(RankingResult)
+        self.selection_llm = self.llm.with_structured_output(SetSelectionResult)
 
     def rerank(
         self,
         original_question: str,
         candidate_docs: list[Document],
-        fallback_scores: list[float] = None,
+        sub_queries: list[str],
     ) -> tuple[list[Document], list[float] | None]:
-        """Score and rank documents. Returns (top-k docs, scores) or (docs, None) on fallback."""
+        """Select documents using set-wise coverage selection.
+
+        Multi-agent merge only runs for complex queries (simple queries use
+        single-worker fast path), so we always use coverage-aware selection.
+
+        Args:
+            original_question: The original user question
+            candidate_docs: Documents to select from
+            sub_queries: Sub-queries/aspects for coverage selection
+
+        Returns:
+            (top-k docs, None) - no scores for set selection
+        """
         if not candidate_docs:
             return [], None
 
         if len(candidate_docs) <= self.top_k:
-            return candidate_docs, None  # No reranking needed, no scores
+            return candidate_docs, None  # No selection needed
 
+        return self._set_selection(original_question, candidate_docs, sub_queries)
+
+    def _set_selection(
+        self,
+        original_question: str,
+        candidate_docs: list[Document],
+        sub_queries: list[str],
+    ) -> tuple[list[Document], list[float] | None]:
+        """Select document SET for complex queries (coverage-aware).
+
+        Uses set-wise selection to ensure coverage across all facets of
+        comparative/multi-hop queries.
+        """
+        from advanced_agentic_rag_langgraph.prompts import get_prompt
+
+        # Build document ID mapping
+        doc_id_map = {f"doc_{i}": doc for i, doc in enumerate(candidate_docs)}
+
+        # Format documents for prompt
+        doc_list = []
+        for i, doc in enumerate(candidate_docs):
+            doc_id = f"doc_{i}"
+            source = doc.metadata.get("source", "unknown")
+            content_preview = doc.page_content[:1000]
+            doc_list.append(f"{doc_id}: [Source: {source}]\n{content_preview}")
+
+        # Format sub-queries as aspects list
+        sub_queries_list = "\n".join([f"- {sq}" for sq in sub_queries])
+
+        prompt = get_prompt(
+            "multi_agent_merge_reranking_coverage",
+            k=self.top_k,
+            original_question=original_question,
+            sub_queries_list=sub_queries_list,
+            doc_list="\n\n".join(doc_list),
+        )
+
+        # Log input candidates
+        print(f"\n{'='*60}")
+        print(f"SET-WISE COVERAGE SELECTION (Multi-Agent Merge)")
+        print(f"Original question: {original_question}")
+        print(f"Aspects: {len(sub_queries)}")
+        for sq in sub_queries:
+            print(f"  - {sq}")
+        print(f"Candidates: {len(candidate_docs)}")
+        print(f"\nChunk IDs before selection:")
+        for i, doc in enumerate(candidate_docs):
+            chunk_id = doc.metadata.get("id", "unknown")
+            print(f"  {i+1}. {chunk_id}")
+
+        try:
+            result = self.selection_llm.invoke([HumanMessage(content=prompt)])
+            selected_ids = result["selected_document_ids"]
+            reasoning = result["selection_reasoning"]
+
+            print(f"\nSelection reasoning: {reasoning}")
+            print(f"\nSelected document IDs: {selected_ids}")
+
+            # Map selected IDs to documents (preserve selection order)
+            selected_docs = []
+            for doc_id in selected_ids:
+                if doc_id in doc_id_map:
+                    selected_docs.append(doc_id_map[doc_id])
+                else:
+                    print(f"Warning: Invalid document_id '{doc_id}' in selection")
+
+            # If not enough valid selections, pad with remaining docs
+            if len(selected_docs) < self.top_k:
+                print(f"Warning: Only {len(selected_docs)} valid selections, padding to {self.top_k}")
+                remaining = [doc for doc in candidate_docs if doc not in selected_docs]
+                selected_docs.extend(remaining[:self.top_k - len(selected_docs)])
+
+            # Log final selection
+            print(f"\nFinal selection (top-{self.top_k}):")
+            for i, doc in enumerate(selected_docs[:self.top_k]):
+                chunk_id = doc.metadata.get("id", "unknown")
+                print(f"  {i+1}. {chunk_id}")
+            print(f"{'='*60}\n")
+
+            return selected_docs[:self.top_k], None  # No scores for set selection
+
+        except Exception as e:
+            print(f"Warning: Set selection failed: {e}. Falling back to pointwise scoring.")
+            return self._pointwise_scoring(original_question, candidate_docs, None)
+
+    def _pointwise_scoring(
+        self,
+        original_question: str,
+        candidate_docs: list[Document],
+        fallback_scores: list[float] = None,
+    ) -> tuple[list[Document], list[float] | None]:
+        """Score documents individually (simple queries, precision-optimized)."""
         from advanced_agentic_rag_langgraph.prompts import get_prompt
 
         # Build document ID mapping (index-based for score lookup)
@@ -80,7 +196,7 @@ class MultiAgentMergeReRanker:
 
         # Log input candidates
         print(f"\n{'='*60}")
-        print(f"LLM RELEVANCE SCORING (Multi-Agent Merge)")
+        print(f"POINTWISE SCORING (Multi-Agent Merge)")
         print(f"Original question: {original_question}")
         print(f"Candidates: {len(candidate_docs)}")
         print(f"\nChunk IDs before scoring:")

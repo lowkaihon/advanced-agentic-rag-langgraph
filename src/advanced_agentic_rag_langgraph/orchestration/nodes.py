@@ -215,7 +215,7 @@ def decide_retrieval_strategy_node(state: dict) -> dict:
 
 
 def query_expansion_node(state: dict) -> dict:
-    """Optimize query for strategy, then conditionally expand into variants."""
+    """Generate strategy-agnostic expansions, then optimize expansions[0] for strategy."""
 
     quality = state.get("retrieval_quality_score", 1.0)
     attempts = state.get("retrieval_attempts", 0)
@@ -250,9 +250,20 @@ def query_expansion_node(state: dict) -> dict:
             "previous_strategy": old_strategy,  # Store for revert validation
         }
 
-    # ALWAYS optimize query for current strategy (consolidated optimization logic)
     source_query = state.get("active_query", state["baseline_query"])
 
+    # 1. Expand FIRST (strategy-agnostic variants for RRF diversity)
+    if _should_skip_expansion_llm(source_query):
+        expansions = [source_query]
+    else:
+        expansions = expand_query(source_query)
+        print(f"\n{'='*60}")
+        print(f"QUERY EXPANDED (Strategy-Agnostic)")
+        print(f"Source query: {source_query}")
+        print(f"Expansions: {expansions[1:]}")
+        print(f"{'='*60}\n")
+
+    # 2. Optimize for strategy
     optimized_query = optimize_query_for_strategy(
         query=source_query,
         strategy=current_strategy,
@@ -260,22 +271,8 @@ def query_expansion_node(state: dict) -> dict:
         issues=issues if early_switch else []
     )
 
-    # Decide whether to expand optimized query
-    if _should_skip_expansion_llm(optimized_query):
-        result = {
-            "retrieval_query": optimized_query,
-            "query_expansions": [optimized_query],
-            **strategy_updates
-        }
-        return result
-
-    # Expand optimized query
-    expansions = expand_query(optimized_query)
-    print(f"\n{'='*60}")
-    print(f"QUERY EXPANDED")
-    print(f"Optimized query: {optimized_query}")
-    print(f"Expansions: {expansions[1:]}")
-    print(f"{'='*60}\n")
+    # 3. Replace expansions[0] with optimized version
+    expansions[0] = optimized_query
 
     result = {
         "retrieval_query": optimized_query,

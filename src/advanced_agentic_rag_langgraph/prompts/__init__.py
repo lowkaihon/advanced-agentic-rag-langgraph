@@ -6,7 +6,12 @@ from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 
 def get_prompt(task_name: str, **kwargs) -> str:
     """Load prompt template with model-specific variant (BASE or GPT5) based on current tier."""
-    spec = get_model_for_task(task_name)
+    # Map prompt variants to their base task for model config lookup
+    model_task = task_name
+    if task_name == "multi_agent_merge_reranking_coverage":
+        model_task = "multi_agent_merge_reranking"  # Use same model spec as base
+
+    spec = get_model_for_task(model_task)
     is_gpt5 = _is_gpt5_family(spec.name)
 
     # Import appropriate task module and get variant
@@ -33,6 +38,10 @@ def get_prompt(task_name: str, **kwargs) -> str:
     elif task_name == "multi_agent_merge_reranking":
         from . import multi_agent_merge_reranking as module
         template = module.GPT5_PROMPT if is_gpt5 else module.BASE_PROMPT
+
+    elif task_name == "multi_agent_merge_reranking_coverage":
+        from . import multi_agent_merge_reranking as module
+        template = module.GPT5_COVERAGE_PROMPT if is_gpt5 else module.COVERAGE_PROMPT
 
     else:
         # Task not optimized - return empty string
