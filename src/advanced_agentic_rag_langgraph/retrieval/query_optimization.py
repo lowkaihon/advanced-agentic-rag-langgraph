@@ -47,32 +47,53 @@ def _get_strategy_optimization_llm():
 
 def expand_query(query: str) -> list[str]:
     """Generate query variations for multi-query retrieval."""
-    expansion_prompt = f"""Generate 3 alternative phrasings for a question to help retrieve better information:
-- One that emphasizes technical implementation and mechanisms
-- One that focuses on practical applications and use cases
-- One that targets underlying concepts and principles
+    expansion_prompt = f"""Generate 3 alternative phrasings for a question to help retrieve better information.
 
-EXAMPLE 1:
+DETECT QUERY TYPE FIRST:
+
+For COMPARISON queries ("X vs Y", "difference between X and Y", "how does X differ from Y"):
+- Variation 1: Focus on understanding X independently
+- Variation 2: Focus on understanding Y independently
+- Variation 3: Focus on the relationship/comparison between X and Y
+
+For ADAPTATION queries ("how does X adapt Y", "how does X modify Y for Z"):
+- Variation 1: Focus on the original system (Y) being adapted
+- Variation 2: Focus on the adapted system (X) and its changes
+- Variation 3: Focus on the adaptation mechanism itself
+
+For OTHER queries (factual, conceptual, how-to):
+- Variation 1: Technical implementation and mechanisms
+- Variation 2: Practical applications and use cases
+- Variation 3: Underlying concepts and principles
+
+EXAMPLE - COMPARISON:
+Question: "What is the difference between SQL and NoSQL databases?"
+Variations:
+1. What are the core characteristics and data model of SQL relational databases?
+2. What are the core characteristics and data model of NoSQL databases?
+3. How do SQL and NoSQL databases differ in structure, scalability, and use cases?
+
+EXAMPLE - ADAPTATION:
+Question: "How does mobile-first design adapt responsive web design?"
+Variations:
+1. What is responsive web design and its core principles?
+2. What is mobile-first design and how does it prioritize mobile devices?
+3. What changes does mobile-first design make to the responsive design approach?
+
+EXAMPLE - OTHER:
 Question: "How does caching improve performance?"
 Variations:
 1. What are the technical mechanisms and implementation details of caching systems?
 2. What are practical use cases where caching provides performance benefits?
 3. What are the underlying principles of how caching reduces latency and load?
 
-EXAMPLE 2:
-Question: "What is the difference between authentication and authorization?"
-Variations:
-1. How are authentication and authorization technically implemented in security systems?
-2. What are practical scenarios where authentication vs authorization matters?
-3. What are the conceptual differences between verifying identity and granting permissions?
-
 NOW GENERATE FOR:
 Question: "{query}"
 
 Guidelines:
 - Preserve all technical terms, acronyms, and proper nouns EXACTLY as written
-- Each variation should maintain the original meaning
-- Variations should cover different aspects or perspectives"""
+- For comparison/adaptation queries, ensure variations retrieve BOTH sides independently
+- Each variation should be independently useful for retrieval"""
 
     try:
         llm = _get_expansion_llm()

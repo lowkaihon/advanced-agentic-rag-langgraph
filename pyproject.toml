@@ -10,7 +10,6 @@ dependencies = [
     "ipykernel>=7.1.0",
     "jupyter>=1.1.1",
     "langchain>=1.0.5",
-    "langchain-anthropic>=1.0.3",
     "langchain-community>=0.4.1",
     "langchain-openai>=1.0.2",
     "langgraph>=1.0.3",
@@ -23,6 +22,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "sentence-transformers>=3.0.0",
     "langgraph-cli[inmem]>=0.4.7",
+    "marker-pdf>=1.10.0",
 ]
 
 [build-system]

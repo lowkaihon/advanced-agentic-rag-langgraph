@@ -1,0 +1,392 @@
+[
+  {
+    "id": "transformer_time_complexity",
+    "question": "What is the time complexity of self-attention in the Transformer?",
+    "ground_truth_answer": "In the Transformer, self‑attention layers have a per‑layer computational complexity of O(n^2 \\cdot d), where n is the sequence length and d is the representation dimension. This quadratic dependence on n arises because each token attends to every other token in the sequence, and it contrasts with the O(n \\cdot d^2) complexity of recurrent layers and the O(k \\cdot n \\cdot d^2) complexity of convolutional layers.",
+    "relevant_doc_ids": [
+      "Attention Is All You Need.pdf_chunk_25",
+      "Attention Is All You Need.pdf_chunk_30"
+    ],
+    "relevance_grades": {
+      "Attention Is All You Need.pdf_chunk_25": 3,
+      "Attention Is All You Need.pdf_chunk_30": 2
+    },
+    "source_document": "Attention Is All You Need.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "nlp",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "bert_second_pretraining_task",
+    "question": "What is BERT's second pre-training task besides Masked Language Modeling?",
+    "ground_truth_answer": "In addition to Masked Language Modeling, BERT is pre‑trained on a binarized **Next Sentence Prediction (NSP)** task. During pre‑training, 50 % of the paired sentences are actual consecutive sentences from the corpus labeled **IsNext**, while the other half are random sentences labeled **NotNext**. The model predicts whether the second sentence in the pair is the true successor of the first.",
+    "relevant_doc_ids": [
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6",
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_26"
+    ],
+    "relevance_grades": {
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6": 3,
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_26": 3
+    },
+    "source_document": "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "nlp",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "vit_base_layers",
+    "question": "How many layers does ViT-Base have?",
+    "ground_truth_answer": "The ViT‑Base model contains **12 layers**. Table 1 in the Vision Transformer paper lists model variants, and the row for \"ViT‑Base\" shows that it has 12 transformer layers (with a hidden size of 768 and 86 million parameters).",
+    "relevant_doc_ids": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_26"
+    ],
+    "relevance_grades": {
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_26": 3
+    },
+    "source_document": "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "computer_vision",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "ddpm_timesteps",
+    "question": "How many timesteps (T) does DDPM use in experiments?",
+    "ground_truth_answer": "In the experiments described in Denoising Diffusion Probabilistic Models, the authors set **T = 1000** timesteps. They note that using 1,000 timesteps aligns the number of neural network evaluations with prior work and ensures that the forward process variances increase linearly from β_1 = 10^{-4} to β_T = 0.02.",
+    "relevant_doc_ids": [
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_31"
+    ],
+    "relevance_grades": {
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_31": 3
+    },
+    "source_document": "Denoising Diffusion Probabilistic Models.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "generative_models",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "clip_acronym",
+    "question": "What does CLIP stand for?",
+    "ground_truth_answer": "CLIP stands for **Contrastive Language‑Image Pre‑Training**. The CLIP paper explains that the authors train a simplified contrastive model from scratch on 400 million (image, text) pairs and refer to this method as CLIP, short for Contrastive Language‑Image Pre‑Training.",
+    "relevant_doc_ids": [
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_14"
+    ],
+    "relevance_grades": {
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_14": 3
+    },
+    "source_document": "Learning Transferable Visual Models From Natural Language Supervision.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "cross_domain",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "unet_name_origin",
+    "question": "What is the U-Net architecture named after?",
+    "ground_truth_answer": "U‑Net derives its name from its **U‑shaped architecture**. The network has a contracting path followed by a symmetric expansive path. Because the expansive path mirrors the contracting path, the resulting structure resembles a “U”, which is why the architecture is called U‑Net.",
+    "relevant_doc_ids": [
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_8"
+    ],
+    "relevance_grades": {
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_8": 3
+    },
+    "source_document": "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "computer_vision",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "consistency_models_sampling_steps",
+    "question": "How many sampling steps do Consistency Models require?",
+    "ground_truth_answer": "Consistency Models require only **one step** for generation. They are designed to support fast one‑step generation by directly mapping noise to data, which overcomes the iterative sampling process of traditional diffusion models. While they can generate samples in a single step, they also allow multistep sampling to trade compute for improved sample quality.",
+    "relevant_doc_ids": [
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_2"
+    ],
+    "relevance_grades": {
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_2": 3
+    },
+    "source_document": "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "generative_models",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "transformer_positional_encoding_role",
+    "question": "Explain the role of positional encoding in the Transformer architecture.",
+    "ground_truth_answer": "Positional encodings are added to the input embeddings at the bottoms of the encoder and decoder stacks to inject information about the relative or absolute position of tokens in the sequence. Since the Transformer contains no recurrence and no convolution, positional encodings are necessary for the model to make use of the order of the sequence. The Transformer uses sine and cosine functions of different frequencies, where each dimension of the positional encoding corresponds to a sinusoid with wavelengths forming a geometric progression from 2π to 10000·2π.",
+    "relevant_doc_ids": [
+      "Attention Is All You Need.pdf_chunk_26"
+    ],
+    "relevance_grades": {
+      "Attention Is All You Need.pdf_chunk_26": 3
+    },
+    "source_document": "Attention Is All You Need.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "nlp",
+    "expected_strategy": "semantic",
+    "expected_chunks": 1
+  },
+  {
+    "id": "bert_wordpiece_tokenization",
+    "question": "What tokenization method does BERT use and what special tokens are employed?",
+    "ground_truth_answer": "BERT uses WordPiece embeddings with a 30,000 token vocabulary. The input representation employs special tokens to handle various tasks: every sequence begins with a [CLS] token whose final hidden state serves as the aggregate sequence representation for classification tasks, and sentence pairs are separated by [SEP] tokens to differentiate between sentences in a single sequence.",
+    "relevant_doc_ids": [
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_22"
+    ],
+    "relevance_grades": {
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_22": 3
+    },
+    "source_document": "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf",
+    "difficulty": "easy",
+    "query_type": "factual",
+    "domain": "nlp",
+    "expected_strategy": "keyword",
+    "expected_chunks": 1
+  },
+  {
+    "id": "vit_scaling_vs_cnns",
+    "question": "How does ViT scale compared to CNNs when pre-trained on large datasets?",
+    "ground_truth_answer": "When pre-trained on large datasets (14M-300M images), ViT demonstrates that large scale training trumps inductive bias. While ViT performs modestly on mid-sized datasets like ImageNet without strong regularization (yielding accuracies a few percentage points below comparable ResNets due to lacking CNN inductive biases like translation equivariance and locality), the picture changes dramatically with larger datasets. At sufficient scale, ViT approaches or beats state-of-the-art CNNs on multiple image recognition benchmarks, achieving excellent results when transferred to tasks with fewer datapoints. This demonstrates ViT's superior scalability compared to CNNs.",
+    "relevant_doc_ids": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_39"
+    ],
+    "relevance_grades": {
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_5": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_39": 3
+    },
+    "source_document": "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "computer_vision",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "ddpm_reparameterization_trick",
+    "question": "What is the reparameterization trick used in DDPM training?",
+    "ground_truth_answer": "In DDPM, the reparameterization trick involves reparameterizing the forward process sampling as xt(x0, ϵ) = √ᾱt·x0 + √(1-ᾱt)·ϵ where ϵ ~ N(0, I). This allows the model to be parameterized to predict ϵ from xt, enabling the training objective to be simplified to resemble denoising score matching. The resulting parameterization allows the model to compute xt at an arbitrary timestep t in closed form using the notation αt := 1-βt and ᾱt := ∏(s=1 to t)αs.",
+    "relevant_doc_ids": [
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14",
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_7"
+    ],
+    "relevance_grades": {
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_14": 3,
+      "Denoising Diffusion Probabilistic Models.pdf_chunk_7": 2
+    },
+    "source_document": "Denoising Diffusion Probabilistic Models.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "generative_models",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "clip_zero_shot_classification",
+    "question": "How does CLIP enable zero-shot image classification?",
+    "ground_truth_answer": "CLIP enables zero-shot image classification by jointly training an image encoder and a text encoder to predict correct pairings of (image, text) training examples using a contrastive objective. At test time, the learned text encoder synthesizes a zero-shot linear classifier by embedding the names or descriptions of the target dataset's classes. Natural language is used to reference learned visual concepts or describe new ones, enabling zero-shot transfer of the model to downstream tasks without requiring any dataset-specific training. The model can match target classes by computing similarity between image embeddings and text embeddings of class descriptions.",
+    "relevant_doc_ids": [
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_9",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_10",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_2"
+    ],
+    "relevance_grades": {
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_9": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_10": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_2": 3
+    },
+    "source_document": "Learning Transferable Visual Models From Natural Language Supervision.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "computer_vision",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "dalle2_clip_usage",
+    "question": "How does DALL-E 2 use CLIP in its generation process?",
+    "ground_truth_answer": "DALL-E 2 (called unCLIP in the paper) uses CLIP in a two-stage hierarchical process. First, a prior model generates a CLIP image embedding given a text caption. Then, a diffusion decoder generates an image conditioned on that CLIP image embedding. The system leverages CLIP's joint embedding space between images and text: text is encoded by CLIP's frozen text encoder, fed to the prior to produce an image embedding, and this embedding conditions the decoder to produce the final image. This approach enables text-conditional image generation while also supporting image variations and zero-shot manipulations.",
+    "relevant_doc_ids": [
+      "Hierarchical Text-Conditional Image Generation with CLIP Latents.pdf_chunk_1",
+      "Hierarchical Text-Conditional Image Generation with CLIP Latents.pdf_chunk_4"
+    ],
+    "relevance_grades": {
+      "Hierarchical Text-Conditional Image Generation with CLIP Latents.pdf_chunk_1": 3,
+      "Hierarchical Text-Conditional Image Generation with CLIP Latents.pdf_chunk_4": 3
+    },
+    "source_document": "Hierarchical Text-Conditional Image Generation with CLIP Latents.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "generative_models",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "consistency_models_property",
+    "question": "What is the consistency property that Consistency Models enforce?",
+    "ground_truth_answer": "Consistency Models enforce the self-consistency property, which means that their outputs are consistent for arbitrary pairs of (xt, t) that belong to the same Probability Flow ODE trajectory. The consistency function f maps any point (xt, t) on a trajectory to the trajectory's origin (xϵ), such that f(xt, t) = f(xt', t') for all t, t' in [ϵ, T]. This property allows the model to map any point at any time step to the trajectory's starting point, enabling one-step generation while maintaining the ability to generate high-quality samples.",
+    "relevant_doc_ids": [
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_9"
+    ],
+    "relevance_grades": {
+      "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf_chunk_9": 3
+    },
+    "source_document": "Consistency Models - faster alternative to traditional diffusion models; directly mapping noise to data.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "generative_models",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "wgan_gp_gradient_penalty",
+    "question": "What is the gradient penalty in WGAN-GP and why is it needed?",
+    "ground_truth_answer": "The gradient penalty in WGAN-GP is an alternative to weight clipping for enforcing the Lipschitz constraint on the critic. It directly constrains the gradient norm of the critic's output with respect to its input by penalizing deviations from unit gradient norm. The penalty takes the form λ·E[(||∇D(x̂)||₂ - 1)²], where samples are drawn uniformly along straight lines between pairs of points from the data distribution and generator distribution. It is needed because weight clipping can lead to optimization difficulties and pathological value surfaces in the critic, causing either exploding or vanishing gradients. The gradient penalty provides more stable gradients and allows training of more complicated networks without these issues.",
+    "relevant_doc_ids": [
+      "Improved Training of Wasserstein GANs.pdf_chunk_25",
+      "Improved Training of Wasserstein GANs.pdf_chunk_26",
+      "Improved Training of Wasserstein GANs.pdf_chunk_3",
+      "Improved Training of Wasserstein GANs.pdf_chunk_1"
+    ],
+    "relevance_grades": {
+      "Improved Training of Wasserstein GANs.pdf_chunk_25": 3,
+      "Improved Training of Wasserstein GANs.pdf_chunk_26": 3,
+      "Improved Training of Wasserstein GANs.pdf_chunk_3": 2,
+      "Improved Training of Wasserstein GANs.pdf_chunk_1": 3
+    },
+    "source_document": "Improved Training of Wasserstein GANs.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "generative_models",
+    "expected_strategy": "semantic",
+    "expected_chunks": 3
+  },
+  {
+    "id": "raptor_two_components",
+    "question": "What are the two main components of the RAPTOR framework?",
+    "ground_truth_answer": "The RAPTOR framework is fundamentally segmented into two main components: (1) retrieval and (2) construction of the underlying retrieval tree system. The construction component focuses on building the hierarchical tree through recursively clustering related text chunks and summarizing them, while the retrieval component handles how information is accessed from this tree structure.",
+    "relevant_doc_ids": [
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3",
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5"
+    ],
+    "relevance_grades": {
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_3": 3,
+      "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf_chunk_5": 3
+    },
+    "source_document": "Expanding Horizons in RAG - Exploring and Extending the Limits of RAPTOR.pdf",
+    "difficulty": "medium",
+    "query_type": "conceptual",
+    "domain": "rag",
+    "expected_strategy": "semantic",
+    "expected_chunks": 2
+  },
+  {
+    "id": "transformer_training_procedure",
+    "question": "Describe the complete training procedure for the Transformer, including optimization, regularization, and learning rate schedule.",
+    "ground_truth_answer": "The Transformer is trained on parallel corpora using mini‑batches processed on eight GPUs. For the base model, each training step takes about 0.4 s and the model is trained for 100 000 steps; big models run for 300 000 steps. The authors use the **Adam optimizer** with hyperparameters \\(\beta_1=0.9\\), \\(\beta_2=0.98\\) and \\(\\epsilon=10^{-9}\\). The learning rate follows a warmup schedule: \\(\text{lrate} = d_{model}^{-0.5} \\cdot \\min(\text{step}^{-0.5}, \text{step} \\cdot \text{warmup\\_steps}^{-1.5})\\), increasing linearly for the first 4,000 warmup steps and then decaying proportionally to the inverse square root of the step number. Regularization includes **dropout** applied to sub‑layer outputs and to the sum of embeddings and positional encodings, with a dropout probability of 0.1. The authors also use **label smoothing** with parameter \\(\\epsilon_{ls}=0.1\\), which slightly hurts perplexity but improves BLEU score. Checkpoint averaging and beam search with a length penalty are employed during inference to improve translation quality.",
+    "relevant_doc_ids": [
+      "Attention Is All You Need.pdf_chunk_34",
+      "Attention Is All You Need.pdf_chunk_35",
+      "Attention Is All You Need.pdf_chunk_39",
+      "Attention Is All You Need.pdf_chunk_42"
+    ],
+    "relevance_grades": {
+      "Attention Is All You Need.pdf_chunk_34": 3,
+      "Attention Is All You Need.pdf_chunk_35": 3,
+      "Attention Is All You Need.pdf_chunk_39": 3,
+      "Attention Is All You Need.pdf_chunk_42": 2
+    },
+    "source_document": "Attention Is All You Need.pdf",
+    "difficulty": "hard",
+    "query_type": "procedural",
+    "domain": "nlp",
+    "expected_strategy": "semantic",
+    "expected_chunks": 4
+  },
+  {
+    "id": "unet_complete_architecture",
+    "question": "Explain the complete architecture of U-Net, including the contracting path, expanding path, and skip connections.",
+    "ground_truth_answer": "U‑Net is a symmetric encoder‑decoder network designed for biomedical image segmentation. The **contracting path** (left side) repeatedly applies two 3 × 3 unpadded convolutions followed by ReLU activations and a 2 × 2 max‑pooling operation with stride 2. Each downsampling step doubles the number of feature channels. The **expanding path** (right side) upsamples feature maps using 2 × 2 up‑convolutions that halve the number of channels and concatenates these with the correspondingly cropped feature maps from the contracting path (the **skip connections**). After concatenation, two 3 × 3 convolutions with ReLU are applied. A final 1 × 1 convolution maps the 64‑channel feature vector to the desired number of output classes, yielding a pixel‑wise segmentation. Because the expansive path mirrors the contracting path, the network forms a U‑shape and contains 23 convolutional layers. The skip connections carry high‑resolution context from the encoder to the decoder, enabling precise localization while preserving global context.",
+    "relevant_doc_ids": [
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_12",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_13",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_8",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_6"
+    ],
+    "relevance_grades": {
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_12": 3,
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_13": 3,
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_8": 2,
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_6": 2
+    },
+    "source_document": "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf",
+    "difficulty": "hard",
+    "query_type": "procedural",
+    "domain": "computer_vision",
+    "expected_strategy": "semantic",
+    "expected_chunks": 4
+  },
+  {
+    "id": "bert_vs_clip_pretraining",
+    "question": "Compare the pre-training objectives of BERT and CLIP. How do their training tasks differ?",
+    "ground_truth_answer": "BERT and CLIP have fundamentally different pre-training objectives that reflect their different domains. BERT uses two text-based pre-training tasks: (1) Masked Language Modeling (MLM), which randomly masks tokens from the input and predicts the original vocabulary id based on context, enabling bidirectional representations, and (2) Next Sentence Prediction (NSP), which predicts whether two sentences are consecutive to learn text-pair representations. In contrast, CLIP uses a contrastive multimodal objective that jointly trains an image encoder and text encoder to predict correct pairings of (image, text) training examples from a batch. BERT's objective focuses on deep bidirectional understanding within a single modality (text), while CLIP's objective learns a joint embedding space between two modalities (vision and language). BERT is trained on unlabeled text alone, while CLIP is trained on 400 million (image, text) pairs from the internet. BERT's training enables fine-tuning for NLP tasks, while CLIP enables zero-shot visual recognition by using natural language to reference visual concepts.",
+    "relevant_doc_ids": [
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_9",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_14"
+    ],
+    "relevance_grades": {
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf_chunk_6": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_9": 3,
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf_chunk_14": 2
+    },
+    "source_document": [
+      "BERT - Pre-training of Deep Bidirectional Transformers for Language Understanding.pdf",
+      "Learning Transferable Visual Models From Natural Language Supervision.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "cross_domain",
+    "expected_strategy": "hybrid",
+    "expected_chunks": 4
+  },
+  {
+    "id": "vit_vs_unet_architecture_tasks",
+    "question": "How do the architectural choices in ViT and U-Net reflect their different tasks (classification vs segmentation)?",
+    "ground_truth_answer": "ViT and U-Net make different architectural choices that reflect their respective tasks of classification and segmentation. ViT applies a pure Transformer directly to sequences of image patches for classification. It splits images into fixed-size patches (16x16), linearly embeds them, adds position embeddings, and feeds them through a standard Transformer encoder. ViT prepends a learnable classification token whose final state serves as the image representation for classification via an MLP head. It has minimal image-specific inductive bias and uses global self-attention layers. In contrast, U-Net is designed for pixel-wise segmentation and uses a u-shaped encoder-decoder architecture with skip connections. Its contracting path captures context through repeated convolutions and max pooling, while its symmetric expanding path enables precise localization through upsampling and concatenation with high-resolution features from the contracting path via skip connections. U-Net's architecture is specifically designed to combine context information with precise spatial localization needed for segmentation, using convolutions with strong locality bias. ViT's global attention suits classification where one label describes the entire image, while U-Net's hierarchical feature combination with skip connections suits segmentation where each pixel needs a class label. ViT relies on scale and pre-training to overcome lack of inductive bias, while U-Net's convolutional structure provides built-in spatial priors suitable for limited biomedical training data.",
+    "relevant_doc_ids": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_13",
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_15",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_6",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_1"
+    ],
+    "relevance_grades": {
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_13": 3,
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf_chunk_15": 3,
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_6": 3,
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf_chunk_1": 3
+    },
+    "source_document": [
+      "AN IMAGE IS WORTH 16X16 WORDS - TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE.pdf",
+      "U-Net - Convolutional Networks for Biomedical Image Segmentation.pdf"
+    ],
+    "difficulty": "hard",
+    "query_type": "comparative",
+    "domain": "computer_vision",
+    "expected_strategy": "hybrid",
+    "expected_chunks": 4
+  }
+]

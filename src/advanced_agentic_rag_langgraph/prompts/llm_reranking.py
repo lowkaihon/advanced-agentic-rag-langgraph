@@ -5,115 +5,63 @@ BASE_PROMPT = """Query: "{query}"
 Documents with metadata:
 {doc_list}
 
-Rate each document's relevance (0-100) considering:
+Rate each document's relevance (0-100).
 
-1. **Content relevance**: Does the content contain SPECIFIC information that answers the query?
+## 1. CONTENT RELEVANCE (Primary Criterion)
 
-   PRIORITIZE chunks that contain:
-   - Explicit answers to the question asked (facts, definitions, explanations)
-   - Specific details requested (numbers, names, steps, mechanisms)
-   - Direct explanations of the concept or process in question
+Does the document contain SPECIFIC information that answers the query?
 
-   DEPRIORITIZE chunks that:
-   - Merely mention the topic without any explanation
-   - Are tangentially related (different domain/system)
-   - Contain only metadata, references, or boilerplate
+PRIORITIZE: Explicit answers, specific details, direct explanations of mechanisms
+DEPRIORITIZE: Mere topic mentions, tangential content, metadata/boilerplate
 
-   NOTE: For architectural queries, explanations of mechanisms and design ARE the answer.
-   Don't deprioritize foundational content for "How does X work?" questions.
+QUERY-TYPE SCORING:
 
-QUERY TYPE AWARENESS:
+| Query Type | Examples | Scoring Approach |
+|------------|----------|------------------|
+| FACTUAL | "What is X?", "Define Y" | Precision-first: exact answers 85+, background 40-60 |
+| CONCEPTUAL | "How does X work?" | Coverage-first: mechanism explanations ARE answers (75+) |
+| COMPARISON | "X vs Y", "difference between" | BOTH sides required: X-only 70-80, Y-only 70-80, comparison 85+ |
+| ADAPTATION | "How does X adapt Y?" | Baseline required: original(Y) 70-80, adapted(X) 75-85, mechanism 85+ |
 
-For FACTUAL queries ("What is X?", "Define Y", specific facts):
-- Prioritize precision: documents with exact answers score highest
-- Background context without direct answers scores lower (40-60)
+CRITICAL: For comparison/adaptation queries, foundational content about EITHER side scores 70+, not 40-60. You cannot understand a difference without understanding both sides.
 
-For ARCHITECTURAL/CONCEPTUAL queries ("How does X work?", "How does X adapt Y?", "Compare X and Y"):
-- Prioritize coverage: documents explaining mechanisms, design decisions, or adaptations ARE direct answers
-- Score each document on whether it provides a distinct, valid perspective
-- Foundational explanations are valuable, not "background to deprioritize"
-- Multiple documents addressing different aspects all deserve high scores (75+)
+## 2. DOCUMENT-QUERY FIT
 
-2. **Document type appropriateness**: Is this the right KIND of document for this query?
+| Factor | High Score | Low Score |
+|--------|------------|-----------|
+| Type match | Academic for research, tutorial for how-to | Mismatch (legal doc for technical query) |
+| Level match | Complexity matches query sophistication | Advanced paper for basic question |
+| Domain match | Exact topic alignment | Different domain entirely |
 
-   ACADEMIC (scholarly research):
-   - research_paper, conference_paper, journal_article, thesis, dissertation, literature_review
-   - Best for: Deep understanding, methodologies, theoretical concepts, research findings
-   - Good for queries: "What is X?", "How does X work theoretically?", "Research on X"
+## 3. SCORING ANCHORS
 
-   EDUCATIONAL (learning materials):
-   - tutorial, course_material, textbook, lecture_notes, study_guide
-   - Best for: Learning step-by-step, educational content, beginner/intermediate explanations
-   - Good for queries: "How to learn X?", "Tutorial on X", "Explain X for beginners"
+90-100: Directly explains the mechanism/concept with specific details
+70-85: Provides relevant perspective or partial explanation
+50-65: Related but addresses different aspect or lacks depth
+20-40: Mentions topic without meaningful contribution
+0-15: Different topic entirely
 
-   TECHNICAL (implementation and specs):
-   - api_reference, technical_specification, architecture_document, system_design
-   - Best for: Implementation details, API usage, technical specifications, system architecture
-   - Good for queries: "How to use X function?", "X API documentation", "Architecture of X"
+FEW-SHOT EXAMPLE (Comparison Query):
 
-   BUSINESS (corporate documents):
-   - whitepaper, case_study, business_report, proposal
-   - Best for: Industry insights, real-world examples, market analysis, business applications
-   - Good for queries: "X use cases", "Business value of X", "X case study"
+Query: "How does distributed caching differ from local caching?"
 
-   LEGAL (legal/compliance):
-   - legal_document, contract, policy_document
-   - Best for: Legal requirements, compliance, policies, terms
-   - Good for queries: "Legal aspects of X", "Compliance with X", "X policy"
+Doc A: "Distributed caching systems like Redis store data across nodes for horizontal scaling."
+-> Score: 88 (explains one side with specifics)
 
-   GENERAL (articles and guides):
-   - blog_post, article, guide, manual, faq, documentation
-   - Best for: General information, how-to guides, quick references, FAQs
-   - Good for queries: General questions, practical guides, quick lookups
+Doc B: "Local caching stores data in application memory using LRU caches."
+-> Score: 78 (explains OTHER side - required context, NOT background)
 
-3. **Technical level match**: Does the document's complexity match the query's sophistication?
-   - Simple queries (e.g., "What is X?"): beginner/intermediate docs preferred
-   - Advanced queries (e.g., "Optimize X algorithm"): advanced docs preferred
-   - Mismatch penalty: Don't give advanced papers for basic questions, or vice versa
+Doc C: "Caching stores copies of data for faster access."
+-> Score: 45 (generic definition, doesn't explain either side)
 
-4. **Domain alignment**: Does the document's domain match the query's topic?
-   - Strong match: Document domain exactly matches query topic
-   - Partial match: Related but not identical domain
-   - No match: Different domain (penalize heavily)
+## 4. OUTPUT REQUIREMENTS
 
-SCORING ANCHORS (calibration examples):
+- Score exactly {doc_count} documents IN ORDER (doc_0 to doc_{last_doc_idx})
+- Expected IDs: {expected_ids}
 
-Score 90-100: Document directly explains the mechanism/concept asked about with specific details
-Score 70-85: Document provides relevant perspective or partial explanation of the topic
-Score 50-65: Document is related but addresses a different aspect or lacks depth
-Score 20-40: Document mentions topic but doesn't contribute meaningful information
-Score 0-15: Document is about a different topic entirely
-
-SCORING GUIDELINES:
-- 90-100: Perfect match (right type, right level, right domain, answers query directly)
-- 75-89: Excellent match (right type and domain, answers query well)
-- 60-74: Good match (relevant but not ideal type or level)
-- 40-59: Moderate relevance (somewhat relevant but wrong type or level)
-- 20-39: Low relevance (tangentially related, wrong document type)
-- 0-19: Not relevant (wrong topic, wrong type, doesn't answer query)
-
-ANSWER-FOCUSED SCORING:
-- When multiple chunks discuss the same topic, prefer the one with explicit answers
-- A chunk with specific facts/details should score higher than one with general discussion
-- If the query asks "how/what/why X?", prefer chunks that explain X, not just mention X
-
-IMPORTANT:
-- Do NOT consider how documents were retrieved (semantic/keyword/hybrid)
-- Judge ONLY the intrinsic quality and appropriateness for THIS specific query
-- Prioritize documents whose TYPE matches the query intent (e.g., tutorial for "how to" questions)
-
-COMPLETENESS REQUIREMENT:
-- You are scoring exactly {doc_count} documents
-- Score each document IN ORDER from doc_0 to doc_{last_doc_idx}
-- Your response MUST include exactly {doc_count} entries in scored_documents
-- Expected document IDs: {expected_ids}
-
-Return a structured response with:
-- scored_documents: List of objects, one per document, each containing:
-  - document_id: The document identifier string (e.g., "doc_0", "doc_1", "doc_2")
-  - relevance_score: Score from 0-100
-  - reasoning: 1-2 sentences explaining why this specific document received this score
-- overall_reasoning: 1-2 sentence explanation of your overall ranking approach"""
+Return:
+- scored_documents: List of objects, each with document_id, relevance_score, reasoning (1-2 sentences)
+- overall_reasoning: Brief ranking approach summary"""
 
 
 GPT5_PROMPT = """Query: "{query}"
@@ -127,39 +75,26 @@ CRITERIA:
 
 1. Content relevance: Does content contain SPECIFIC information that answers the query?
    - Prioritize: Explicit answers, specific details, direct explanations
-   - Deprioritize: Topic-related but doesn't contain the actual answer
-   - QUERY TYPE: For "how does X work/adapt" queries, mechanism explanations ARE direct answers.
-     Score documents providing distinct perspectives highly (75+), not just those with exact matches.
+   - Deprioritize: Topic mentions without substance
 
-2. Document type match: Right KIND for this query?
-   - Academic: research papers, journal articles (theoretical understanding, research)
-   - Educational: tutorials, textbooks (learning, explanations)
-   - Technical: API docs, specs (implementation, architecture)
-   - Business: whitepapers, case studies (use cases, market analysis)
-   - Legal: policies, contracts (compliance, terms)
-   - General: articles, guides (general info, how-to)
+   QUERY-TYPE SCORING:
+   - FACTUAL ("What is X?"): Precision-first, exact answers 85+
+   - CONCEPTUAL ("How does X work?"): Mechanism explanations ARE answers (75+)
+   - COMPARISON ("X vs Y"): Both sides required - X-only 70+, Y-only 70+, comparison 85+
+   - ADAPTATION ("How X adapts Y"): Baseline required - original 70+, adapted 75+, mechanism 85+
 
-3. Technical level match: Complexity matches query sophistication?
-   - Simple queries prefer beginner/intermediate docs
-   - Advanced queries need advanced content
-
-4. Domain alignment: Document domain matches query topic?
-   - Strong, partial, or no match
+2. Document-query fit: Type, level, and domain alignment
 
 SCORING:
-- 90-100: Perfect (right type, level, domain, answers directly)
-- 75-89: Excellent (right type and domain, answers well)
-- 60-74: Good (relevant, not ideal type/level)
-- 40-59: Moderate (somewhat relevant, wrong type/level)
-- 20-39: Low (tangential, wrong type)
-- 0-19: Not relevant (wrong topic/type)
+- 90-100: Perfect (answers directly with specifics)
+- 70-85: Excellent (relevant perspective or partial explanation)
+- 50-65: Good (related, different aspect)
+- 20-40: Low (mentions topic only)
+- 0-15: Not relevant
 
 COMPLETENESS: Score exactly {doc_count} documents IN ORDER (doc_0 to doc_{last_doc_idx}).
 Expected IDs: {expected_ids}
 
 Return:
-- scored_documents: List with one entry per document containing:
-  - document_id: Document identifier string (e.g., "doc_0", "doc_1")
-  - relevance_score: 0-100 score
-  - reasoning: Brief explanation for this document's score
-- overall_reasoning: Brief summary of ranking approach"""
+- scored_documents: List with document_id, relevance_score, reasoning
+- overall_reasoning: Brief ranking approach summary"""

@@ -821,7 +821,8 @@ def _format_question_by_question_comparison(
 def test_architecture_comparison(
     quick_mode: bool = False,
     dataset_type: str = "standard",
-    tiers: List[str] = None
+    tiers: List[str] = None,
+    questions: List[str] = None
 ):
     """
     Main comparison test - run selected tiers on golden dataset.
@@ -830,6 +831,7 @@ def test_architecture_comparison(
         quick_mode: If True, evaluate only first 2 examples
         dataset_type: Dataset to evaluate ('standard' or 'hard')
         tiers: List of tiers to run (default: all four)
+        questions: Filter to specific questions by index (1-based) or ID substring
 
     Generates:
     - evaluation/architecture_comparison_results_{dataset_type}_{timestamp}.json (raw data)
@@ -873,6 +875,23 @@ def test_architecture_comparison(
     if quick_mode:
         dataset = dataset[:2]
         print(f"[*] Quick mode: Using first 2 examples\n")
+
+    # Filter by specific questions if requested
+    if questions:
+        filtered = []
+        for q in questions:
+            if q.isdigit():
+                # 1-based index
+                idx = int(q) - 1
+                if 0 <= idx < len(dataset):
+                    filtered.append(dataset[idx])
+            else:
+                # ID substring match
+                for ex in dataset:
+                    if q in ex.get("id", ""):
+                        filtered.append(ex)
+        dataset = filtered
+        print(f"[*] Filtered to {len(dataset)} questions: {[ex.get('id', '')[:30] for ex in dataset]}\n")
 
     # PRE-BUILD RETRIEVER ONCE (optimization to avoid redundant PDF re-ingestion)
     print(f"\n{'='*80}")
@@ -1122,6 +1141,11 @@ if __name__ == "__main__":
         default=['basic', 'intermediate', 'advanced', 'multi_agent'],
         help='Tiers to evaluate (default: basic, intermediate, advanced, multi_agent). Example: --tiers basic hyde'
     )
+    parser.add_argument(
+        '--questions',
+        nargs='+',
+        help='Filter to specific questions by index (1-based) or ID substring. Example: --questions 6 7 or --questions ddpm_vs_consistency'
+    )
     args = parser.parse_args()
 
     if args.quick:
@@ -1133,4 +1157,4 @@ if __name__ == "__main__":
         print(f"[*] This will take approximately {expected_time}")
         print("[*] Use --quick flag for faster testing (~6-8 minutes)")
 
-    test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset, tiers=args.tiers)
+    test_architecture_comparison(quick_mode=args.quick, dataset_type=args.dataset, tiers=args.tiers, questions=args.questions)
