@@ -137,7 +137,6 @@ Desktop.ini
 .claude/settings.local.json
 notes.ipynb
 evaluation/archive/
-evaluation/corpus_chunks/
 evaluation/dataset_generation_prompts/
 tier_comparison_report*.md
 tier_comparison_results*.json
@@ -150,9 +149,3 @@ src/advanced_agentic_rag_langgraph/variants/archive/
 .langgraph_api/
 recalculate_metrics.py
 tests/integration/archive/
-HyDE RAG implementation.md
-Best Practices for LLM-as-Judge Reranking in RAG Pipelines.md
-Marker PDF Parser for Local RAG Pipelines - 16GB RAM Considerations.md
-LLM-as-Judge Reranking - Pointwise vs Set-wise Approaches.md
-Research-Backed Best Practices for RAG Query Expansion and Query Decomposition.md
-Response for Marker PDF Parsing Implementation.md

@@ -1,0 +1,1914 @@
+{
+  "source": "Improved Training of Wasserstein GANs.pdf",
+  "processor": "marker",
+  "processed_date": "2025-12-14T07:29:33.536135",
+  "markdown": "# **Improved Training of Wasserstein GANs**\n\nIshaan Gulrajani<sup>1</sup>\\*, Faruk Ahmed<sup>1</sup>, Martin Arjovsky<sup>2</sup>, Vincent Dumoulin<sup>1</sup>, Aaron Courville<sup>1,3</sup>\n\n<sup>1</sup> Montreal Institute for Learning Algorithms\n\n<sup>2</sup> Courant Institute of Mathematical Sciences\n\n $^3$  CIFAR Fellow\n\nigul222@gmail.com\n\n{faruk.ahmed,vincent.dumoulin,aaron.courville}@umontreal.ca ma4371@nyu.edu\n\n### **Abstract**\n\nGenerative Adversarial Networks (GANs) are powerful generative models, but suffer from training instability. The recently proposed Wasserstein GAN (WGAN) makes progress toward stable training of GANs, but sometimes can still generate only poor samples or fail to converge. We find that these problems are often due to the use of weight clipping in WGAN to enforce a Lipschitz constraint on the critic, which can lead to undesired behavior. We propose an alternative to clipping weights: penalize the norm of gradient of the critic with respect to its input. Our proposed method performs better than standard WGAN and enables stable training of a wide variety of GAN architectures with almost no hyperparameter tuning, including 101-layer ResNets and language models with continuous generators. We also achieve high quality generations on CIFAR-10 and LSUN bedrooms. †\n\n## 1 Introduction\n\nGenerative Adversarial Networks (GANs) [9] are a powerful class of generative models that cast generative modeling as a game between two networks: a generator network produces synthetic data given some noise source and a discriminator network discriminates between the generator's output and true data. GANs can produce very visually appealing samples, but are often hard to train, and much of the recent work on the subject [23, 19, 2, 21] has been devoted to finding ways of stabilizing training. Despite this, consistently stable training of GANs remains an open problem.\n\nIn particular, [1] provides an analysis of the convergence properties of the value function being optimized by GANs. Their proposed alternative, named Wasserstein GAN (WGAN) [2], leverages the Wasserstein distance to produce a value function which has better theoretical properties than the original. WGAN requires that the discriminator (called the *critic* in that work) must lie within the space of 1-Lipschitz functions, which the authors enforce through weight clipping.\n\nOur contributions are as follows:\n\n- 1. On toy datasets, we demonstrate how critic weight clipping can lead to undesired behavior.\n- 2. We propose gradient penalty (WGAN-GP), which does not suffer from the same problems.\n- We demonstrate stable training of varied GAN architectures, performance improvements over weight clipping, high-quality image generation, and a character-level GAN language model without any discrete sampling.\n\n<sup>\\*</sup>Now at Google Brain\n\n<sup>†</sup>Code for our models is available at https://github.com/igul222/improved\\_wgan\\_training.\n\n## 2 Background\n\n#### 2.1 Generative adversarial networks\n\nThe GAN training strategy is to define a game between two competing networks. The *generator* network maps a source of noise to the input space. The *discriminator* network receives either a generated sample or a true data sample and must distinguish between the two. The generator is trained to fool the discriminator.\n\nFormally, the game between the generator G and the discriminator D is the minimax objective:\n\n$$\\min_{G} \\max_{D} \\underset{\\boldsymbol{x} \\sim \\mathbb{P}_r}{\\mathbb{E}} [\\log(D(\\boldsymbol{x}))] + \\underset{\\tilde{\\boldsymbol{x}} \\sim \\mathbb{P}_g}{\\mathbb{E}} [\\log(1 - D(\\tilde{\\boldsymbol{x}}))], \\tag{1}$$\n\nwhere  $\\mathbb{P}_r$  is the data distribution and  $\\mathbb{P}_g$  is the model distribution implicitly defined by  $\\tilde{x} = G(z)$ ,  $z \\sim p(z)$  (the input z to the generator is sampled from some simple noise distribution p, such as the uniform distribution or a spherical Gaussian distribution).\n\nIf the discriminator is trained to optimality before each generator parameter update, then minimizing the value function amounts to minimizing the Jensen-Shannon divergence between  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  [9], but doing so often leads to vanishing gradients as the discriminator saturates. In practice, [9] advocates that the generator be instead trained to maximize  $\\mathbb{E}_{\\tilde{x} \\sim \\mathbb{P}_g}[\\log(D(\\tilde{x}))]$ , which goes some way to circumvent this difficulty. However, even this modified loss function can misbehave in the presence of a good discriminator [1].\n\n#### 2.2 Wasserstein GANs\n\n[2] argues that the divergences which GANs typically minimize are potentially not continuous with respect to the generator's parameters, leading to training difficulty. They propose instead using the Earth-Mover (also called Wasserstein-1) distance W(q,p), which is informally defined as the minimum cost of transporting mass in order to transform the distribution q into the distribution p (where the cost is mass times transport distance). Under mild assumptions, W(q,p) is continuous everywhere and differentiable almost everywhere.\n\nThe WGAN value function is constructed using the Kantorovich-Rubinstein duality [25] to obtain\n\n$$\\min_{G} \\max_{D \\in \\mathcal{D}} \\underset{\\boldsymbol{x} \\sim \\mathbb{P}_r}{\\mathbb{E}} \\left[ D(\\boldsymbol{x}) \\right] - \\underset{\\tilde{\\boldsymbol{x}} \\sim \\mathbb{P}_q}{\\mathbb{E}} \\left[ D(\\tilde{\\boldsymbol{x}}) \\right]$$\n (2)\n\nwhere  $\\mathcal{D}$  is the set of 1-Lipschitz functions and  $\\mathbb{P}_g$  is once again the model distribution implicitly defined by  $\\tilde{x} = G(z), \\ z \\sim p(z)$ . In that case, under an optimal discriminator (called a *critic* in the paper, since it's not trained to classify), minimizing the value function with respect to the generator parameters minimizes  $W(\\mathbb{P}_r, \\mathbb{P}_g)$ .\n\nThe WGAN value function results in a critic function whose gradient with respect to its input is better behaved than its GAN counterpart, making optimization of the generator easier. Empirically, it was also observed that the WGAN value function appears to correlate with sample quality, which is not the case for GANs [2].\n\nTo enforce the Lipschitz constraint on the critic, [2] propose to clip the weights of the critic to lie within a compact space [-c, c]. The set of functions satisfying this constraint is a subset of the k-Lipschitz functions for some k which depends on c and the critic architecture. In the following sections, we demonstrate some of the issues with this approach and propose an alternative.\n\n### 2.3 Properties of the optimal WGAN critic\n\nIn order to understand why weight clipping is problematic in a WGAN critic, as well as to motivate our approach, we highlight some properties of the optimal critic in the WGAN framework. We prove these in the Appendix.\n\n**Proposition 1.** Let  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  be two distributions in  $\\mathcal{X}$ , a compact metric space. Then, there is a 1-Lipschitz function  $f^*$  which is the optimal solution of  $\\max_{\\|f\\|_L \\leq 1} \\mathbb{E}_{y \\sim \\mathbb{P}_r}[f(y)] - \\mathbb{E}_{x \\sim \\mathbb{P}_g}[f(x)]$ . Let  $\\pi$  be the optimal coupling between  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ , defined as the minimizer of:  $W(\\mathbb{P}_r, \\mathbb{P}_g) = \\inf_{\\pi \\in \\Pi(\\mathbb{P}_r, \\mathbb{P}_g)} \\mathbb{E}_{(x,y) \\sim \\pi}[\\|x - y\\|]$  where  $\\Pi(\\mathbb{P}_r, \\mathbb{P}_g)$  is the set of joint distributions  $\\pi(x, y)$  whose marginals are  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ , respectively. Then, if  $f^*$  is differentiable  $\\pi$ ,  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) =$ \n\n## 3 Difficulties with weight constraints\n\nWe find that weight clipping in WGAN leads to optimization difficulties, and that even when optimization succeeds the resulting critic can have a pathological value surface. We explain these problems below and demonstrate their effects; however we do not claim that each one always occurs in practice, nor that they are the only such mechanisms.\n\nOur experiments use the specific form of weight constraint from [2] (hard clipping of the magnitude of each weight), but we also tried other weight constraints (L2 norm clipping, weight normalization), as well as soft constraints (L1 and L2 weight decay) and found that they exhibit similar problems.\n\nTo some extent these problems can be mitigated with batch normalization in the critic, which [2] use in all of their experiments. However even with batch normalization, we observe that very deep WGAN critics often fail to converge.\n\n![](_page_2_Figure_5.jpeg)\n\nWeight clipping (c = 0.001)\n\nWeight clipping (c = 0.01)\n\nWeight clipping (c = 0.01)\n\nWeight clipping (c = 0.01)\n\nGradient penalty\n\nObscriminator layer\n\n(a) Value surfaces of WGAN critics trained to optimality on toy datasets using (top) weight clipping and (bottom) gradient penalty. Critics trained with weight clipping fail to capture higher moments of the data distribution. The 'generator' is held fixed at the real data plus Gaussian noise.\n\n(b) (left) Gradient norms of deep WGAN critics during training on the Swiss Roll dataset either explode or vanish when using weight clipping, but not when using a gradient penalty. (right) Weight clipping (top) pushes weights towards two values (the extremes of the clipping range), unlike gradient penalty (bottom).\n\nFigure 1: Gradient penalty in WGANs does not exhibit undesired behavior like weight clipping.\n\n#### 3.1 Capacity underuse\n\nImplementing a k-Lipshitz constraint via weight clipping biases the critic towards much simpler functions. As stated previously in Corollary 1, the optimal WGAN critic has unit gradient norm almost everywhere under  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ ; under a weight-clipping constraint, we observe that our neural network architectures which try to attain their maximum gradient norm k end up learning extremely simple functions.\n\nTo demonstrate this, we train WGAN critics with weight clipping to optimality on several toy distributions, holding the generator distribution  $\\mathbb{P}_g$  fixed at the real distribution plus unit-variance Gaussian noise. We plot value surfaces of the critics in Figure 1a. We omit batch normalization in the\n\n<sup>&</sup>lt;sup>‡</sup>We can actually assume much less, and talk only about directional derivatives on the direction of the line; which we show in the proof always exist. This would imply that in every point where  $f^*$  is differentiable (and thus we can take gradients in a neural network setting) the statement holds.\n\n<sup>§</sup>This assumption is in order to exclude the case when the matching point of sample x is x itself. It is satisfied in the case that  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  have supports that intersect in a set of measure 0, such as when they are supported by two low dimensional manifolds that don't perfectly align [1].\n\n```\nAlgorithm 1 WGAN with gradient penalty. We use default values of \\lambda = 10, n_{\\text{critic}} = 5, \\alpha = 0.0001, \\beta_1 = 0, \\beta_2 = 0.9.\n```\n\n**Require:** The gradient penalty coefficient  $\\lambda$ , the number of critic iterations per generator iteration  $n_{\\text{critic}}$ , the batch size m, Adam hyperparameters  $\\alpha, \\beta_1, \\beta_2$ .\n\n**Require:** initial critic parameters  $w_0$ , initial generator parameters  $\\theta_0$ .\n\n```\n1: while \\theta has not converged do\n  2:\n                  for t=1,...,n_{\\text{critic}} do\n  3:\n                           for i = 1, ..., m do\n                                    Sample real data x \\sim \\mathbb{P}_r, latent variable z \\sim p(z), a random number \\epsilon \\sim U[0, 1].\n  4:\n  5:\n                                   \\hat{\\boldsymbol{x}} \\leftarrow \\epsilon \\boldsymbol{x} + (1 - \\epsilon)\\tilde{\\boldsymbol{x}}\nL^{(i)} \\leftarrow D_w(\\tilde{\\boldsymbol{x}}) - D_w(\\boldsymbol{x}) + \\lambda(\\|\\nabla_{\\hat{\\boldsymbol{x}}} D_w(\\hat{\\boldsymbol{x}})\\|_2 - 1)^2\n  6:\n  7:\n  8:\n                           w \\leftarrow \\operatorname{Adam}(\\nabla_w \\frac{1}{m} \\sum_{i=1}^m L^{(i)}, w, \\alpha, \\beta_1, \\beta_2)\n  9:\n10:\n                  Sample a batch of latent variables \\{\\boldsymbol{z}^{(i)}\\}_{i=1}^m \\sim p(\\boldsymbol{z}). \\theta \\leftarrow \\operatorname{Adam}(\\nabla_{\\theta} \\frac{1}{m} \\sum_{i=1}^m -D_w(G_{\\theta}(\\boldsymbol{z})), \\theta, \\alpha, \\beta_1, \\beta_2)\n11:\n12:\n13: end while\n```\n\ncritic. In each case, the critic trained with weight clipping ignores higher moments of the data distribution and instead models very simple approximations to the optimal functions. In contrast, our approach does not suffer from this behavior.\n\n#### 3.2 Exploding and vanishing gradients\n\nWe observe that the WGAN optimization process is difficult because of interactions between the weight constraint and the cost function, which result in either vanishing or exploding gradients without careful tuning of the clipping threshold c.\n\nTo demonstrate this, we train WGAN on the Swiss Roll toy dataset, varying the clipping threshold c in  $[10^{-1}, 10^{-2}, 10^{-3}]$ , and plot the norm of the gradient of the critic loss with respect to successive layers of activations. Both generator and critic are 12-layer ReLU MLPs without batch normalization. Figure 1b shows that for each of these values, the gradient either grows or decays exponentially as we move farther back in the network. We find our method results in more stable gradients that neither vanish nor explode, allowing training of more complicated networks.\n\n### 4 Gradient penalty\n\nWe now propose an alternative way to enforce the Lipschitz constraint. A differentiable function is 1-Lipschitz if and only if it has gradients with norm at most 1 everywhere, so we consider directly constraining the gradient norm of the critic's output with respect to its input. To circumvent tractability issues, we enforce a soft version of the constraint with a penalty on the gradient norm for random samples  $\\hat{x} \\sim \\mathbb{P}_{\\hat{x}}$ . Our new objective is\n\n$$L = \\underbrace{\\mathbb{E}_{\\hat{\\boldsymbol{x}} \\sim \\mathbb{P}_g} \\left[ D(\\hat{\\boldsymbol{x}}) \\right] - \\mathbb{E}_{\\boldsymbol{x} \\sim \\mathbb{P}_r} \\left[ D(\\boldsymbol{x}) \\right]}_{\\text{Original critic loss}} + \\underbrace{\\lambda \\underbrace{\\mathbb{E}_{\\hat{\\boldsymbol{x}} \\sim \\mathbb{P}_{\\hat{\\boldsymbol{x}}}} \\left[ \\left( \\|\\nabla_{\\hat{\\boldsymbol{x}}} D(\\hat{\\boldsymbol{x}})\\|_2 - 1 \\right)^2 \\right]}_{\\text{Our gradient penalty}}.$$\n (3)\n\n**Sampling distribution** We implicitly define  $\\mathbb{P}_{\\hat{x}}$  sampling uniformly along straight lines between pairs of points sampled from the data distribution  $\\mathbb{P}_r$  and the generator distribution  $\\mathbb{P}_g$ . This is motivated by the fact that the optimal critic contains straight lines with gradient norm 1 connecting coupled points from  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  (see Proposition 1). Given that enforcing the unit gradient norm constraint everywhere is intractable, enforcing it only along these straight lines seems sufficient and experimentally results in good performance.\n\n**Penalty coefficient** All experiments in this paper use  $\\lambda = 10$ , which we found to work well across a variety of architectures and datasets ranging from toy tasks to large ImageNet CNNs.\n\nNo critic batch normalization Most prior GAN implementations [22, 23, 2] use batch normalization in both the generator and the discriminator to help stabilize training, but batch normalization changes the form of the discriminator's problem from mapping a single input to a single output to mapping from an entire batch of inputs to a batch of outputs [23]. Our penalized training objective is no longer valid in this setting, since we penalize the norm of the critic's gradient with respect to each input independently, and not the entire batch. To resolve this, we simply omit batch normalization in the critic in our models, finding that they perform well without it. Our method works with normalization schemes which don't introduce correlations between examples. In particular, we recommend layer normalization [3] as a drop-in replacement for batch normalization.\n\n**Two-sided penalty** We encourage the norm of the gradient to go towards 1 (two-sided penalty) instead of just staying below 1 (one-sided penalty). Empirically this seems not to constrain the critic too much, likely because the optimal WGAN critic anyway has gradients with norm 1 almost everywhere under  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  and in large portions of the region in between (see subsection 2.3). In our early observations we found this to perform slightly better, but we don't investigate this fully. We describe experiments on the one-sided penalty in the appendix.\n\n## 5 Experiments\n\n#### 5.1 Training random architectures within a set\n\nWe experimentally demonstrate our model's ability to train a large number of architectures which we think are useful to be able to train. Starting from the DCGAN architecture, we define a set of architecture variants by changing model settings to random corresponding values in Table 1. We believe that reliable training of many of the architectures in this set is a useful goal, but we do not claim that our set is an unbiased or representative sample of the whole space of useful architectures: it is designed to demonstrate a successful regime of our method, and readers should evaluate whether it contains architectures similar to their intended application.\n\nTable 1: We evaluate WGAN-GP's ability to train the architectures in this set.\n\n| Nonlinearity (G)                         | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n|------------------------------------------|-----------------------------------------------------------------|\n| Nonlinearity $(D)$                       | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n| Depth $(G)$                              | [4, 8, 12, 20]                                                  |\n| Depth $(D)$                              | [4, 8, 12, 20]                                                  |\n| Batch norm $(G)$                         | [True, False]                                                   |\n| Batch norm $(D; layer norm for WGAN-GP)$ | [True, False]                                                   |\n| Base filter count $(G)$                  | [32, 64, 128]                                                   |\n| Base filter count $(D)$                  | [32, 64, 128]                                                   |\n\nFrom this set, we sample 200 architectures and train each on  $32 \\times 32$  ImageNet with both WGAN-GP and the standard GAN objectives. Table 2 lists the number of instances where either: only the standard GAN succeeded, only WGAN-GP succeeded, both succeeded, or both failed, where success is defined as inception\\_score > min\\_score. For most choices of score threshold, WGAN-GP successfully trains many architectures from this set which we were unable to train with the standard GAN objective. We give more experimental details in the appendix.\n\nTable 2: Outcomes of training 200 random architectures, for different success thresholds. For comparison, our standard DCGAN scored 7.24.\n\n| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 9.0        | 0        | 0            | 0              | 200         |\n\n![](_page_5_Figure_0.jpeg)\n\nFigure 2: Different GAN architectures trained with different methods. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP.\n\n## 5.2 Training varied architectures on LSUN bedrooms\n\nTo demonstrate our model's ability to train many architectures with its default settings, we train six different GAN architectures on the LSUN bedrooms dataset [31]. In addition to the baseline DC-GAN architecture from [22], we choose six architectures whose successful training we demonstrate: *(1)* no BN and a constant number of filters in the generator, as in [2], *(2)* 4-layer 512-dim ReLU MLP generator, as in [2], *(3)* no normalization in either the discriminator or generator *(4)* gated multiplicative nonlinearities, as in [24], *(5)* tanh nonlinearities, and *(6)* 101-layer ResNet generator and discriminator.\n\nAlthough we do not claim it is impossible without our method, to the best of our knowledge this is the first time very deep residual networks were successfully trained in a GAN setting. For each architecture, we train models using four different GAN methods: WGAN-GP, WGAN with weight clipping, DCGAN [22], and Least-Squares GAN [18]. For each objective, we used the default set of optimizer hyperparameters recommended in that work (except LSGAN, where we searched over learning rates).\n\nFor WGAN-GP, we replace any batch normalization in the discriminator with layer normalization (see section 4). We train each model for 200K iterations and present samples in Figure 2. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP. For every other training method, some of these architectures were unstable or suffered from mode collapse.\n\n## 5.3 Improved performance over weight clipping\n\nOne advantage of our method over weight clipping is improved training speed and sample quality. To demonstrate this, we train WGANs with weight clipping and our gradient penalty on CIFAR-10 [13] and plot Inception scores [23] over the course of training in Figure 3. For WGAN-GP,\n\n![](_page_6_Figure_0.jpeg)\n\n![](_page_6_Figure_1.jpeg)\n\nFigure 3: CIFAR-10 Inception score over generator iterations (left) or wall-clock time (right) for four models: WGAN with weight clipping, WGAN-GP with RMSProp and Adam (to control for the optimizer), and DCGAN. WGAN-GP significantly outperforms weight clipping and performs comparably to DCGAN.\n\nwe train one model with the same optimizer (RMSProp) and learning rate as WGAN with weight clipping, and another model with Adam and a higher learning rate. Even with the same optimizer, our method converges faster and to a better score than weight clipping. Using Adam further improves performance. We also plot the performance of DCGAN [22] and find that our method converges more slowly (in wall-clock time) than DCGAN, but its score is more stable at convergence.\n\n#### 5.4 Sample quality on CIFAR-10 and LSUN bedrooms\n\nFor equivalent architectures, our method achieves comparable sample quality to the standard GAN objective. However the increased stability allows us to improve sample quality by exploring a wider range of architectures. To demonstrate this, we find an architecture which establishes a new state of the art Inception score on unsupervised CIFAR-10 (Table 3). When we add label information (using the method in [20]), the same architecture outperforms all other published models except for SGAN.\n\nTable 3: Inception scores on CIFAR-10. Our unsupervised model achieves state-of-the-art performance, and our conditional model outperforms all others except SGAN.\n\n| <br>Unsupervised |  | Supervised |\n|------------------|--|------------|\n|                  |  |            |\n\n| Method                    | Score          | Method                       | Score          |\n|---------------------------|----------------|------------------------------|----------------|\n| ALI [8] (in [27])         | $5.34 \\pm .05$ | SteinGAN [26]                | 6.35           |\n| BEGAN [4]                 | 5.62           | DCGAN (with labels, in [26]) | 6.58           |\n| DCGAN [22] (in [11])      | $6.16 \\pm .07$ | Improved GAN [23]            | $8.09 \\pm .07$ |\n| Improved GAN (-L+HA) [23] | $6.86 \\pm .06$ | AC-GAN [20]                  | $8.25 \\pm .07$ |\n| EGAN-Ent-VI [7]           | $7.07 \\pm .10$ | SGAN-no-joint [11]           | $8.37 \\pm .08$ |\n| DFM [27]                  | $7.72 \\pm .13$ | WGAN-GP ResNet (ours)        | $8.42 \\pm .10$ |\n| WGAN-GP ResNet (ours)     | $7.86 \\pm .07$ | SGAN [11]                    | $8.59 \\pm .12$ |\n\nWe also train a deep ResNet on  $128 \\times 128$  LSUN bedrooms and show samples in Figure 4. We believe these samples are at least competitive with the best reported so far on any resolution for this dataset.\n\n#### 5.5 Modeling discrete data with a continuous generator\n\nTo demonstrate our method's ability to model degenerate distributions, we consider the problem of modeling a complex discrete distribution with a GAN whose generator is defined over a continuous space. As an instance of this problem, we train a character-level GAN language model on the Google Billion Word dataset [6]. Our generator is a simple 1D CNN which deterministically transforms a latent vector into a sequence of 32 one-hot character vectors through 1D convolutions. We apply a softmax nonlinearity at the output, but use no sampling step: during training, the softmax output is\n\n![](_page_7_Picture_0.jpeg)\n\nFigure 4: Samples of  $128 \\times 128$  LSUN bedrooms. We believe these samples are at least comparable to the best published results so far.\n\npassed directly into the critic (which, likewise, is a simple 1D CNN). When decoding samples, we just take the argmax of each output vector.\n\nWe present samples from the model in Table 4. Our model makes frequent spelling errors (likely because it has to output each character independently) but nonetheless manages to learn quite a lot about the statistics of language. We were unable to produce comparable results with the standard GAN objective, though we do not claim that doing so is impossible.\n\nTable 4: Samples from a WGAN-GP character-level language model trained on sentences from the Billion Word dataset, truncated to 32 characters. The model learns to directly output one-hot character embeddings from a latent vector without any discrete sampling step. We were unable to achieve comparable results with the standard GAN objective and a continuous generator.\n\nBusino game camperate spent odea In the bankaway of smarling the SingersMay , who kill that imvic Keray Pents of the same Reagun D Manging include a tudancs shat \"His Zuith Dudget , the Denmbern In during the Uitational questio Divos from The 'noth ronkies of She like Monday , of macunsuer S\n\nSolice Norkedin pring in since ThiS record (31.) UBS) and Ch It was not the annuas were plogr This will be us, the ect of DAN These leaded as most-worsd p2 a0 The time I paidOa South Cubry i Dour Fraps higs it was these del This year out howneed allowed lo Kaulna Seto consficutes to repor\n\nThe difference in performance between WGAN and other GANs can be explained as follows. Consider the simplex  $\\Delta_n=\\{p\\in\\mathbb{R}^n:p_i\\geq 0,\\sum_ip_i=1\\}$ , and the set of vertices on the simplex (or one-hot vectors)  $V_n=\\{p\\in\\mathbb{R}^n:p_i\\in\\{0,1\\},\\sum_ip_i=1\\}\\subseteq\\Delta_n$ . If we have a vocabulary of size n and we have a distribution  $\\mathbb{P}_r$  over sequences of size T, we have that  $\\mathbb{P}_r$  is a distribution on  $V_n^T=V_n\\times\\cdots\\times V_n$ . Since  $V_n^T$  is a subset of  $\\Delta_n^T$ , we can also treat  $\\mathbb{P}_r$  as a distribution on  $\\Delta_n^T$  (by assigning zero probability mass to all points not in  $V_n^T$ ).\n\n $\\mathbb{P}_r$  is discrete (or supported on a finite number of elements, namely  $V_n^T$ ) on  $\\Delta_n^T$ , but  $\\mathbb{P}_g$  can easily be a continuous distribution over  $\\Delta_n^T$ . The KL divergences between two such distributions are infinite,\n\n![](_page_8_Figure_0.jpeg)\n\n![](_page_8_Figure_1.jpeg)\n\nFigure 5: (a) The negative critic loss of our model on LSUN bedrooms converges toward a minimum as the network trains. (b) WGAN training and validation losses on a random 1000-digit subset of MNIST show overfitting when using either our method (left) or weight clipping (right). In particular, with our method, the critic overfits faster than the generator, causing the training loss to increase gradually over time even as the validation loss drops.\n\nand so the JS divergence is saturated. Although GANs do not literally minimize these divergences [16], in practice this means a discriminator might quickly learn to reject all samples that don't lie on  $V_n^T$  (sequences of one-hot vectors) and give meaningless gradients to the generator. However, it is easily seen that the conditions of Theorem 1 and Corollary 1 of [2] are satisfied even on this non-standard learning scenario with  $\\mathcal{X} = \\Delta_n^T$ . This means that  $W(\\mathbb{P}_r, \\mathbb{P}_g)$  is still well defined, continuous everywhere and differentiable almost everywhere, and we can optimize it just like in any other continuous variable setting. The way this manifests is that in WGANs, the Lipschitz constraint forces the critic to provide a linear gradient from all  $\\Delta_n^T$  towards towards the real points in  $V_n^T$ .\n\nOther attempts at language modeling with GANs [32, 14, 30, 5, 15, 10] typically use discrete models and gradient estimators [28, 12, 17]. Our approach is simpler to implement, though whether it scales beyond a toy language model is unclear.\n\n#### 5.6 Meaningful loss curves and detecting overfitting\n\nAn important benefit of weight-clipped WGANs is that their loss correlates with sample quality and converges toward a minimum. To show that our method preserves this property, we train a WGAN-GP on the LSUN bedrooms dataset [31] and plot the negative of the critic's loss in Figure 5a. We see that the loss converges as the generator minimizes  $W(\\mathbb{P}_r, \\mathbb{P}_q)$ .\n\nGiven enough capacity and too little training data, GANs will overfit. To explore the loss curve's behavior when the network overfits, we train large unregularized WGANs on a random 1000-image subset of MNIST and plot the negative critic loss on both the training and validation sets in Figure 5b. In both WGAN and WGAN-GP, the two losses diverge, suggesting that the critic overfits and provides an inaccurate estimate of  $W(\\mathbb{P}_r,\\mathbb{P}_g)$ , at which point all bets are off regarding correlation with sample quality. However in WGAN-GP, the training loss gradually increases even while the validation loss drops.\n\n[29] also measure overfitting in GANs by estimating the generator's log-likelihood. Compared to that work, our method detects overfitting in the critic (rather than the generator) and measures overfitting against the same loss that the network minimizes.\n\n#### 6 Conclusion\n\nIn this work, we demonstrated problems with weight clipping in WGAN and introduced an alternative in the form of a penalty term in the critic loss which does not exhibit the same problems. Using our method, we demonstrated strong modeling performance and stability across a variety of architectures. Now that we have a more stable algorithm for training GANs, we hope our work opens the path for stronger modeling performance on large-scale image datasets and language. Another interesting direction is adapting our penalty term to the standard GAN objective function, where it might stabilize training by encouraging the discriminator to learn smoother decision boundaries.\n\n## Acknowledgements\n\nWe would like to thank Mohamed Ishmael Belghazi, Leon Bottou, Zihang Dai, Stefan Doerr, Ian ´ Goodfellow, Kyle Kastner, Kundan Kumar, Luke Metz, Alec Radford, Colin Raffel, Sai Rajeshwar, Aditya Ramesh, Tom Sercu, Zain Shah and Jake Zhao for insightful comments.\n\n## References\n\n- [1] M. Arjovsky and L. Bottou. Towards principled methods for training generative adversarial networks. 2017.\n- [2] M. Arjovsky, S. Chintala, and L. Bottou. Wasserstein gan. *arXiv preprint arXiv:1701.07875*, 2017.\n- [3] J. L. Ba, J. R. Kiros, and G. E. Hinton. Layer normalization. *arXiv preprint arXiv:1607.06450*, 2016.\n- [4] D. Berthelot, T. Schumm, and L. Metz. Began: Boundary equilibrium generative adversarial networks. *arXiv preprint arXiv:1703.10717*, 2017.\n- [5] T. Che, Y. Li, R. Zhang, R. D. Hjelm, W. Li, Y. Song, and Y. Bengio. Maximum-likelihood augmented discrete generative adversarial networks. *arXiv preprint arXiv:1702.07983*, 2017.\n- [6] C. Chelba, T. Mikolov, M. Schuster, Q. Ge, T. Brants, P. Koehn, and T. Robinson. One billion word benchmark for measuring progress in statistical language modeling. *arXiv preprint arXiv:1312.3005*, 2013.\n- [7] Z. Dai, A. Almahairi, P. Bachman, E. Hovy, and A. Courville. Calibrating energy-based generative adversarial networks. *arXiv preprint arXiv:1702.01691*, 2017.\n- [8] V. Dumoulin, M. I. D. Belghazi, B. Poole, A. Lamb, M. Arjovsky, O. Mastropietro, and A. Courville. Adversarially learned inference. 2017.\n- [9] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Bengio. Generative adversarial nets. In *Advances in neural information processing systems*, pages 2672–2680, 2014.\n- [10] R. D. Hjelm, A. P. Jacob, T. Che, K. Cho, and Y. Bengio. Boundary-seeking generative adversarial networks. *arXiv preprint arXiv:1702.08431*, 2017.\n- [11] X. Huang, Y. Li, O. Poursaeed, J. Hopcroft, and S. Belongie. Stacked generative adversarial networks. *arXiv preprint arXiv:1612.04357*, 2016.\n- [12] E. Jang, S. Gu, and B. Poole. Categorical reparameterization with gumbel-softmax. *arXiv preprint arXiv:1611.01144*, 2016.\n- [13] A. Krizhevsky. Learning multiple layers of features from tiny images. 2009.\n- [14] J. Li, W. Monroe, T. Shi, A. Ritter, and D. Jurafsky. Adversarial learning for neural dialogue generation. *arXiv preprint arXiv:1701.06547*, 2017.\n- [15] X. Liang, Z. Hu, H. Zhang, C. Gan, and E. P. Xing. Recurrent topic-transition gan for visual paragraph generation. *arXiv preprint arXiv:1703.07022*, 2017.\n- [16] S. Liu, O. Bousquet, and K. Chaudhuri. Approximation and convergence properties of generative adversarial learning. *arXiv preprint arXiv:1705.08991*, 2017.\n- [17] C. J. Maddison, A. Mnih, and Y. W. Teh. The concrete distribution: A continuous relaxation of discrete random variables. *arXiv preprint arXiv:1611.00712*, 2016.\n- [18] X. Mao, Q. Li, H. Xie, R. Y. Lau, and Z. Wang. Least squares generative adversarial networks. *arXiv preprint arXiv:1611.04076*, 2016.\n\n- [19] L. Metz, B. Poole, D. Pfau, and J. Sohl-Dickstein. Unrolled generative adversarial networks. *arXiv preprint arXiv:1611.02163*, 2016.\n- [20] A. Odena, C. Olah, and J. Shlens. Conditional image synthesis with auxiliary classifier gans. *arXiv preprint arXiv:1610.09585*, 2016.\n- [21] B. Poole, A. A. Alemi, J. Sohl-Dickstein, and A. Angelova. Improved generator objectives for gans. *arXiv preprint arXiv:1612.02780*, 2016.\n- [22] A. Radford, L. Metz, and S. Chintala. Unsupervised representation learning with deep convolutional generative adversarial networks. *arXiv preprint arXiv:1511.06434*, 2015.\n- [23] T. Salimans, I. Goodfellow, W. Zaremba, V. Cheung, A. Radford, and X. Chen. Improved techniques for training gans. In *Advances in Neural Information Processing Systems*, pages 2226–2234, 2016.\n- [24] A. van den Oord, N. Kalchbrenner, L. Espeholt, O. Vinyals, A. Graves, et al. Conditional image generation with pixelcnn decoders. In *Advances in Neural Information Processing Systems*, pages 4790–4798, 2016.\n- [25] C. Villani. *Optimal transport: old and new*, volume 338. Springer Science & Business Media, 2008.\n- [26] D. Wang and Q. Liu. Learning to draw samples: With application to amortized mle for generative adversarial learning. *arXiv preprint arXiv:1611.01722*, 2016.\n- [27] D. Warde-Farley and Y. Bengio. Improving generative adversarial networks with denoising feature matching. 2017.\n- [28] R. J. Williams. Simple statistical gradient-following algorithms for connectionist reinforcement learning. *Machine learning*, 8(3-4):229–256, 1992.\n- [29] Y. Wu, Y. Burda, R. Salakhutdinov, and R. Grosse. On the quantitative analysis of decoderbased generative models. *arXiv preprint arXiv:1611.04273*, 2016.\n- [30] Z. Yang, W. Chen, F. Wang, and B. Xu. Improving neural machine translation with conditional sequence generative adversarial nets. *arXiv preprint arXiv:1703.04887*, 2017.\n- [31] F. Yu, A. Seff, Y. Zhang, S. Song, T. Funkhouser, and J. Xiao. Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop. *arXiv preprint arXiv:1506.03365*, 2015.\n- [32] L. Yu, W. Zhang, J. Wang, and Y. Yu. Seqgan: sequence generative adversarial nets with policy gradient. *arXiv preprint arXiv:1609.05473*, 2016.\n\n## A Proof of Proposition 1\n\n*Proof.* Since  $\\mathcal{X}$  is a compact space, by Theorem 5.10 of [25], part (iii), we know that there is an optimal  $f^*$ . By Theorem 5.10 of [25], part (ii) we know that if  $\\pi$  is an optimal coupling,\n\n$$\\mathbb{P}_{(x,y) \\sim \\pi} \\left[ f^*(y) - f^*(x) = ||y - x|| \\right] = 1$$\n\nLet (x,y) be such that  $f^*(y)-f^*(x)=\\|y-x\\|$ . We can safely assume that  $x\\neq y$  as well, since this happens under  $\\pi$  with probability 1. Let  $\\psi(t)=f^*(x_t)-f^*(x)$ . We claim that  $\\psi(t)=\\|x_t-x\\|=t\\|y-x\\|$ .\n\nLet  $t, t' \\in [0, 1]$ , then\n\n$$|\\psi(t) - \\psi(t')| = ||f^*(x_t) - f^*(x_{t'})||$$\n\n$$\\leq ||x_t - x_{t'}||$$\n\n$$= |t - t'|||x - y||$$\n\nTherefore,  $\\psi$  is ||x-y||-Lipschitz. This in turn implies\n\n$$\\psi(1) - \\psi(0) = \\psi(1) - \\psi(t) + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + t ||x - y||$$\n\n$$= ||x - y||$$\n\nHowever,  $|\\psi(1)-\\psi(0)|=|f^*(y)-f^*(x)|=\\|y-x\\|$  so the inequalities have to actually be equalities. In particular,  $\\psi(t)-\\psi(0)=t\\|x-y\\|$ , and  $\\psi(0)=f^*(x)-f^*(x)=0$ . Therefore,  $\\psi(t)=t\\|x-y\\|$  and we finish our claim.\n\nLet\n\n$$v = \\frac{y - x_t}{\\|y - x_t\\|}$$\n\n$$= \\frac{y - ((1 - t)x - ty)}{\\|y - ((1 - t)x - ty)\\|}$$\n\n$$= \\frac{(1 - t)(y - x)}{\\|(1 - t)\\|y - x\\|}$$\n\n$$= \\frac{y - x}{\\|y - x\\|}$$\n\nNow we know that  $f^*(x_t) - f^*(x) = \\psi(t) = t||x - y||$ , so  $f^*(x_t) = f^*(x) + t||x - y||$ . Then, we have the partial derivative\n\n$$\\frac{\\partial}{\\partial v} f^*(x_t) = \\lim_{h \\to 0} \\frac{f^*(x_t + hv) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*\\left(x + t(y - x) + \\frac{h}{\\|y - x\\|}(y - x)\\right) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*\\left(x_{t + \\frac{h}{\\|y - x\\|}}\\right) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*(x) + \\left(t + \\frac{h}{\\|y - x\\|}\\right) \\|x - y\\| - (f^*(x) + t\\|x - y\\|)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{h}{h}$$\n\n$$= 1$$\n\nIf  $f^*$  is differentiable at  $x_t$ , we know that  $\\|\\nabla f^*(x_t)\\| \\le 1$  since it is a 1-Lipschitz function. Therefore, by simple Pythagoras and using that v is a unit vector\n\n$$1 \\leq \\|\\nabla f^*(x)\\|^2$$\n\n$$= \\langle v, \\nabla f^*(x_t) \\rangle^2 + \\|\\nabla f^*(x_t) - \\langle v, \\nabla f^*(x_t) \\rangle v\\|^2$$\n\n$$= \\left|\\frac{\\partial}{\\partial v} f^*(x_t)\\right|^2 + \\|\\nabla f^*(x_t) - v\\frac{\\partial}{\\partial v} f^*(x_t)\\|^2$$\n\n$$= 1 + \\|\\nabla f^*(x_t) - v\\|^2$$\n\n$$\\leq 1$$\n\nThe fact that both extremes of the inequality coincide means that it was all an equality and  $1 = 1 + \\|\\nabla f^*(x_t) - v\\|^2$  so  $\\|\\nabla f^*(x_t) - v\\| = 0$  and therefore  $\\nabla f^*(x_t) = v$ . This shows that  $\\nabla f^*(x_t) = \\frac{y - x_t}{\\|y - x_t\\|}$ .\n\nTo conclude, we showed that if (x,y) have the property that  $f^*(y) - f^*(x) = ||y - x||$ , then  $\\nabla f^*(x_t) = \\frac{y - x_t}{||y - x_t||}$ . Since this happens with probability 1 under  $\\pi$ , we know that\n\n$$\\mathbb{P}_{(x,y)\\sim\\pi}\\left[\\nabla f^*(x_t) = \\frac{y - x_t}{\\|y - x_t\\|}\\right] = 1$$\n\nand we finished the proof.\n\n## B More details for training random architectures within a set\n\nAll models were trained on  $32 \\times 32$  ImageNet for 100K generator iterations using Adam with hyperparameters as recommended in [22] ( $\\alpha=0.0002, \\beta_1=0.5, \\beta_2=0.999$ ) for the standard GAN objective and our recommended settings ( $\\alpha=0.0001, \\beta_1=0, \\beta_2=0.9$ ) for WGAN-GP. In the discriminator, if we use batch normalization (or layer normalization) we also apply a small weight decay ( $\\lambda=10^{-3}$ ), finding that this helps both algorithms slightly.\n\nTable 5: Outcomes of training 200 random architectures, for different success thresholds. For comparison, our standard DCGAN achieved a score of 7.24.\n\n| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 1.5        | 0        | 50           | 150            | 0           |\n| 2.0        | 0        | 60           | 140            | 0           |\n| 2.5        | 0        | 74           | 125            | 1           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 3.5        | 0        | 111          | 86             | 3           |\n| 4.0        | 1        | 126          | 67             | 6           |\n| 4.5        | 0        | 136          | 55             | 9           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 5.5        | 0        | 148          | 32             | 20          |\n| 6.0        | 0        | 145          | 21             | 34          |\n| 6.5        | 1        | 131          | 11             | 57          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 7.5        | 2        | 67           | 3              | 128         |\n| 8.0        | 1        | 34           | 0              | 165         |\n| 8.5        | 0        | 6            | 0              | 194         |\n| 9.0        | 0        | 0            | 0              | 200         |\n\n## C Experiments with one-sided penalty\n\nWe considered a one-sided penalty of the form  $\\lambda \\mathbb{E}_{\\hat{x} \\sim \\mathbb{P}_{\\hat{x}}} \\left[ \\max(0, \\|\\nabla_{\\hat{x}} D(\\hat{x})\\|_2 - 1)^2 \\right]$  which would penalize gradients larger than 1 but not gradients smaller than 1, but we observe that the two-sided\n\nversion seems to perform slightly better. We sample 174 architectures from the set specified in Table 1 and train each architecture with the one-sided and two-sided penalty terms. The two-sided penalty achieved a higher Inception score in 100 of the trials, compared to 77 for the one-sided penalty. We note that this result is not statistically significant at p < 0.05 and further is with respect to only one (somewhat arbitrary) metric and distribution of architectures, and it is entirely possible (likely, in fact) that there are settings where the one-sided penalty performs better, but we leave a thorough comparison for future work. Other training details are the same as in Appendix B.\n\n#### D Nonsmooth activation functions\n\nThe gradient of our objective with respect to the discriminator's parameters contains terms which involve second derivatives of the network's activation functions. In the case of networks with ReLU or other common nonsmooth activation functions, this means the gradient is undefined at some points (albeit a measure zero set) and the gradient penalty objective might not be continuous with respect to the parameters. Gradient descent is not guaranteed to succeed in this setting, but empirically this seems not to be a problem for some common activation functions: in our random architecture and LSUN architecture experiments we find that we are able to train networks with piecewise linear activation functions (ReLU, leaky ReLU) as well as smooth activation functions. We do note that we were unable to train networks with ELU activations, whose derivative is continuous but not smooth. Replacing ELU with a very similar nonlinearity which is smooth ( $\\frac{\\text{softplus}(2x+2)}{2} - 1$ ) fixed the issue.\n\n## E Hyperparameters used for LSUN robustness experiments\n\nFor each method we used the hyperparameters recommended in that method's paper. For LSGAN, we additionally searched over learning rate (because the paper did not make a specific recommendation).\n\n- WGAN with gradient penalty: Adam ( $\\alpha = .0001, \\beta_1 = .5, \\beta_2 = .9$ )\n- WGAN with weight clipping: RMSProp ( $\\alpha = .00005$ )\n- DCGAN: Adam ( $\\alpha = .0002, \\beta_1 = .5$ )\n- LSGAN: RMSProp ( $\\alpha = .0001$ ) [chosen by search over  $\\alpha = .001, .0002, .0001$ ]\n\n#### F CIFAR-10 ResNet architecture\n\nThe generator and critic are residual networks; we use pre-activation residual blocks with two  $3\\times 3$  convolutional layers each and ReLU nonlinearity. Some residual blocks perform downsampling (in the critic) using mean pooling after the second convolution, or nearest-neighbor upsampling (in the generator) before the second convolution. We use batch normalization in the generator but not the critic. We optimize using Adam with learning rate  $2\\times 10^{-4}$ , decayed linearly to 0 over 100K generator iterations, and batch size 64.\n\nFor further architectural details, please refer to our open-source implementation.\n\n| Generator $G(z)$ |                     |          |                           |  |\n|------------------|---------------------|----------|---------------------------|--|\n|                  | Kernel size         | Resample | Output shape              |  |\n| $\\overline{z}$   | -                   | -        | 128                       |  |\n| Linear           | -                   | -        | $128 \\times 4 \\times 4$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 8 \\times 8$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 16 \\times 16$ |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 32 \\times 32$ |  |\n| Conv, tanh       | $3\\times3$          | -        | $3\\times32\\times32$       |  |\n\n| Critic $D(x)$   |                     |          |                           |  |\n|-----------------|---------------------|----------|---------------------------|--|\n|                 | Kernel size         | Resample | Output shape              |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 16 \\times 16$ |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ |          | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ | -        | $128 \\times 8 \\times 8$   |  |\n| ReLU, mean pool | _                   | -        | 128                       |  |\n| Linear          | -                   | -        | 1                         |  |\n\n## **G** CIFAR-10 ResNet samples\n\n![](_page_14_Picture_2.jpeg)\n\n![](_page_14_Picture_3.jpeg)\n\nFigure 6: (*left*) CIFAR-10 samples generated by our unsupervised model. (*right*) Conditional CIFAR-10 samples, from adding AC-GAN conditioning to our unconditional model. Samples from the same class are displayed in the same column.\n\n## H More LSUN samples\n\n![](_page_15_Picture_1.jpeg)\n\n![](_page_15_Picture_3.jpeg)\n\nMethod: DCGAN Method: DCGAN G: DCGAN, D: DCGAN G: No BN and const. filter count\n\n![](_page_15_Picture_5.jpeg)\n\nMethod: DCGAN Method: DCGAN\n\n![](_page_15_Picture_7.jpeg)\n\nG: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\n![](_page_15_Picture_9.jpeg)\n\nMethod: DCGAN Method: DCGAN Gated multiplicative nonlinearities tanh nonlinearities\n\n![](_page_15_Picture_11.jpeg)\n\n![](_page_16_Picture_0.jpeg)\n\nMethod: DCGAN Method: LSGAN\n\n![](_page_16_Picture_2.jpeg)\n\n101-layer ResNet G and D G: DCGAN, D: DCGAN\n\n![](_page_16_Picture_4.jpeg)\n\nMethod: LSGAN Method: LSGAN\n\n![](_page_16_Picture_6.jpeg)\n\nG: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\n![](_page_16_Picture_8.jpeg)\n\n![](_page_16_Picture_10.jpeg)\n\nMethod: LSGAN Method: LSGAN No normalization in either G or D Gated multiplicative nonlinearities\n\n![](_page_17_Picture_0.jpeg)\n\n![](_page_17_Picture_2.jpeg)\n\nMethod: LSGAN Method: LSGAN tanh nonlinearities 101-layer ResNet G and D\n\n![](_page_17_Picture_4.jpeg)\n\n![](_page_17_Picture_6.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping G: DCGAN, D: DCGAN G: No BN and const. filter count\n\n![](_page_17_Picture_8.jpeg)\n\nG: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\n![](_page_17_Picture_10.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping\n\n![](_page_18_Picture_0.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping Gated multiplicative nonlinearities tanh nonlinearities\n\n![](_page_18_Picture_2.jpeg)\n\n![](_page_18_Picture_4.jpeg)\n\nMethod: WGAN with clipping Method: WGAN-GP (ours) 101-layer ResNet G and D G: DCGAN, D: DCGAN\n\n![](_page_18_Picture_6.jpeg)\n\n![](_page_18_Picture_8.jpeg)\n\n![](_page_18_Picture_10.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours) G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\n![](_page_19_Picture_0.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours)\n\n![](_page_19_Picture_2.jpeg)\n\nNo normalization in either G or D Gated multiplicative nonlinearities\n\n![](_page_19_Picture_4.jpeg)\n\n![](_page_19_Picture_6.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours) tanh nonlinearities 101-layer ResNet G and D",
+  "chunks": [
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_0",
+      "content": "# **Improved Training of Wasserstein GANs**\n\nIshaan Gulrajani<sup>1</sup>\\*, Faruk Ahmed<sup>1</sup>, Martin Arjovsky<sup>2</sup>, Vincent Dumoulin<sup>1</sup>, Aaron Courville<sup>1,3</sup>\n\n<sup>1</sup> Montreal Institute for Learning Algorithms\n\n<sup>2</sup> Courant Institute of Mathematical Sciences\n\n $^3$  CIFAR Fellow\n\nigul222@gmail.com\n\n{faruk.ahmed,vincent.dumoulin,aaron.courville}@umontreal.ca ma4371@nyu.edu",
+      "metadata": {
+        "chunk_index": 0,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 420
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_1",
+      "content": "### **Abstract**\n\nGenerative Adversarial Networks (GANs) are powerful generative models, but suffer from training instability. The recently proposed Wasserstein GAN (WGAN) makes progress toward stable training of GANs, but sometimes can still generate only poor samples or fail to converge. We find that these problems are often due to the use of weight clipping in WGAN to enforce a Lipschitz constraint on the critic, which can lead to undesired behavior. We propose an alternative to clipping weights: penalize the norm of gradient of the critic with respect to its input. Our proposed method performs better than standard WGAN and enables stable training of a wide variety of GAN architectures with almost no hyperparameter tuning, including 101-layer ResNets and language models with continuous generators. We also achieve high quality generations on CIFAR-10 and LSUN bedrooms. †",
+      "metadata": {
+        "chunk_index": 1,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 885
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_2",
+      "content": "## 1 Introduction\n\nGenerative Adversarial Networks (GANs) [9] are a powerful class of generative models that cast generative modeling as a game between two networks: a generator network produces synthetic data given some noise source and a discriminator network discriminates between the generator's output and true data. GANs can produce very visually appealing samples, but are often hard to train, and much of the recent work on the subject [23, 19, 2, 21] has been devoted to finding ways of stabilizing training. Despite this, consistently stable training of GANs remains an open problem.",
+      "metadata": {
+        "chunk_index": 2,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 593
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_3",
+      "content": "In particular, [1] provides an analysis of the convergence properties of the value function being optimized by GANs. Their proposed alternative, named Wasserstein GAN (WGAN) [2], leverages the Wasserstein distance to produce a value function which has better theoretical properties than the original. WGAN requires that the discriminator (called the *critic* in that work) must lie within the space of 1-Lipschitz functions, which the authors enforce through weight clipping.\n\nOur contributions are as follows:\n\n- 1. On toy datasets, we demonstrate how critic weight clipping can lead to undesired behavior.\n- 2. We propose gradient penalty (WGAN-GP), which does not suffer from the same problems.\n- We demonstrate stable training of varied GAN architectures, performance improvements over weight clipping, high-quality image generation, and a character-level GAN language model without any discrete sampling.\n\n<sup>\\*</sup>Now at Google Brain",
+      "metadata": {
+        "chunk_index": 3,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 943
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_4",
+      "content": "<sup>\\*</sup>Now at Google Brain\n\n<sup>†</sup>Code for our models is available at https://github.com/igul222/improved\\_wgan\\_training.",
+      "metadata": {
+        "chunk_index": 4,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 134
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_5",
+      "content": "## 2 Background",
+      "metadata": {
+        "chunk_index": 5,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 15
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_6",
+      "content": "#### 2.1 Generative adversarial networks\n\nThe GAN training strategy is to define a game between two competing networks. The *generator* network maps a source of noise to the input space. The *discriminator* network receives either a generated sample or a true data sample and must distinguish between the two. The generator is trained to fool the discriminator.\n\nFormally, the game between the generator G and the discriminator D is the minimax objective:\n\n$$\\min_{G} \\max_{D} \\underset{\\boldsymbol{x} \\sim \\mathbb{P}_r}{\\mathbb{E}} [\\log(D(\\boldsymbol{x}))] + \\underset{\\tilde{\\boldsymbol{x}} \\sim \\mathbb{P}_g}{\\mathbb{E}} [\\log(1 - D(\\tilde{\\boldsymbol{x}}))], \\tag{1}$$\n\nwhere  $\\mathbb{P}_r$  is the data distribution and  $\\mathbb{P}_g$  is the model distribution implicitly defined by  $\\tilde{x} = G(z)$ ,  $z \\sim p(z)$  (the input z to the generator is sampled from some simple noise distribution p, such as the uniform distribution or a spherical Gaussian distribution).",
+      "metadata": {
+        "chunk_index": 6,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 981
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_7",
+      "content": "If the discriminator is trained to optimality before each generator parameter update, then minimizing the value function amounts to minimizing the Jensen-Shannon divergence between  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  [9], but doing so often leads to vanishing gradients as the discriminator saturates. In practice, [9] advocates that the generator be instead trained to maximize  $\\mathbb{E}_{\\tilde{x} \\sim \\mathbb{P}_g}[\\log(D(\\tilde{x}))]$ , which goes some way to circumvent this difficulty. However, even this modified loss function can misbehave in the presence of a good discriminator [1].",
+      "metadata": {
+        "chunk_index": 7,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 598
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_8",
+      "content": "#### 2.2 Wasserstein GANs\n\n[2] argues that the divergences which GANs typically minimize are potentially not continuous with respect to the generator's parameters, leading to training difficulty. They propose instead using the Earth-Mover (also called Wasserstein-1) distance W(q,p), which is informally defined as the minimum cost of transporting mass in order to transform the distribution q into the distribution p (where the cost is mass times transport distance). Under mild assumptions, W(q,p) is continuous everywhere and differentiable almost everywhere.\n\nThe WGAN value function is constructed using the Kantorovich-Rubinstein duality [25] to obtain\n\n$$\\min_{G} \\max_{D \\in \\mathcal{D}} \\underset{\\boldsymbol{x} \\sim \\mathbb{P}_r}{\\mathbb{E}} \\left[ D(\\boldsymbol{x}) \\right] - \\underset{\\tilde{\\boldsymbol{x}} \\sim \\mathbb{P}_q}{\\mathbb{E}} \\left[ D(\\tilde{\\boldsymbol{x}}) \\right]$$\n (2)",
+      "metadata": {
+        "chunk_index": 8,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 898
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_9",
+      "content": "where  $\\mathcal{D}$  is the set of 1-Lipschitz functions and  $\\mathbb{P}_g$  is once again the model distribution implicitly defined by  $\\tilde{x} = G(z), \\ z \\sim p(z)$ . In that case, under an optimal discriminator (called a *critic* in the paper, since it's not trained to classify), minimizing the value function with respect to the generator parameters minimizes  $W(\\mathbb{P}_r, \\mathbb{P}_g)$ .\n\nThe WGAN value function results in a critic function whose gradient with respect to its input is better behaved than its GAN counterpart, making optimization of the generator easier. Empirically, it was also observed that the WGAN value function appears to correlate with sample quality, which is not the case for GANs [2].",
+      "metadata": {
+        "chunk_index": 9,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 730
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_10",
+      "content": "To enforce the Lipschitz constraint on the critic, [2] propose to clip the weights of the critic to lie within a compact space [-c, c]. The set of functions satisfying this constraint is a subset of the k-Lipschitz functions for some k which depends on c and the critic architecture. In the following sections, we demonstrate some of the issues with this approach and propose an alternative.",
+      "metadata": {
+        "chunk_index": 10,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 391
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_11",
+      "content": "### 2.3 Properties of the optimal WGAN critic\n\nIn order to understand why weight clipping is problematic in a WGAN critic, as well as to motivate our approach, we highlight some properties of the optimal critic in the WGAN framework. We prove these in the Appendix.",
+      "metadata": {
+        "chunk_index": 11,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 265
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_12",
+      "content": "**Proposition 1.** Let  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  be two distributions in  $\\mathcal{X}$ , a compact metric space. Then, there is a 1-Lipschitz function  $f^*$  which is the optimal solution of  $\\max_{\\|f\\|_L \\leq 1} \\mathbb{E}_{y \\sim \\mathbb{P}_r}[f(y)] - \\mathbb{E}_{x \\sim \\mathbb{P}_g}[f(x)]$ . Let  $\\pi$  be the optimal coupling between  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ , defined as the minimizer of:  $W(\\mathbb{P}_r, \\mathbb{P}_g) = \\inf_{\\pi \\in \\Pi(\\mathbb{P}_r, \\mathbb{P}_g)} \\mathbb{E}_{(x,y) \\sim \\pi}[\\|x - y\\|]$  where  $\\Pi(\\mathbb{P}_r, \\mathbb{P}_g)$  is the set of joint distributions  $\\pi(x, y)$  whose marginals are  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ , respectively",
+      "metadata": {
+        "chunk_index": 12,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 707
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_13",
+      "content": ". Then, if  $f^*$  is differentiable  $\\pi$ ,  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$",
+      "metadata": {
+        "chunk_index": 13,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 999
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_14",
+      "content": "y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and",
+      "metadata": {
+        "chunk_index": 14,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 997
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_15",
+      "content": ", and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) = 0$ , and  $\\pi(x = y) =$",
+      "metadata": {
+        "chunk_index": 15,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 213
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_16",
+      "content": "## 3 Difficulties with weight constraints\n\nWe find that weight clipping in WGAN leads to optimization difficulties, and that even when optimization succeeds the resulting critic can have a pathological value surface. We explain these problems below and demonstrate their effects; however we do not claim that each one always occurs in practice, nor that they are the only such mechanisms.\n\nOur experiments use the specific form of weight constraint from [2] (hard clipping of the magnitude of each weight), but we also tried other weight constraints (L2 norm clipping, weight normalization), as well as soft constraints (L1 and L2 weight decay) and found that they exhibit similar problems.\n\nTo some extent these problems can be mitigated with batch normalization in the critic, which [2] use in all of their experiments. However even with batch normalization, we observe that very deep WGAN critics often fail to converge.\n\n![](_page_2_Figure_5.jpeg)\n\nWeight clipping (c = 0.001)",
+      "metadata": {
+        "chunk_index": 16,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 980
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_17",
+      "content": "![](_page_2_Figure_5.jpeg)\n\nWeight clipping (c = 0.001)\n\nWeight clipping (c = 0.01)\n\nWeight clipping (c = 0.01)\n\nWeight clipping (c = 0.01)\n\nGradient penalty\n\nObscriminator layer\n\n(a) Value surfaces of WGAN critics trained to optimality on toy datasets using (top) weight clipping and (bottom) gradient penalty. Critics trained with weight clipping fail to capture higher moments of the data distribution. The 'generator' is held fixed at the real data plus Gaussian noise.\n\n(b) (left) Gradient norms of deep WGAN critics during training on the Swiss Roll dataset either explode or vanish when using weight clipping, but not when using a gradient penalty. (right) Weight clipping (top) pushes weights towards two values (the extremes of the clipping range), unlike gradient penalty (bottom).\n\nFigure 1: Gradient penalty in WGANs does not exhibit undesired behavior like weight clipping.",
+      "metadata": {
+        "chunk_index": 17,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 886
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_18",
+      "content": "#### 3.1 Capacity underuse\n\nImplementing a k-Lipshitz constraint via weight clipping biases the critic towards much simpler functions. As stated previously in Corollary 1, the optimal WGAN critic has unit gradient norm almost everywhere under  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$ ; under a weight-clipping constraint, we observe that our neural network architectures which try to attain their maximum gradient norm k end up learning extremely simple functions.\n\nTo demonstrate this, we train WGAN critics with weight clipping to optimality on several toy distributions, holding the generator distribution  $\\mathbb{P}_g$  fixed at the real distribution plus unit-variance Gaussian noise. We plot value surfaces of the critics in Figure 1a. We omit batch normalization in the",
+      "metadata": {
+        "chunk_index": 18,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 774
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_19",
+      "content": "<sup>&</sup>lt;sup>‡</sup>We can actually assume much less, and talk only about directional derivatives on the direction of the line; which we show in the proof always exist. This would imply that in every point where  $f^*$  is differentiable (and thus we can take gradients in a neural network setting) the statement holds.\n\n<sup>§</sup>This assumption is in order to exclude the case when the matching point of sample x is x itself. It is satisfied in the case that  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  have supports that intersect in a set of measure 0, such as when they are supported by two low dimensional manifolds that don't perfectly align [1].\n\n```\nAlgorithm 1 WGAN with gradient penalty. We use default values of \\lambda = 10, n_{\\text{critic}} = 5, \\alpha = 0.0001, \\beta_1 = 0, \\beta_2 = 0.9.\n```",
+      "metadata": {
+        "chunk_index": 19,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 811
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_20",
+      "content": "```\nAlgorithm 1 WGAN with gradient penalty. We use default values of \\lambda = 10, n_{\\text{critic}} = 5, \\alpha = 0.0001, \\beta_1 = 0, \\beta_2 = 0.9.\n```\n\n**Require:** The gradient penalty coefficient  $\\lambda$ , the number of critic iterations per generator iteration  $n_{\\text{critic}}$ , the batch size m, Adam hyperparameters  $\\alpha, \\beta_1, \\beta_2$ .\n\n**Require:** initial critic parameters  $w_0$ , initial generator parameters  $\\theta_0$ .",
+      "metadata": {
+        "chunk_index": 20,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 454
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_21",
+      "content": "```\n1: while \\theta has not converged do\n  2:\n                  for t=1,...,n_{\\text{critic}} do\n  3:\n                           for i = 1, ..., m do\n                                    Sample real data x \\sim \\mathbb{P}_r, latent variable z \\sim p(z), a random number \\epsilon \\sim U[0, 1].\n  4:\n  5:\n                                   \\hat{\\boldsymbol{x}} \\leftarrow \\epsilon \\boldsymbol{x} + (1 - \\epsilon)\\tilde{\\boldsymbol{x}}\nL^{(i)} \\leftarrow D_w(\\tilde{\\boldsymbol{x}}) - D_w(\\boldsymbol{x}) + \\lambda(\\|\\nabla_{\\hat{\\boldsymbol{x}}} D_w(\\hat{\\boldsymbol{x}})\\|_2 - 1)^2\n  6:\n  7:\n  8:\n                           w \\leftarrow \\operatorname{Adam}(\\nabla_w \\frac{1}{m} \\sum_{i=1}^m L^{(i)}, w, \\alpha, \\beta_1, \\beta_2)\n  9:\n10:\n                  Sample a batch of latent variables \\{\\boldsymbol{z}^{(i)}\\}_{i=1}^m \\sim p(\\boldsymbol{z}). \\theta \\leftarrow \\operatorname{Adam}(\\nabla_{\\theta} \\frac{1}{m} \\sum_{i=1}^m -D_w(G_{\\theta}(\\boldsymbol{z})), \\theta, \\alpha, \\beta_1, \\beta_2)\n11:",
+      "metadata": {
+        "chunk_index": 21,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 996
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_22",
+      "content": "11:\n12:\n13: end while\n```",
+      "metadata": {
+        "chunk_index": 22,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 25
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_23",
+      "content": "critic. In each case, the critic trained with weight clipping ignores higher moments of the data distribution and instead models very simple approximations to the optimal functions. In contrast, our approach does not suffer from this behavior.",
+      "metadata": {
+        "chunk_index": 23,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 243
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_24",
+      "content": "#### 3.2 Exploding and vanishing gradients\n\nWe observe that the WGAN optimization process is difficult because of interactions between the weight constraint and the cost function, which result in either vanishing or exploding gradients without careful tuning of the clipping threshold c.\n\nTo demonstrate this, we train WGAN on the Swiss Roll toy dataset, varying the clipping threshold c in  $[10^{-1}, 10^{-2}, 10^{-3}]$ , and plot the norm of the gradient of the critic loss with respect to successive layers of activations. Both generator and critic are 12-layer ReLU MLPs without batch normalization. Figure 1b shows that for each of these values, the gradient either grows or decays exponentially as we move farther back in the network. We find our method results in more stable gradients that neither vanish nor explode, allowing training of more complicated networks.",
+      "metadata": {
+        "chunk_index": 24,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 874
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_25",
+      "content": "### 4 Gradient penalty\n\nWe now propose an alternative way to enforce the Lipschitz constraint. A differentiable function is 1-Lipschitz if and only if it has gradients with norm at most 1 everywhere, so we consider directly constraining the gradient norm of the critic's output with respect to its input. To circumvent tractability issues, we enforce a soft version of the constraint with a penalty on the gradient norm for random samples  $\\hat{x} \\sim \\mathbb{P}_{\\hat{x}}$ . Our new objective is\n\n$$L = \\underbrace{\\mathbb{E}_{\\hat{\\boldsymbol{x}} \\sim \\mathbb{P}_g} \\left[ D(\\hat{\\boldsymbol{x}}) \\right] - \\mathbb{E}_{\\boldsymbol{x} \\sim \\mathbb{P}_r} \\left[ D(\\boldsymbol{x}) \\right]}_{\\text{Original critic loss}} + \\underbrace{\\lambda \\underbrace{\\mathbb{E}_{\\hat{\\boldsymbol{x}} \\sim \\mathbb{P}_{\\hat{\\boldsymbol{x}}}} \\left[ \\left( \\|\\nabla_{\\hat{\\boldsymbol{x}}} D(\\hat{\\boldsymbol{x}})\\|_2 - 1 \\right)^2 \\right]}_{\\text{Our gradient penalty}}.$$\n (3)",
+      "metadata": {
+        "chunk_index": 25,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 962
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_26",
+      "content": "**Sampling distribution** We implicitly define  $\\mathbb{P}_{\\hat{x}}$  sampling uniformly along straight lines between pairs of points sampled from the data distribution  $\\mathbb{P}_r$  and the generator distribution  $\\mathbb{P}_g$ . This is motivated by the fact that the optimal critic contains straight lines with gradient norm 1 connecting coupled points from  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  (see Proposition 1). Given that enforcing the unit gradient norm constraint everywhere is intractable, enforcing it only along these straight lines seems sufficient and experimentally results in good performance.\n\n**Penalty coefficient** All experiments in this paper use  $\\lambda = 10$ , which we found to work well across a variety of architectures and datasets ranging from toy tasks to large ImageNet CNNs.",
+      "metadata": {
+        "chunk_index": 26,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 816
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_27",
+      "content": "No critic batch normalization Most prior GAN implementations [22, 23, 2] use batch normalization in both the generator and the discriminator to help stabilize training, but batch normalization changes the form of the discriminator's problem from mapping a single input to a single output to mapping from an entire batch of inputs to a batch of outputs [23]. Our penalized training objective is no longer valid in this setting, since we penalize the norm of the critic's gradient with respect to each input independently, and not the entire batch. To resolve this, we simply omit batch normalization in the critic in our models, finding that they perform well without it. Our method works with normalization schemes which don't introduce correlations between examples. In particular, we recommend layer normalization [3] as a drop-in replacement for batch normalization.",
+      "metadata": {
+        "chunk_index": 27,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 869
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_28",
+      "content": "**Two-sided penalty** We encourage the norm of the gradient to go towards 1 (two-sided penalty) instead of just staying below 1 (one-sided penalty). Empirically this seems not to constrain the critic too much, likely because the optimal WGAN critic anyway has gradients with norm 1 almost everywhere under  $\\mathbb{P}_r$  and  $\\mathbb{P}_g$  and in large portions of the region in between (see subsection 2.3). In our early observations we found this to perform slightly better, but we don't investigate this fully. We describe experiments on the one-sided penalty in the appendix.",
+      "metadata": {
+        "chunk_index": 28,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 583
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_29",
+      "content": "## 5 Experiments",
+      "metadata": {
+        "chunk_index": 29,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 16
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_30",
+      "content": "#### 5.1 Training random architectures within a set\n\nWe experimentally demonstrate our model's ability to train a large number of architectures which we think are useful to be able to train. Starting from the DCGAN architecture, we define a set of architecture variants by changing model settings to random corresponding values in Table 1. We believe that reliable training of many of the architectures in this set is a useful goal, but we do not claim that our set is an unbiased or representative sample of the whole space of useful architectures: it is designed to demonstrate a successful regime of our method, and readers should evaluate whether it contains architectures similar to their intended application.\n\nTable 1: We evaluate WGAN-GP's ability to train the architectures in this set.",
+      "metadata": {
+        "chunk_index": 30,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 795
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_31",
+      "content": "| Nonlinearity (G)                         | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n|------------------------------------------|-----------------------------------------------------------------|\n| Nonlinearity $(D)$                       | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n| Depth $(G)$                              | [4, 8, 12, 20]                                                  |\n| Depth $(D)$                              | [4, 8, 12, 20]                                                  |\n| Batch norm $(G)$                         | [True, False]                                                   |\n| Batch norm $(D; layer norm for WGAN-GP)$ | [True, False]                                                   |\n| Base filter count $(G)$                  | [32, 64, 128]                                                   |\n| Base filter count $(D)$                  | [32, 64, 128]                                                   |",
+      "metadata": {
+        "chunk_index": 31,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 998
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_32",
+      "content": "From this set, we sample 200 architectures and train each on  $32 \\times 32$  ImageNet with both WGAN-GP and the standard GAN objectives. Table 2 lists the number of instances where either: only the standard GAN succeeded, only WGAN-GP succeeded, both succeeded, or both failed, where success is defined as inception\\_score > min\\_score. For most choices of score threshold, WGAN-GP successfully trains many architectures from this set which we were unable to train with the standard GAN objective. We give more experimental details in the appendix.\n\nTable 2: Outcomes of training 200 random architectures, for different success thresholds. For comparison, our standard DCGAN scored 7.24.",
+      "metadata": {
+        "chunk_index": 32,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 688
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_33",
+      "content": "Table 2: Outcomes of training 200 random architectures, for different success thresholds. For comparison, our standard DCGAN scored 7.24.\n\n| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 9.0        | 0        | 0            | 0              | 200         |\n\n![](_page_5_Figure_0.jpeg)\n\nFigure 2: Different GAN architectures trained with different methods. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP.",
+      "metadata": {
+        "chunk_index": 33,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": true,
+        "char_count": 842
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_34",
+      "content": "## 5.2 Training varied architectures on LSUN bedrooms\n\nTo demonstrate our model's ability to train many architectures with its default settings, we train six different GAN architectures on the LSUN bedrooms dataset [31]. In addition to the baseline DC-GAN architecture from [22], we choose six architectures whose successful training we demonstrate: *(1)* no BN and a constant number of filters in the generator, as in [2], *(2)* 4-layer 512-dim ReLU MLP generator, as in [2], *(3)* no normalization in either the discriminator or generator *(4)* gated multiplicative nonlinearities, as in [24], *(5)* tanh nonlinearities, and *(6)* 101-layer ResNet generator and discriminator.",
+      "metadata": {
+        "chunk_index": 34,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 678
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_35",
+      "content": "Although we do not claim it is impossible without our method, to the best of our knowledge this is the first time very deep residual networks were successfully trained in a GAN setting. For each architecture, we train models using four different GAN methods: WGAN-GP, WGAN with weight clipping, DCGAN [22], and Least-Squares GAN [18]. For each objective, we used the default set of optimizer hyperparameters recommended in that work (except LSGAN, where we searched over learning rates).\n\nFor WGAN-GP, we replace any batch normalization in the discriminator with layer normalization (see section 4). We train each model for 200K iterations and present samples in Figure 2. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP. For every other training method, some of these architectures were unstable or suffered from mode collapse.",
+      "metadata": {
+        "chunk_index": 35,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 880
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_36",
+      "content": "## 5.3 Improved performance over weight clipping\n\nOne advantage of our method over weight clipping is improved training speed and sample quality. To demonstrate this, we train WGANs with weight clipping and our gradient penalty on CIFAR-10 [13] and plot Inception scores [23] over the course of training in Figure 3. For WGAN-GP,\n\n![](_page_6_Figure_0.jpeg)\n\n![](_page_6_Figure_1.jpeg)\n\nFigure 3: CIFAR-10 Inception score over generator iterations (left) or wall-clock time (right) for four models: WGAN with weight clipping, WGAN-GP with RMSProp and Adam (to control for the optimizer), and DCGAN. WGAN-GP significantly outperforms weight clipping and performs comparably to DCGAN.",
+      "metadata": {
+        "chunk_index": 36,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 682
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_37",
+      "content": "we train one model with the same optimizer (RMSProp) and learning rate as WGAN with weight clipping, and another model with Adam and a higher learning rate. Even with the same optimizer, our method converges faster and to a better score than weight clipping. Using Adam further improves performance. We also plot the performance of DCGAN [22] and find that our method converges more slowly (in wall-clock time) than DCGAN, but its score is more stable at convergence.",
+      "metadata": {
+        "chunk_index": 37,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 467
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_38",
+      "content": "#### 5.4 Sample quality on CIFAR-10 and LSUN bedrooms\n\nFor equivalent architectures, our method achieves comparable sample quality to the standard GAN objective. However the increased stability allows us to improve sample quality by exploring a wider range of architectures. To demonstrate this, we find an architecture which establishes a new state of the art Inception score on unsupervised CIFAR-10 (Table 3). When we add label information (using the method in [20]), the same architecture outperforms all other published models except for SGAN.\n\nTable 3: Inception scores on CIFAR-10. Our unsupervised model achieves state-of-the-art performance, and our conditional model outperforms all others except SGAN.\n\n| <br>Unsupervised |  | Supervised |\n|------------------|--|------------|\n|                  |  |            |",
+      "metadata": {
+        "chunk_index": 38,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 824
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_39",
+      "content": "| <br>Unsupervised |  | Supervised |\n|------------------|--|------------|\n|                  |  |            |\n\n| Method                    | Score          | Method                       | Score          |\n|---------------------------|----------------|------------------------------|----------------|\n| ALI [8] (in [27])         | $5.34 \\pm .05$ | SteinGAN [26]                | 6.35           |\n| BEGAN [4]                 | 5.62           | DCGAN (with labels, in [26]) | 6.58           |\n| DCGAN [22] (in [11])      | $6.16 \\pm .07$ | Improved GAN [23]            | $8.09 \\pm .07$ |\n| Improved GAN (-L+HA) [23] | $6.86 \\pm .06$ | AC-GAN [20]                  | $8.25 \\pm .07$ |\n| EGAN-Ent-VI [7]           | $7.07 \\pm .10$ | SGAN-no-joint [11]           | $8.37 \\pm .08$ |\n| DFM [27]                  | $7.72 \\pm .13$ | WGAN-GP ResNet (ours)        | $8.42 \\pm .10$ |\n| WGAN-GP ResNet (ours)     | $7.86 \\pm .07$ | SGAN [11]                    | $8.59 \\pm .12$ |",
+      "metadata": {
+        "chunk_index": 39,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 966
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_40",
+      "content": "We also train a deep ResNet on  $128 \\times 128$  LSUN bedrooms and show samples in Figure 4. We believe these samples are at least competitive with the best reported so far on any resolution for this dataset.",
+      "metadata": {
+        "chunk_index": 40,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 209
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_41",
+      "content": "#### 5.5 Modeling discrete data with a continuous generator\n\nTo demonstrate our method's ability to model degenerate distributions, we consider the problem of modeling a complex discrete distribution with a GAN whose generator is defined over a continuous space. As an instance of this problem, we train a character-level GAN language model on the Google Billion Word dataset [6]. Our generator is a simple 1D CNN which deterministically transforms a latent vector into a sequence of 32 one-hot character vectors through 1D convolutions. We apply a softmax nonlinearity at the output, but use no sampling step: during training, the softmax output is\n\n![](_page_7_Picture_0.jpeg)\n\nFigure 4: Samples of  $128 \\times 128$  LSUN bedrooms. We believe these samples are at least comparable to the best published results so far.\n\npassed directly into the critic (which, likewise, is a simple 1D CNN). When decoding samples, we just take the argmax of each output vector.",
+      "metadata": {
+        "chunk_index": 41,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 963
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_42",
+      "content": "passed directly into the critic (which, likewise, is a simple 1D CNN). When decoding samples, we just take the argmax of each output vector.\n\nWe present samples from the model in Table 4. Our model makes frequent spelling errors (likely because it has to output each character independently) but nonetheless manages to learn quite a lot about the statistics of language. We were unable to produce comparable results with the standard GAN objective, though we do not claim that doing so is impossible.\n\nTable 4: Samples from a WGAN-GP character-level language model trained on sentences from the Billion Word dataset, truncated to 32 characters. The model learns to directly output one-hot character embeddings from a latent vector without any discrete sampling step. We were unable to achieve comparable results with the standard GAN objective and a continuous generator.",
+      "metadata": {
+        "chunk_index": 42,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 871
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_43",
+      "content": "Busino game camperate spent odea In the bankaway of smarling the SingersMay , who kill that imvic Keray Pents of the same Reagun D Manging include a tudancs shat \"His Zuith Dudget , the Denmbern In during the Uitational questio Divos from The 'noth ronkies of She like Monday , of macunsuer S\n\nSolice Norkedin pring in since ThiS record (31.) UBS) and Ch It was not the annuas were plogr This will be us, the ect of DAN These leaded as most-worsd p2 a0 The time I paidOa South Cubry i Dour Fraps higs it was these del This year out howneed allowed lo Kaulna Seto consficutes to repor",
+      "metadata": {
+        "chunk_index": 43,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 583
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_44",
+      "content": "The difference in performance between WGAN and other GANs can be explained as follows. Consider the simplex  $\\Delta_n=\\{p\\in\\mathbb{R}^n:p_i\\geq 0,\\sum_ip_i=1\\}$ , and the set of vertices on the simplex (or one-hot vectors)  $V_n=\\{p\\in\\mathbb{R}^n:p_i\\in\\{0,1\\},\\sum_ip_i=1\\}\\subseteq\\Delta_n$ . If we have a vocabulary of size n and we have a distribution  $\\mathbb{P}_r$  over sequences of size T, we have that  $\\mathbb{P}_r$  is a distribution on  $V_n^T=V_n\\times\\cdots\\times V_n$ . Since  $V_n^T$  is a subset of  $\\Delta_n^T$ , we can also treat  $\\mathbb{P}_r$  as a distribution on  $\\Delta_n^T$  (by assigning zero probability mass to all points not in  $V_n^T$ ).\n\n $\\mathbb{P}_r$  is discrete (or supported on a finite number of elements, namely  $V_n^T$ ) on  $\\Delta_n^T$ , but  $\\mathbb{P}_g$  can easily be a continuous distribution over  $\\Delta_n^T$ . The KL divergences between two such distributions are infinite,\n\n![](_page_8_Figure_0.jpeg)\n\n![](_page_8_Figure_1.jpeg)",
+      "metadata": {
+        "chunk_index": 44,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 991
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_45",
+      "content": "![](_page_8_Figure_0.jpeg)\n\n![](_page_8_Figure_1.jpeg)\n\nFigure 5: (a) The negative critic loss of our model on LSUN bedrooms converges toward a minimum as the network trains. (b) WGAN training and validation losses on a random 1000-digit subset of MNIST show overfitting when using either our method (left) or weight clipping (right). In particular, with our method, the critic overfits faster than the generator, causing the training loss to increase gradually over time even as the validation loss drops.",
+      "metadata": {
+        "chunk_index": 45,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 506
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_46",
+      "content": "and so the JS divergence is saturated. Although GANs do not literally minimize these divergences [16], in practice this means a discriminator might quickly learn to reject all samples that don't lie on  $V_n^T$  (sequences of one-hot vectors) and give meaningless gradients to the generator. However, it is easily seen that the conditions of Theorem 1 and Corollary 1 of [2] are satisfied even on this non-standard learning scenario with  $\\mathcal{X} = \\Delta_n^T$ . This means that  $W(\\mathbb{P}_r, \\mathbb{P}_g)$  is still well defined, continuous everywhere and differentiable almost everywhere, and we can optimize it just like in any other continuous variable setting. The way this manifests is that in WGANs, the Lipschitz constraint forces the critic to provide a linear gradient from all  $\\Delta_n^T$  towards towards the real points in  $V_n^T$ .",
+      "metadata": {
+        "chunk_index": 46,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 858
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_47",
+      "content": "Other attempts at language modeling with GANs [32, 14, 30, 5, 15, 10] typically use discrete models and gradient estimators [28, 12, 17]. Our approach is simpler to implement, though whether it scales beyond a toy language model is unclear.",
+      "metadata": {
+        "chunk_index": 47,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 240
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_48",
+      "content": "#### 5.6 Meaningful loss curves and detecting overfitting\n\nAn important benefit of weight-clipped WGANs is that their loss correlates with sample quality and converges toward a minimum. To show that our method preserves this property, we train a WGAN-GP on the LSUN bedrooms dataset [31] and plot the negative of the critic's loss in Figure 5a. We see that the loss converges as the generator minimizes  $W(\\mathbb{P}_r, \\mathbb{P}_q)$ .",
+      "metadata": {
+        "chunk_index": 48,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 437
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_49",
+      "content": "Given enough capacity and too little training data, GANs will overfit. To explore the loss curve's behavior when the network overfits, we train large unregularized WGANs on a random 1000-image subset of MNIST and plot the negative critic loss on both the training and validation sets in Figure 5b. In both WGAN and WGAN-GP, the two losses diverge, suggesting that the critic overfits and provides an inaccurate estimate of  $W(\\mathbb{P}_r,\\mathbb{P}_g)$ , at which point all bets are off regarding correlation with sample quality. However in WGAN-GP, the training loss gradually increases even while the validation loss drops.\n\n[29] also measure overfitting in GANs by estimating the generator's log-likelihood. Compared to that work, our method detects overfitting in the critic (rather than the generator) and measures overfitting against the same loss that the network minimizes.",
+      "metadata": {
+        "chunk_index": 49,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 883
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_50",
+      "content": "#### 6 Conclusion\n\nIn this work, we demonstrated problems with weight clipping in WGAN and introduced an alternative in the form of a penalty term in the critic loss which does not exhibit the same problems. Using our method, we demonstrated strong modeling performance and stability across a variety of architectures. Now that we have a more stable algorithm for training GANs, we hope our work opens the path for stronger modeling performance on large-scale image datasets and language. Another interesting direction is adapting our penalty term to the standard GAN objective function, where it might stabilize training by encouraging the discriminator to learn smoother decision boundaries.",
+      "metadata": {
+        "chunk_index": 50,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 693
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_51",
+      "content": "## Acknowledgements\n\nWe would like to thank Mohamed Ishmael Belghazi, Leon Bottou, Zihang Dai, Stefan Doerr, Ian ´ Goodfellow, Kyle Kastner, Kundan Kumar, Luke Metz, Alec Radford, Colin Raffel, Sai Rajeshwar, Aditya Ramesh, Tom Sercu, Zain Shah and Jake Zhao for insightful comments.",
+      "metadata": {
+        "chunk_index": 51,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 283
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_52",
+      "content": "## References",
+      "metadata": {
+        "chunk_index": 52,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 13
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_53",
+      "content": "- [1] M. Arjovsky and L. Bottou. Towards principled methods for training generative adversarial networks. 2017.\n- [2] M. Arjovsky, S. Chintala, and L. Bottou. Wasserstein gan. *arXiv preprint arXiv:1701.07875*, 2017.\n- [3] J. L. Ba, J. R. Kiros, and G. E. Hinton. Layer normalization. *arXiv preprint arXiv:1607.06450*, 2016.\n- [4] D. Berthelot, T. Schumm, and L. Metz. Began: Boundary equilibrium generative adversarial networks. *arXiv preprint arXiv:1703.10717*, 2017.\n- [5] T. Che, Y. Li, R. Zhang, R. D. Hjelm, W. Li, Y. Song, and Y. Bengio. Maximum-likelihood augmented discrete generative adversarial networks. *arXiv preprint arXiv:1702.07983*, 2017.\n- [6] C. Chelba, T. Mikolov, M. Schuster, Q. Ge, T. Brants, P. Koehn, and T. Robinson. One billion word benchmark for measuring progress in statistical language modeling. *arXiv preprint arXiv:1312.3005*, 2013.",
+      "metadata": {
+        "chunk_index": 53,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 869
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_54",
+      "content": "- [7] Z. Dai, A. Almahairi, P. Bachman, E. Hovy, and A. Courville. Calibrating energy-based generative adversarial networks. *arXiv preprint arXiv:1702.01691*, 2017.\n- [8] V. Dumoulin, M. I. D. Belghazi, B. Poole, A. Lamb, M. Arjovsky, O. Mastropietro, and A. Courville. Adversarially learned inference. 2017.\n- [9] I. Goodfellow, J. Pouget-Abadie, M. Mirza, B. Xu, D. Warde-Farley, S. Ozair, A. Courville, and Y. Bengio. Generative adversarial nets. In *Advances in neural information processing systems*, pages 2672–2680, 2014.\n- [10] R. D. Hjelm, A. P. Jacob, T. Che, K. Cho, and Y. Bengio. Boundary-seeking generative adversarial networks. *arXiv preprint arXiv:1702.08431*, 2017.\n- [11] X. Huang, Y. Li, O. Poursaeed, J. Hopcroft, and S. Belongie. Stacked generative adversarial networks. *arXiv preprint arXiv:1612.04357*, 2016.\n- [12] E. Jang, S. Gu, and B. Poole. Categorical reparameterization with gumbel-softmax. *arXiv preprint arXiv:1611.01144*, 2016.",
+      "metadata": {
+        "chunk_index": 54,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 964
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_55",
+      "content": "- [12] E. Jang, S. Gu, and B. Poole. Categorical reparameterization with gumbel-softmax. *arXiv preprint arXiv:1611.01144*, 2016.\n- [13] A. Krizhevsky. Learning multiple layers of features from tiny images. 2009.\n- [14] J. Li, W. Monroe, T. Shi, A. Ritter, and D. Jurafsky. Adversarial learning for neural dialogue generation. *arXiv preprint arXiv:1701.06547*, 2017.\n- [15] X. Liang, Z. Hu, H. Zhang, C. Gan, and E. P. Xing. Recurrent topic-transition gan for visual paragraph generation. *arXiv preprint arXiv:1703.07022*, 2017.\n- [16] S. Liu, O. Bousquet, and K. Chaudhuri. Approximation and convergence properties of generative adversarial learning. *arXiv preprint arXiv:1705.08991*, 2017.\n- [17] C. J. Maddison, A. Mnih, and Y. W. Teh. The concrete distribution: A continuous relaxation of discrete random variables. *arXiv preprint arXiv:1611.00712*, 2016.",
+      "metadata": {
+        "chunk_index": 55,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 863
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_56",
+      "content": "- [17] C. J. Maddison, A. Mnih, and Y. W. Teh. The concrete distribution: A continuous relaxation of discrete random variables. *arXiv preprint arXiv:1611.00712*, 2016.\n- [18] X. Mao, Q. Li, H. Xie, R. Y. Lau, and Z. Wang. Least squares generative adversarial networks. *arXiv preprint arXiv:1611.04076*, 2016.",
+      "metadata": {
+        "chunk_index": 56,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 310
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_57",
+      "content": "- [19] L. Metz, B. Poole, D. Pfau, and J. Sohl-Dickstein. Unrolled generative adversarial networks. *arXiv preprint arXiv:1611.02163*, 2016.\n- [20] A. Odena, C. Olah, and J. Shlens. Conditional image synthesis with auxiliary classifier gans. *arXiv preprint arXiv:1610.09585*, 2016.\n- [21] B. Poole, A. A. Alemi, J. Sohl-Dickstein, and A. Angelova. Improved generator objectives for gans. *arXiv preprint arXiv:1612.02780*, 2016.\n- [22] A. Radford, L. Metz, and S. Chintala. Unsupervised representation learning with deep convolutional generative adversarial networks. *arXiv preprint arXiv:1511.06434*, 2015.\n- [23] T. Salimans, I. Goodfellow, W. Zaremba, V. Cheung, A. Radford, and X. Chen. Improved techniques for training gans. In *Advances in Neural Information Processing Systems*, pages 2226–2234, 2016.",
+      "metadata": {
+        "chunk_index": 57,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 810
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_58",
+      "content": "- [24] A. van den Oord, N. Kalchbrenner, L. Espeholt, O. Vinyals, A. Graves, et al. Conditional image generation with pixelcnn decoders. In *Advances in Neural Information Processing Systems*, pages 4790–4798, 2016.\n- [25] C. Villani. *Optimal transport: old and new*, volume 338. Springer Science & Business Media, 2008.\n- [26] D. Wang and Q. Liu. Learning to draw samples: With application to amortized mle for generative adversarial learning. *arXiv preprint arXiv:1611.01722*, 2016.\n- [27] D. Warde-Farley and Y. Bengio. Improving generative adversarial networks with denoising feature matching. 2017.\n- [28] R. J. Williams. Simple statistical gradient-following algorithms for connectionist reinforcement learning. *Machine learning*, 8(3-4):229–256, 1992.\n- [29] Y. Wu, Y. Burda, R. Salakhutdinov, and R. Grosse. On the quantitative analysis of decoderbased generative models. *arXiv preprint arXiv:1611.04273*, 2016.",
+      "metadata": {
+        "chunk_index": 58,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 923
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_59",
+      "content": "- [29] Y. Wu, Y. Burda, R. Salakhutdinov, and R. Grosse. On the quantitative analysis of decoderbased generative models. *arXiv preprint arXiv:1611.04273*, 2016.\n- [30] Z. Yang, W. Chen, F. Wang, and B. Xu. Improving neural machine translation with conditional sequence generative adversarial nets. *arXiv preprint arXiv:1703.04887*, 2017.\n- [31] F. Yu, A. Seff, Y. Zhang, S. Song, T. Funkhouser, and J. Xiao. Lsun: Construction of a large-scale image dataset using deep learning with humans in the loop. *arXiv preprint arXiv:1506.03365*, 2015.\n- [32] L. Yu, W. Zhang, J. Wang, and Y. Yu. Seqgan: sequence generative adversarial nets with policy gradient. *arXiv preprint arXiv:1609.05473*, 2016.",
+      "metadata": {
+        "chunk_index": 59,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 697
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_60",
+      "content": "## A Proof of Proposition 1\n\n*Proof.* Since  $\\mathcal{X}$  is a compact space, by Theorem 5.10 of [25], part (iii), we know that there is an optimal  $f^*$ . By Theorem 5.10 of [25], part (ii) we know that if  $\\pi$  is an optimal coupling,\n\n$$\\mathbb{P}_{(x,y) \\sim \\pi} \\left[ f^*(y) - f^*(x) = ||y - x|| \\right] = 1$$\n\nLet (x,y) be such that  $f^*(y)-f^*(x)=\\|y-x\\|$ . We can safely assume that  $x\\neq y$  as well, since this happens under  $\\pi$  with probability 1. Let  $\\psi(t)=f^*(x_t)-f^*(x)$ . We claim that  $\\psi(t)=\\|x_t-x\\|=t\\|y-x\\|$ .\n\nLet  $t, t' \\in [0, 1]$ , then\n\n$$|\\psi(t) - \\psi(t')| = ||f^*(x_t) - f^*(x_{t'})||$$\n\n$$\\leq ||x_t - x_{t'}||$$\n\n$$= |t - t'|||x - y||$$\n\nTherefore,  $\\psi$  is ||x-y||-Lipschitz. This in turn implies\n\n$$\\psi(1) - \\psi(0) = \\psi(1) - \\psi(t) + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + t ||x - y||$$\n\n$$= ||x - y||$$",
+      "metadata": {
+        "chunk_index": 60,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 924
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_61",
+      "content": "$$\\psi(1) - \\psi(0) = \\psi(1) - \\psi(t) + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + \\psi(t) - \\psi(0)$$\n\n$$\\leq (1 - t) ||x - y|| + t ||x - y||$$\n\n$$= ||x - y||$$\n\nHowever,  $|\\psi(1)-\\psi(0)|=|f^*(y)-f^*(x)|=\\|y-x\\|$  so the inequalities have to actually be equalities. In particular,  $\\psi(t)-\\psi(0)=t\\|x-y\\|$ , and  $\\psi(0)=f^*(x)-f^*(x)=0$ . Therefore,  $\\psi(t)=t\\|x-y\\|$  and we finish our claim.\n\nLet\n\n$$v = \\frac{y - x_t}{\\|y - x_t\\|}$$\n\n$$= \\frac{y - ((1 - t)x - ty)}{\\|y - ((1 - t)x - ty)\\|}$$\n\n$$= \\frac{(1 - t)(y - x)}{\\|(1 - t)\\|y - x\\|}$$\n\n$$= \\frac{y - x}{\\|y - x\\|}$$\n\nNow we know that  $f^*(x_t) - f^*(x) = \\psi(t) = t||x - y||$ , so  $f^*(x_t) = f^*(x) + t||x - y||$ . Then, we have the partial derivative\n\n$$\\frac{\\partial}{\\partial v} f^*(x_t) = \\lim_{h \\to 0} \\frac{f^*(x_t + hv) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*\\left(x + t(y - x) + \\frac{h}{\\|y - x\\|}(y - x)\\right) - f^*(x_t)}{h}$$",
+      "metadata": {
+        "chunk_index": 61,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 927
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_62",
+      "content": "$$\\frac{\\partial}{\\partial v} f^*(x_t) = \\lim_{h \\to 0} \\frac{f^*(x_t + hv) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*\\left(x + t(y - x) + \\frac{h}{\\|y - x\\|}(y - x)\\right) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*\\left(x_{t + \\frac{h}{\\|y - x\\|}}\\right) - f^*(x_t)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{f^*(x) + \\left(t + \\frac{h}{\\|y - x\\|}\\right) \\|x - y\\| - (f^*(x) + t\\|x - y\\|)}{h}$$\n\n$$= \\lim_{h \\to 0} \\frac{h}{h}$$\n\n$$= 1$$\n\nIf  $f^*$  is differentiable at  $x_t$ , we know that  $\\|\\nabla f^*(x_t)\\| \\le 1$  since it is a 1-Lipschitz function. Therefore, by simple Pythagoras and using that v is a unit vector\n\n$$1 \\leq \\|\\nabla f^*(x)\\|^2$$\n\n$$= \\langle v, \\nabla f^*(x_t) \\rangle^2 + \\|\\nabla f^*(x_t) - \\langle v, \\nabla f^*(x_t) \\rangle v\\|^2$$\n\n$$= \\left|\\frac{\\partial}{\\partial v} f^*(x_t)\\right|^2 + \\|\\nabla f^*(x_t) - v\\frac{\\partial}{\\partial v} f^*(x_t)\\|^2$$\n\n$$= 1 + \\|\\nabla f^*(x_t) - v\\|^2$$\n\n$$\\leq 1$$",
+      "metadata": {
+        "chunk_index": 62,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 933
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_63",
+      "content": "$$= \\left|\\frac{\\partial}{\\partial v} f^*(x_t)\\right|^2 + \\|\\nabla f^*(x_t) - v\\frac{\\partial}{\\partial v} f^*(x_t)\\|^2$$\n\n$$= 1 + \\|\\nabla f^*(x_t) - v\\|^2$$\n\n$$\\leq 1$$\n\nThe fact that both extremes of the inequality coincide means that it was all an equality and  $1 = 1 + \\|\\nabla f^*(x_t) - v\\|^2$  so  $\\|\\nabla f^*(x_t) - v\\| = 0$  and therefore  $\\nabla f^*(x_t) = v$ . This shows that  $\\nabla f^*(x_t) = \\frac{y - x_t}{\\|y - x_t\\|}$ .\n\nTo conclude, we showed that if (x,y) have the property that  $f^*(y) - f^*(x) = ||y - x||$ , then  $\\nabla f^*(x_t) = \\frac{y - x_t}{||y - x_t||}$ . Since this happens with probability 1 under  $\\pi$ , we know that\n\n$$\\mathbb{P}_{(x,y)\\sim\\pi}\\left[\\nabla f^*(x_t) = \\frac{y - x_t}{\\|y - x_t\\|}\\right] = 1$$\n\nand we finished the proof.",
+      "metadata": {
+        "chunk_index": 63,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 780
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_64",
+      "content": "## B More details for training random architectures within a set\n\nAll models were trained on  $32 \\times 32$  ImageNet for 100K generator iterations using Adam with hyperparameters as recommended in [22] ( $\\alpha=0.0002, \\beta_1=0.5, \\beta_2=0.999$ ) for the standard GAN objective and our recommended settings ( $\\alpha=0.0001, \\beta_1=0, \\beta_2=0.9$ ) for WGAN-GP. In the discriminator, if we use batch normalization (or layer normalization) we also apply a small weight decay ( $\\lambda=10^{-3}$ ), finding that this helps both algorithms slightly.\n\nTable 5: Outcomes of training 200 random architectures, for different success thresholds. For comparison, our standard DCGAN achieved a score of 7.24.",
+      "metadata": {
+        "chunk_index": 64,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 705
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_65",
+      "content": "| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 1.5        | 0        | 50           | 150            | 0           |\n| 2.0        | 0        | 60           | 140            | 0           |\n| 2.5        | 0        | 74           | 125            | 1           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 3.5        | 0        | 111          | 86             | 3           |\n| 4.0        | 1        | 126          | 67             | 6           |\n| 4.5        | 0        | 136          | 55             | 9           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 5.5        | 0        | 148          | 32             | 20          |\n| 6.0        | 0        | 145          | 21             | 34          |",
+      "metadata": {
+        "chunk_index": 65,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 935
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_66",
+      "content": "| 5.5        | 0        | 148          | 32             | 20          |\n| 6.0        | 0        | 145          | 21             | 34          |\n| 6.5        | 1        | 131          | 11             | 57          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 7.5        | 2        | 67           | 3              | 128         |\n| 8.0        | 1        | 34           | 0              | 165         |\n| 8.5        | 0        | 6            | 0              | 194         |\n| 9.0        | 0        | 0            | 0              | 200         |",
+      "metadata": {
+        "chunk_index": 66,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 575
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_67",
+      "content": "## C Experiments with one-sided penalty\n\nWe considered a one-sided penalty of the form  $\\lambda \\mathbb{E}_{\\hat{x} \\sim \\mathbb{P}_{\\hat{x}}} \\left[ \\max(0, \\|\\nabla_{\\hat{x}} D(\\hat{x})\\|_2 - 1)^2 \\right]$  which would penalize gradients larger than 1 but not gradients smaller than 1, but we observe that the two-sided",
+      "metadata": {
+        "chunk_index": 67,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 322
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_68",
+      "content": "version seems to perform slightly better. We sample 174 architectures from the set specified in Table 1 and train each architecture with the one-sided and two-sided penalty terms. The two-sided penalty achieved a higher Inception score in 100 of the trials, compared to 77 for the one-sided penalty. We note that this result is not statistically significant at p < 0.05 and further is with respect to only one (somewhat arbitrary) metric and distribution of architectures, and it is entirely possible (likely, in fact) that there are settings where the one-sided penalty performs better, but we leave a thorough comparison for future work. Other training details are the same as in Appendix B.",
+      "metadata": {
+        "chunk_index": 68,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 693
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_69",
+      "content": "#### D Nonsmooth activation functions",
+      "metadata": {
+        "chunk_index": 69,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 37
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_70",
+      "content": "The gradient of our objective with respect to the discriminator's parameters contains terms which involve second derivatives of the network's activation functions. In the case of networks with ReLU or other common nonsmooth activation functions, this means the gradient is undefined at some points (albeit a measure zero set) and the gradient penalty objective might not be continuous with respect to the parameters. Gradient descent is not guaranteed to succeed in this setting, but empirically this seems not to be a problem for some common activation functions: in our random architecture and LSUN architecture experiments we find that we are able to train networks with piecewise linear activation functions (ReLU, leaky ReLU) as well as smooth activation functions. We do note that we were unable to train networks with ELU activations, whose derivative is continuous but not smooth",
+      "metadata": {
+        "chunk_index": 70,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 887
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_71",
+      "content": ". We do note that we were unable to train networks with ELU activations, whose derivative is continuous but not smooth. Replacing ELU with a very similar nonlinearity which is smooth ( $\\frac{\\text{softplus}(2x+2)}{2} - 1$ ) fixed the issue.",
+      "metadata": {
+        "chunk_index": 71,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 241
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_72",
+      "content": "## E Hyperparameters used for LSUN robustness experiments\n\nFor each method we used the hyperparameters recommended in that method's paper. For LSGAN, we additionally searched over learning rate (because the paper did not make a specific recommendation).\n\n- WGAN with gradient penalty: Adam ( $\\alpha = .0001, \\beta_1 = .5, \\beta_2 = .9$ )\n- WGAN with weight clipping: RMSProp ( $\\alpha = .00005$ )\n- DCGAN: Adam ( $\\alpha = .0002, \\beta_1 = .5$ )\n- LSGAN: RMSProp ( $\\alpha = .0001$ ) [chosen by search over  $\\alpha = .001, .0002, .0001$ ]",
+      "metadata": {
+        "chunk_index": 72,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 540
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_73",
+      "content": "#### F CIFAR-10 ResNet architecture\n\nThe generator and critic are residual networks; we use pre-activation residual blocks with two  $3\\times 3$  convolutional layers each and ReLU nonlinearity. Some residual blocks perform downsampling (in the critic) using mean pooling after the second convolution, or nearest-neighbor upsampling (in the generator) before the second convolution. We use batch normalization in the generator but not the critic. We optimize using Adam with learning rate  $2\\times 10^{-4}$ , decayed linearly to 0 over 100K generator iterations, and batch size 64.\n\nFor further architectural details, please refer to our open-source implementation.",
+      "metadata": {
+        "chunk_index": 73,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": false,
+        "char_count": 666
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_74",
+      "content": "For further architectural details, please refer to our open-source implementation.\n\n| Generator $G(z)$ |                     |          |                           |  |\n|------------------|---------------------|----------|---------------------------|--|\n|                  | Kernel size         | Resample | Output shape              |  |\n| $\\overline{z}$   | -                   | -        | 128                       |  |\n| Linear           | -                   | -        | $128 \\times 4 \\times 4$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 8 \\times 8$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 16 \\times 16$ |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 32 \\times 32$ |  |\n| Conv, tanh       | $3\\times3$          | -        | $3\\times32\\times32$       |  |",
+      "metadata": {
+        "chunk_index": 74,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 848
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_75",
+      "content": "| Critic $D(x)$   |                     |          |                           |  |\n|-----------------|---------------------|----------|---------------------------|--|\n|                 | Kernel size         | Resample | Output shape              |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 16 \\times 16$ |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ |          | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ | -        | $128 \\times 8 \\times 8$   |  |\n| ReLU, mean pool | _                   | -        | 128                       |  |\n| Linear          | -                   | -        | 1                         |  |",
+      "metadata": {
+        "chunk_index": 75,
+        "content_type": "text",
+        "has_table": true,
+        "has_figure": false,
+        "char_count": 755
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_76",
+      "content": "## **G** CIFAR-10 ResNet samples\n\n![](_page_14_Picture_2.jpeg)\n\n![](_page_14_Picture_3.jpeg)\n\nFigure 6: (*left*) CIFAR-10 samples generated by our unsupervised model. (*right*) Conditional CIFAR-10 samples, from adding AC-GAN conditioning to our unconditional model. Samples from the same class are displayed in the same column.",
+      "metadata": {
+        "chunk_index": 76,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 328
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_77",
+      "content": "## H More LSUN samples\n\n![](_page_15_Picture_1.jpeg)\n\n![](_page_15_Picture_3.jpeg)\n\nMethod: DCGAN Method: DCGAN G: DCGAN, D: DCGAN G: No BN and const. filter count\n\n![](_page_15_Picture_5.jpeg)\n\nMethod: DCGAN Method: DCGAN\n\n![](_page_15_Picture_7.jpeg)\n\nG: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\n![](_page_15_Picture_9.jpeg)\n\nMethod: DCGAN Method: DCGAN Gated multiplicative nonlinearities tanh nonlinearities\n\n![](_page_15_Picture_11.jpeg)\n\n![](_page_16_Picture_0.jpeg)\n\nMethod: DCGAN Method: LSGAN\n\n![](_page_16_Picture_2.jpeg)\n\n101-layer ResNet G and D G: DCGAN, D: DCGAN\n\n![](_page_16_Picture_4.jpeg)\n\nMethod: LSGAN Method: LSGAN\n\n![](_page_16_Picture_6.jpeg)\n\nG: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\n![](_page_16_Picture_8.jpeg)\n\n![](_page_16_Picture_10.jpeg)\n\nMethod: LSGAN Method: LSGAN No normalization in either G or D Gated multiplicative nonlinearities\n\n![](_page_17_Picture_0.jpeg)\n\n![](_page_17_Picture_2.jpeg)",
+      "metadata": {
+        "chunk_index": 77,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 966
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_78",
+      "content": "![](_page_16_Picture_10.jpeg)\n\nMethod: LSGAN Method: LSGAN No normalization in either G or D Gated multiplicative nonlinearities\n\n![](_page_17_Picture_0.jpeg)\n\n![](_page_17_Picture_2.jpeg)\n\nMethod: LSGAN Method: LSGAN tanh nonlinearities 101-layer ResNet G and D\n\n![](_page_17_Picture_4.jpeg)\n\n![](_page_17_Picture_6.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping G: DCGAN, D: DCGAN G: No BN and const. filter count\n\n![](_page_17_Picture_8.jpeg)\n\nG: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\n![](_page_17_Picture_10.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping\n\n![](_page_18_Picture_0.jpeg)\n\nMethod: WGAN with clipping Method: WGAN with clipping Gated multiplicative nonlinearities tanh nonlinearities\n\n![](_page_18_Picture_2.jpeg)\n\n![](_page_18_Picture_4.jpeg)\n\nMethod: WGAN with clipping Method: WGAN-GP (ours) 101-layer ResNet G and D G: DCGAN, D: DCGAN\n\n![](_page_18_Picture_6.jpeg)\n\n![](_page_18_Picture_8.jpeg)\n\n![](_page_18_Picture_10.jpeg)",
+      "metadata": {
+        "chunk_index": 78,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 995
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_chunk_79",
+      "content": "Method: WGAN with clipping Method: WGAN-GP (ours) 101-layer ResNet G and D G: DCGAN, D: DCGAN\n\n![](_page_18_Picture_6.jpeg)\n\n![](_page_18_Picture_8.jpeg)\n\n![](_page_18_Picture_10.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours) G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\n![](_page_19_Picture_0.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours)\n\n![](_page_19_Picture_2.jpeg)\n\nNo normalization in either G or D Gated multiplicative nonlinearities\n\n![](_page_19_Picture_4.jpeg)\n\n![](_page_19_Picture_6.jpeg)\n\nMethod: WGAN-GP (ours) Method: WGAN-GP (ours) tanh nonlinearities 101-layer ResNet G and D",
+      "metadata": {
+        "chunk_index": 79,
+        "content_type": "text",
+        "has_table": false,
+        "has_figure": true,
+        "char_count": 622
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_1",
+      "content": "| Nonlinearity (G)                         | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n|------------------------------------------|-----------------------------------------------------------------|\n| Nonlinearity $(D)$                       | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n| Depth $(G)$                              | [4, 8, 12, 20]                                                  |\n| Depth $(D)$                              | [4, 8, 12, 20]                                                  |\n| Batch norm $(G)$                         | [True, False]                                                   |\n| Batch norm $(D; layer norm for WGAN-GP)$ | [True, False]                                                   |\n| Base filter count $(G)$                  | [32, 64, 128]                                                   |\n| Base filter count $(D)$                  | [32, 64, 128]                                                   |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_1",
+        "headers": [
+          "Nonlinearity (G)",
+          "[ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh]"
+        ],
+        "row_count": 7
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_2",
+      "content": "| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 9.0        | 0        | 0            | 0              | 200         |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_2",
+        "headers": [
+          "Min. score",
+          "Only GAN",
+          "Only WGAN-GP",
+          "Both succeeded",
+          "Both failed"
+        ],
+        "row_count": 5
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_3",
+      "content": "| <br>Unsupervised |  | Supervised |\n|------------------|--|------------|\n|                  |  |            |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_3",
+        "headers": [
+          "<br>Unsupervised",
+          "",
+          "Supervised"
+        ],
+        "row_count": 1
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_4",
+      "content": "| Method                    | Score          | Method                       | Score          |\n|---------------------------|----------------|------------------------------|----------------|\n| ALI [8] (in [27])         | $5.34 \\pm .05$ | SteinGAN [26]                | 6.35           |\n| BEGAN [4]                 | 5.62           | DCGAN (with labels, in [26]) | 6.58           |\n| DCGAN [22] (in [11])      | $6.16 \\pm .07$ | Improved GAN [23]            | $8.09 \\pm .07$ |\n| Improved GAN (-L+HA) [23] | $6.86 \\pm .06$ | AC-GAN [20]                  | $8.25 \\pm .07$ |\n| EGAN-Ent-VI [7]           | $7.07 \\pm .10$ | SGAN-no-joint [11]           | $8.37 \\pm .08$ |\n| DFM [27]                  | $7.72 \\pm .13$ | WGAN-GP ResNet (ours)        | $8.42 \\pm .10$ |\n| WGAN-GP ResNet (ours)     | $7.86 \\pm .07$ | SGAN [11]                    | $8.59 \\pm .12$ |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_4",
+        "headers": [
+          "Method",
+          "Score",
+          "Method",
+          "Score"
+        ],
+        "row_count": 7
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_5",
+      "content": "| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 1.5        | 0        | 50           | 150            | 0           |\n| 2.0        | 0        | 60           | 140            | 0           |\n| 2.5        | 0        | 74           | 125            | 1           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 3.5        | 0        | 111          | 86             | 3           |\n| 4.0        | 1        | 126          | 67             | 6           |\n| 4.5        | 0        | 136          | 55             | 9           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 5.5        | 0        | 148          | 32             | 20          |\n| 6.0        | 0        | 145          | 21             | 34          |\n| 6.5        | 1        | 131          | 11             | 57          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 7.5        | 2        | 67           | 3              | 128         |\n| 8.0        | 1        | 34           | 0              | 165         |\n| 8.5        | 0        | 6            | 0              | 194         |\n| 9.0        | 0        | 0            | 0              | 200         |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_5",
+        "headers": [
+          "Min. score",
+          "Only GAN",
+          "Only WGAN-GP",
+          "Both succeeded",
+          "Both failed"
+        ],
+        "row_count": 17
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_6",
+      "content": "| Generator $G(z)$ |                     |          |                           |  |\n|------------------|---------------------|----------|---------------------------|--|\n|                  | Kernel size         | Resample | Output shape              |  |\n| $\\overline{z}$   | -                   | -        | 128                       |  |\n| Linear           | -                   | -        | $128 \\times 4 \\times 4$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 8 \\times 8$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 16 \\times 16$ |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 32 \\times 32$ |  |\n| Conv, tanh       | $3\\times3$          | -        | $3\\times32\\times32$       |  |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_6",
+        "headers": [
+          "Generator $G(z)$",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "row_count": 7
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_table_7",
+      "content": "| Critic $D(x)$   |                     |          |                           |  |\n|-----------------|---------------------|----------|---------------------------|--|\n|                 | Kernel size         | Resample | Output shape              |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 16 \\times 16$ |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ |          | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ | -        | $128 \\times 8 \\times 8$   |  |\n| ReLU, mean pool | _                   | -        | 128                       |  |\n| Linear          | -                   | -        | 1                         |  |\n",
+      "metadata": {
+        "content_type": "table",
+        "table_id": "table_7",
+        "headers": [
+          "Critic $D(x)$",
+          "",
+          "",
+          "",
+          ""
+        ],
+        "row_count": 7
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_1",
+      "content": "Figure: Weight clipping (c = 0.001)\n\nVisual Description: The figure displays contour plots representing three different datasets: \"8 Gaussians,\" \"25 Gaussians,\" and \"Swiss Roll,\" with a focus on the effects of weight clipping (c = 0.001). The x and y axes are not explicitly labeled in the image, but each plot illustrates the varying complexity of the data distributions. Key findings include that the \"8 Gaussians\" and \"25 Gaussians\" datasets show more distinct shapes, while the \"Swiss Roll\" presents a more intricate and interconnected pattern, indicating differences in how varied data structures respond to the weight clipping methodology.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_1",
+        "caption": "Weight clipping (c = 0.001)",
+        "image_key": "_page_2_Figure_5.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_2",
+      "content": "Figure: Different GAN architectures trained with different methods. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP.\n\nVisual Description: The figure compares the effectiveness of different Generative Adversarial Network (GAN) architectures trained with various methods, specifically highlighting their outputs. Axes are not explicitly labeled, but the columns represent different GAN architectures (DCGAN, LSGAN, WGAN with clipping, and WGAN-GP), while the rows illustrate variations in network design and parameters. Key findings indicate that the WGAN-GP architecture demonstrates superior image quality and stability in training, especially when using a consistent set of hyperparameters across all architectures, yielding more coherent and realistic generated images compared to other methods.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_2",
+        "caption": "Different GAN architectures trained with different methods. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP.",
+        "image_key": "_page_5_Figure_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_3",
+      "content": "Figure: ![](_page_6_Figure_1.jpeg)\n\nVisual Description: The figure illustrates the convergence of different generative models on the CIFAR-10 dataset, with the x-axis representing the number of generator iterations (up to 2.0 x 10) and the y-axis showing the Inception Score, indicating the quality of generated images. The trends reveal that the \"Gradient Penalty (RMSProp)\" (orange line) and \"Gradient Penalty (Adam)\" (green line) models achieve higher and more stable Inception Scores over iterations compared to \"Weight clipping\" (blue line) and \"DCGAN\" (red line), with the former two stabilizing around 6-7. Key findings suggest that gradient penalty methods outperform others in terms of convergence quality in generating images from the CIFAR-",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_3",
+        "caption": "![](_page_6_Figure_1.jpeg)",
+        "image_key": "_page_6_Figure_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_4",
+      "content": "Figure: Samples of  $128 \\times 128$  LSUN bedrooms. We believe these samples are at least comparable to the best published results so far.\n\nVisual Description: The figure presents a grid of samples showcasing $128 \\times 128$ images of LSUN bedrooms. While there are no specified axes or quantitative data trends to analyze, the images collectively illustrate substantial diversity in bedroom designs and arrangements, suggesting a broad representation of styles and aesthetics. The key finding emphasizes that these samples are comparable to the best published results, indicating a significant achievement in quality and realism in generating bedroom imagery.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_4",
+        "caption": "Samples of  $128 \\times 128$  LSUN bedrooms. We believe these samples are at least comparable to the best published results so far.",
+        "image_key": "_page_7_Picture_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_5",
+      "content": "Figure: ![](_page_8_Figure_1.jpeg)\n\nVisual Description: The figure illustrates the negative critic loss over generator iterations, with the x-axis labeled \"Generator iterations\" in units of \\(10^8\\) and the y-axis labeled \"Negative critic loss.\" Two data trends are presented: the blue line represents the training loss, while the orange line indicates the validation loss. Key findings show that both training and validation losses decrease significantly over iterations, with the validation loss stabilizing at a lower value, suggesting effective model training and generalization.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_5",
+        "caption": "![](_page_8_Figure_1.jpeg)",
+        "image_key": "_page_8_Figure_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_6",
+      "content": "Figure: ![](_page_14_Picture_3.jpeg)\n\nVisual Description: The academic figure presents a collage of various animal images, organized in a grid pattern without specific axes. The trends observed indicate a diverse representation of species and environments, highlighting the rich variety of fauna across different habitats. Key findings may relate to the visual categorization of animals, emphasizing patterns in species characteristics or behaviors among those depicted, although specific quantitative data cannot be derived from the image alone.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_6",
+        "caption": "![](_page_14_Picture_3.jpeg)",
+        "image_key": "_page_14_Picture_2.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_7",
+      "content": "Figure: ![](_page_15_Picture_3.jpeg)\n\nVisual Description: The figure displays a grid of diverse bedroom images, showcasing various styles, colors, and arrangements. While there are no explicit axes or numerical data trends, the visual variety highlights key findings related to aesthetic preferences and interior design trends within different contexts or cultures. The overall impression suggests a wide range of personal expressions through bedroom decor.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_7",
+        "caption": "![](_page_15_Picture_3.jpeg)",
+        "image_key": "_page_15_Picture_1.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_8",
+      "content": "Figure: Method: DCGAN Method: DCGAN\n\nVisual Description: The figure displays a grid of synthesized images generated using the Deep Convolutional Generative Adversarial Network (DCGAN) method. Each small image illustrates varying degrees of clarity and detail, showcasing the model's ability to generate realistic indoor scenes. The key findings suggest improvements in image quality and variety as the model learns from the dataset, highlighting its potential in generating visually appealing outputs in computer vision tasks.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_8",
+        "caption": "Method: DCGAN Method: DCGAN",
+        "image_key": "_page_15_Picture_5.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_9",
+      "content": "Figure: G: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\nVisual Description: The figure presents a grid of generated images depicting various bedroom scenes produced by a 4-layer, 512-dimensional ReLU Multilayer Perceptron (MLP) without normalization in either the generator (G) or discriminator (D). The axes are not explicitly labeled, but the images illustrate the diversity and quality of the generated outputs. Key findings include the ability of the MLP to create a range of aesthetically pleasing bedroom settings, showcasing both sharp and blurred images, indicating areas where the model may struggle with detail or consistency. This highlights the model's performance limitations and areas for potential improvement.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_9",
+        "caption": "G: 4-layer 512-dim ReLU MLP No normalization in either G or D",
+        "image_key": "_page_15_Picture_7.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_10",
+      "content": "Figure: Method: DCGAN Method: DCGAN Gated multiplicative nonlinearities tanh nonlinearities\n\nVisual Description: The figure presents a grid of generated images utilizing the DCGAN (Deep Convolutional Generative Adversarial Network) method, showcasing various interior settings that range from kitchens to living rooms. The axes are not explicitly labeled, as the focus is on the visual diversity of the generated images rather than quantitative data. Key findings indicate that the use of gated multiplicative nonlinearities and tanh nonlinearities in the DCGAN architecture leads to a rich variety of textures and styles, demonstrating the model's ability to capture the complexity of interior design aesthetics.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_10",
+        "caption": "Method: DCGAN Method: DCGAN Gated multiplicative nonlinearities tanh nonlinearities",
+        "image_key": "_page_15_Picture_9.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_11",
+      "content": "Figure: ![](_page_16_Picture_0.jpeg)\n\nVisual Description: The figure presents a grid of images that likely represent various conditions or results observed in the study. The axes are not explicitly labeled in the image but may correspond to different experimental conditions or variables relevant to the research. The visual patterns suggest differing data trends across the grid, indicating variations in the outcomes or features being analyzed. Key findings may include an emphasis on distinct patterns or anomalies that emerge in specific sections of the grid, highlighting areas of interest for further exploration or interpretation.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_11",
+        "caption": "![](_page_16_Picture_0.jpeg)",
+        "image_key": "_page_15_Picture_11.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_12",
+      "content": "Figure: 101-layer ResNet G and D G: DCGAN, D: DCGAN\n\nVisual Description: The figure presents a grid of generated images, showcasing the results of a 101-layer ResNet architecture trained with Generative Adversarial Networks (GANs), specifically using a Deep Convolutional GAN (DCGAN) for both the generator (G) and discriminator (D). While no axes are explicitly labeled, the figure's primary data trends demonstrate the network's ability to produce diverse and realistic interior room images, indicating a successful training process. Key findings suggest that the 101-layer ResNet architecture effectively captures intricate details and variations in the generated images, illustrating its potential for high-quality image synthesis in interior design.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_12",
+        "caption": "101-layer ResNet G and D G: DCGAN, D: DCGAN",
+        "image_key": "_page_16_Picture_2.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_13",
+      "content": "Figure: Method: LSGAN Method: LSGAN\n\nVisual Description: The figure employs the LSGAN method, though specific axes labels are not visible in the image. The data trends appear to reflect a complex array of outputs typical of generative adversarial networks, likely illustrating variations in the generated images or loss metrics over iterations. Key findings may indicate the effectiveness of the LSGAN approach in producing diverse and coherent patterns, contributing to advancements in generative modeling techniques.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_13",
+        "caption": "Method: LSGAN Method: LSGAN",
+        "image_key": "_page_16_Picture_4.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_14",
+      "content": "Figure: G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\nVisual Description: The figure displays a grid of numerous small visualizations representing data from a 4-layer, 512-dimensional ReLU multilayer perceptron (MLP) without batch normalization and with a constant filter count. The axes are not explicitly labeled, indicating a focus on the overall pattern rather than specific quantitative metrics. The key finding appears to be a variety of data distributions or trends across the grid, suggesting complex relationships or behaviors within the model's output without discernible peaks or consistent patterns.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_14",
+        "caption": "G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP",
+        "image_key": "_page_16_Picture_6.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_15",
+      "content": "Figure: ![](_page_16_Picture_10.jpeg)\n\nVisual Description: The figure presents a grid of 100 images depicting various indoor scenes, primarily focusing on bedrooms and living areas. Each image appears to showcase different styles and arrangements, reflecting a diverse array of colors, textures, and compositions. Key findings may include patterns in aesthetic choices or emotional responses elicited by the differing environments, highlighting the role of domestic spaces in shaping individual experiences and perceptions.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_15",
+        "caption": "![](_page_16_Picture_10.jpeg)",
+        "image_key": "_page_16_Picture_8.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_16",
+      "content": "Figure: ![](_page_17_Picture_2.jpeg)\n\nVisual Description: The image presents a grid of visual data arranged in a mosaic format, depicting variations of a specific theme or subject through a series of paintings or images. Each grid cell may represent different conditions or outcomes, though the axes labels are not visible. Key findings likely relate to trends observed across the variations, such as patterns in color use, composition changes, or thematic shifts, emphasizing the diversity within the subject matter illustrated.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_16",
+        "caption": "![](_page_17_Picture_2.jpeg)",
+        "image_key": "_page_17_Picture_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_17",
+      "content": "Figure: ![](_page_17_Picture_6.jpeg)\n\nVisual Description: The academic figure presents a grid of 100 images showcasing various bedroom interiors, with no specific axes labeled. The visual data suggests a wide variety of styles, colors, and furnishings, indicating trends in interior design preferences. Key findings may revolve around aesthetic diversity and spatial arrangement, potentially highlighting correlations between design elements and viewer perceptions or preferences.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_17",
+        "caption": "![](_page_17_Picture_6.jpeg)",
+        "image_key": "_page_17_Picture_4.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_18",
+      "content": "Figure: G: 4-layer 512-dim ReLU MLP No normalization in either G or D\n\nVisual Description: The figure presents a grid of 64 generated images that depict various interior spaces, created using a 4-layer, 512-dimensional ReLU MLP without any normalization in both the generator and discriminator. Each image showcases a different level of detail and abstraction, indicating the model's performance in generating complex textures and layouts. The lack of normalization appears to contribute to a diverse range of outputs, with some images exhibiting clarity while others remain more distorted or vague, highlighting the effects of the chosen architecture and training setup on image quality.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_18",
+        "caption": "G: 4-layer 512-dim ReLU MLP No normalization in either G or D",
+        "image_key": "_page_17_Picture_8.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_19",
+      "content": "Figure: Method: WGAN with clipping Method: WGAN with clipping\n\nVisual Description: The figure appears to display a grid of generated images, likely produced using the Wasserstein Generative Adversarial Network (WGAN) with clipping. The axes are not explicitly labeled, but the images suggest a focus on visual quality or diversity in the outputs. Key findings might include insights into the fidelity and variation of generated imagery, demonstrating the effectiveness of WGAN with clipping in producing coherent yet diverse visual representations.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_19",
+        "caption": "Method: WGAN with clipping Method: WGAN with clipping",
+        "image_key": "_page_17_Picture_10.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_20",
+      "content": "Figure: Method: WGAN with clipping Method: WGAN with clipping Gated multiplicative nonlinearities tanh nonlinearities\n\nVisual Description: The figure presents a grid of generated images created using two methodologies: WGAN with clipping and Gated Multiplicative Nonlinearities versus WGAN utilizing Tanh nonlinearities. The x-axis and y-axis likely represent different performance metrics or iterations, although specific labels are not visible in the image. Key findings may highlight distinctions in the visual quality or diversity of generated images based on the chosen method, with the textures and color variations suggesting differences in image realism and complexity.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_20",
+        "caption": "Method: WGAN with clipping Method: WGAN with clipping Gated multiplicative nonlinearities tanh nonlinearities",
+        "image_key": "_page_18_Picture_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_21",
+      "content": "Figure: ![](_page_18_Picture_4.jpeg)\n\nVisual Description: The figure appears to be a composite image made up of multiple smaller panels, creating a visually complex and textured pattern. Given the abstract nature of the visuals, specific axes labels or clear data trends are not discernible. Key findings may relate to the interplay of colors and forms, possibly indicating trends in a particular dataset or phenomenon being studied, although the exact context remains unclear without additional information.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_21",
+        "caption": "![](_page_18_Picture_4.jpeg)",
+        "image_key": "_page_18_Picture_2.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_22",
+      "content": "Figure: ![](_page_18_Picture_8.jpeg)\n\nVisual Description: The academic figure presents a collage of various bedroom images, representing a diverse range of styles, layouts, and color schemes. Although there are no axes or quantifiable data trends, the visual arrangement suggests a qualitative analysis of interior design preferences in different contexts. Key findings may include insights into aesthetic diversity and trends in bedroom decor, possibly examining how these choices relate to broader societal or cultural factors.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_22",
+        "caption": "![](_page_18_Picture_8.jpeg)",
+        "image_key": "_page_18_Picture_6.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_23",
+      "content": "Figure: Method: WGAN-GP (ours) Method: WGAN-GP (ours) G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP\n\nVisual Description: The academic figure showcases a grid of generated images produced using the Wasserstein GAN with Gradient Penalty (WGAN-GP) method, specifically highlighting two configurations: one without batch normalization and with a constant filter count, and another with a 4-layer, 512-dimensional ReLU multi-layer perceptron for the generator. The x-axis and y-axis are not explicitly labeled in the figure but likely correspond to the indices of the generated images. The key finding is the apparent variation in image quality and style, indicating the effectiveness of the WGAN-GP approach in generating diverse and realistic bedroom images, while variations in model configuration lead to differences in detail and aesthetic.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_23",
+        "caption": "Method: WGAN-GP (ours) Method: WGAN-GP (ours) G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP",
+        "image_key": "_page_18_Picture_10.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_24",
+      "content": "Figure: Method: WGAN-GP (ours) Method: WGAN-GP (ours)\n\nVisual Description: This academic figure showcases a grid of generated images of various bedroom interiors, demonstrating the results of the WGAN-GP ( Wasserstein Generative Adversarial Network with Gradient Penalty) method. The axes are not explicitly labeled in the image, but the context suggests a focus on the quality and variety of generated images. A key trend observed is the diversity in design and color schemes of the bedrooms, indicating the model's ability to produce realistic and varied outputs. This illustrates the effectiveness of the WGAN-GP method in generating high-quality images in the domain of interior design.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_24",
+        "caption": "Method: WGAN-GP (ours) Method: WGAN-GP (ours)",
+        "image_key": "_page_19_Picture_0.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_25",
+      "content": "Figure: No normalization in either G or D Gated multiplicative nonlinearities\n\nVisual Description: The image appears to be a grid of various bedroom layouts, showcasing a range of interior designs. Each square represents different visual data points that may be used to analyze aesthetic preferences, spatial arrangements, or design trends in bedrooms. While specific axes are not visible, one might infer that variations in color, style, and furniture arrangement could indicate general trends or preferences in interior design when using gated multiplicative nonlinearities without normalization. Key findings could involve the diversity in designs reflecting contemporary trends or common elements that appeal to certain demographics.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_25",
+        "caption": "No normalization in either G or D Gated multiplicative nonlinearities",
+        "image_key": "_page_19_Picture_2.jpeg",
+        "has_vision_description": true
+      }
+    },
+    {
+      "id": "Improved Training of Wasserstein GANs.pdf_figure_26",
+      "content": "Figure: ![](_page_19_Picture_6.jpeg)\n\nVisual Description: The figure is a collage of images representing various bedroom settings, showcasing the diversity in design and layout. Each image likely corresponds to different styles, colors, and arrangements that reveal trends in home décor. The overall observation may highlight the aesthetic variations in personal spaces and could serve as a basis for discussing the impact of environment on well-being or design preferences.",
+      "metadata": {
+        "content_type": "figure",
+        "figure_id": "figure_26",
+        "caption": "![](_page_19_Picture_6.jpeg)",
+        "image_key": "_page_19_Picture_4.jpeg",
+        "has_vision_description": true
+      }
+    }
+  ],
+  "tables": [
+    {
+      "table_id": "table_1",
+      "headers": [
+        "Nonlinearity (G)",
+        "[ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh]"
+      ],
+      "rows": [
+        [
+          "Nonlinearity $(D)$",
+          "[ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh]"
+        ],
+        [
+          "Depth $(G)$",
+          "[4, 8, 12, 20]"
+        ],
+        [
+          "Depth $(D)$",
+          "[4, 8, 12, 20]"
+        ],
+        [
+          "Batch norm $(G)$",
+          "[True, False]"
+        ],
+        [
+          "Batch norm $(D; layer norm for WGAN-GP)$",
+          "[True, False]"
+        ],
+        [
+          "Base filter count $(G)$",
+          "[32, 64, 128]"
+        ],
+        [
+          "Base filter count $(D)$",
+          "[32, 64, 128]"
+        ]
+      ],
+      "markdown": "| Nonlinearity (G)                         | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n|------------------------------------------|-----------------------------------------------------------------|\n| Nonlinearity $(D)$                       | [ReLU, LeakyReLU, $\\frac{\\text{softplus}(2x+2)}{2} - 1$ , tanh] |\n| Depth $(G)$                              | [4, 8, 12, 20]                                                  |\n| Depth $(D)$                              | [4, 8, 12, 20]                                                  |\n| Batch norm $(G)$                         | [True, False]                                                   |\n| Batch norm $(D; layer norm for WGAN-GP)$ | [True, False]                                                   |\n| Base filter count $(G)$                  | [32, 64, 128]                                                   |\n| Base filter count $(D)$                  | [32, 64, 128]                                                   |\n"
+    },
+    {
+      "table_id": "table_2",
+      "headers": [
+        "Min. score",
+        "Only GAN",
+        "Only WGAN-GP",
+        "Both succeeded",
+        "Both failed"
+      ],
+      "rows": [
+        [
+          "1.0",
+          "0",
+          "8",
+          "192",
+          "0"
+        ],
+        [
+          "3.0",
+          "1",
+          "88",
+          "110",
+          "1"
+        ],
+        [
+          "5.0",
+          "0",
+          "147",
+          "42",
+          "11"
+        ],
+        [
+          "7.0",
+          "1",
+          "104",
+          "5",
+          "90"
+        ],
+        [
+          "9.0",
+          "0",
+          "0",
+          "0",
+          "200"
+        ]
+      ],
+      "markdown": "| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 9.0        | 0        | 0            | 0              | 200         |\n"
+    },
+    {
+      "table_id": "table_3",
+      "headers": [
+        "<br>Unsupervised",
+        "",
+        "Supervised"
+      ],
+      "rows": [
+        [
+          "",
+          "",
+          ""
+        ]
+      ],
+      "markdown": "| <br>Unsupervised |  | Supervised |\n|------------------|--|------------|\n|                  |  |            |\n"
+    },
+    {
+      "table_id": "table_4",
+      "headers": [
+        "Method",
+        "Score",
+        "Method",
+        "Score"
+      ],
+      "rows": [
+        [
+          "ALI [8] (in [27])",
+          "$5.34 \\pm .05$",
+          "SteinGAN [26]",
+          "6.35"
+        ],
+        [
+          "BEGAN [4]",
+          "5.62",
+          "DCGAN (with labels, in [26])",
+          "6.58"
+        ],
+        [
+          "DCGAN [22] (in [11])",
+          "$6.16 \\pm .07$",
+          "Improved GAN [23]",
+          "$8.09 \\pm .07$"
+        ],
+        [
+          "Improved GAN (-L+HA) [23]",
+          "$6.86 \\pm .06$",
+          "AC-GAN [20]",
+          "$8.25 \\pm .07$"
+        ],
+        [
+          "EGAN-Ent-VI [7]",
+          "$7.07 \\pm .10$",
+          "SGAN-no-joint [11]",
+          "$8.37 \\pm .08$"
+        ],
+        [
+          "DFM [27]",
+          "$7.72 \\pm .13$",
+          "WGAN-GP ResNet (ours)",
+          "$8.42 \\pm .10$"
+        ],
+        [
+          "WGAN-GP ResNet (ours)",
+          "$7.86 \\pm .07$",
+          "SGAN [11]",
+          "$8.59 \\pm .12$"
+        ]
+      ],
+      "markdown": "| Method                    | Score          | Method                       | Score          |\n|---------------------------|----------------|------------------------------|----------------|\n| ALI [8] (in [27])         | $5.34 \\pm .05$ | SteinGAN [26]                | 6.35           |\n| BEGAN [4]                 | 5.62           | DCGAN (with labels, in [26]) | 6.58           |\n| DCGAN [22] (in [11])      | $6.16 \\pm .07$ | Improved GAN [23]            | $8.09 \\pm .07$ |\n| Improved GAN (-L+HA) [23] | $6.86 \\pm .06$ | AC-GAN [20]                  | $8.25 \\pm .07$ |\n| EGAN-Ent-VI [7]           | $7.07 \\pm .10$ | SGAN-no-joint [11]           | $8.37 \\pm .08$ |\n| DFM [27]                  | $7.72 \\pm .13$ | WGAN-GP ResNet (ours)        | $8.42 \\pm .10$ |\n| WGAN-GP ResNet (ours)     | $7.86 \\pm .07$ | SGAN [11]                    | $8.59 \\pm .12$ |\n"
+    },
+    {
+      "table_id": "table_5",
+      "headers": [
+        "Min. score",
+        "Only GAN",
+        "Only WGAN-GP",
+        "Both succeeded",
+        "Both failed"
+      ],
+      "rows": [
+        [
+          "1.0",
+          "0",
+          "8",
+          "192",
+          "0"
+        ],
+        [
+          "1.5",
+          "0",
+          "50",
+          "150",
+          "0"
+        ],
+        [
+          "2.0",
+          "0",
+          "60",
+          "140",
+          "0"
+        ],
+        [
+          "2.5",
+          "0",
+          "74",
+          "125",
+          "1"
+        ],
+        [
+          "3.0",
+          "1",
+          "88",
+          "110",
+          "1"
+        ],
+        [
+          "3.5",
+          "0",
+          "111",
+          "86",
+          "3"
+        ],
+        [
+          "4.0",
+          "1",
+          "126",
+          "67",
+          "6"
+        ],
+        [
+          "4.5",
+          "0",
+          "136",
+          "55",
+          "9"
+        ],
+        [
+          "5.0",
+          "0",
+          "147",
+          "42",
+          "11"
+        ],
+        [
+          "5.5",
+          "0",
+          "148",
+          "32",
+          "20"
+        ],
+        [
+          "6.0",
+          "0",
+          "145",
+          "21",
+          "34"
+        ],
+        [
+          "6.5",
+          "1",
+          "131",
+          "11",
+          "57"
+        ],
+        [
+          "7.0",
+          "1",
+          "104",
+          "5",
+          "90"
+        ],
+        [
+          "7.5",
+          "2",
+          "67",
+          "3",
+          "128"
+        ],
+        [
+          "8.0",
+          "1",
+          "34",
+          "0",
+          "165"
+        ],
+        [
+          "8.5",
+          "0",
+          "6",
+          "0",
+          "194"
+        ],
+        [
+          "9.0",
+          "0",
+          "0",
+          "0",
+          "200"
+        ]
+      ],
+      "markdown": "| Min. score | Only GAN | Only WGAN-GP | Both succeeded | Both failed |\n|------------|----------|--------------|----------------|-------------|\n| 1.0        | 0        | 8            | 192            | 0           |\n| 1.5        | 0        | 50           | 150            | 0           |\n| 2.0        | 0        | 60           | 140            | 0           |\n| 2.5        | 0        | 74           | 125            | 1           |\n| 3.0        | 1        | 88           | 110            | 1           |\n| 3.5        | 0        | 111          | 86             | 3           |\n| 4.0        | 1        | 126          | 67             | 6           |\n| 4.5        | 0        | 136          | 55             | 9           |\n| 5.0        | 0        | 147          | 42             | 11          |\n| 5.5        | 0        | 148          | 32             | 20          |\n| 6.0        | 0        | 145          | 21             | 34          |\n| 6.5        | 1        | 131          | 11             | 57          |\n| 7.0        | 1        | 104          | 5              | 90          |\n| 7.5        | 2        | 67           | 3              | 128         |\n| 8.0        | 1        | 34           | 0              | 165         |\n| 8.5        | 0        | 6            | 0              | 194         |\n| 9.0        | 0        | 0            | 0              | 200         |\n"
+    },
+    {
+      "table_id": "table_6",
+      "headers": [
+        "Generator $G(z)$",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "rows": [
+        [
+          "",
+          "Kernel size",
+          "Resample",
+          "Output shape",
+          ""
+        ],
+        [
+          "$\\overline{z}$",
+          "-",
+          "-",
+          "128",
+          ""
+        ],
+        [
+          "Linear",
+          "-",
+          "-",
+          "$128 \\times 4 \\times 4$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "Up",
+          "$128 \\times 8 \\times 8$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "Up",
+          "$128 \\times 16 \\times 16$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "Up",
+          "$128 \\times 32 \\times 32$",
+          ""
+        ],
+        [
+          "Conv, tanh",
+          "$3\\times3$",
+          "-",
+          "$3\\times32\\times32$",
+          ""
+        ]
+      ],
+      "markdown": "| Generator $G(z)$ |                     |          |                           |  |\n|------------------|---------------------|----------|---------------------------|--|\n|                  | Kernel size         | Resample | Output shape              |  |\n| $\\overline{z}$   | -                   | -        | 128                       |  |\n| Linear           | -                   | -        | $128 \\times 4 \\times 4$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 8 \\times 8$   |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 16 \\times 16$ |  |\n| Residual block   | $[3\\times3]\\times2$ | Up       | $128 \\times 32 \\times 32$ |  |\n| Conv, tanh       | $3\\times3$          | -        | $3\\times32\\times32$       |  |\n"
+    },
+    {
+      "table_id": "table_7",
+      "headers": [
+        "Critic $D(x)$",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "rows": [
+        [
+          "",
+          "Kernel size",
+          "Resample",
+          "Output shape",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "Down",
+          "$128 \\times 16 \\times 16$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "Down",
+          "$128 \\times 8 \\times 8$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "",
+          "$128 \\times 8 \\times 8$",
+          ""
+        ],
+        [
+          "Residual block",
+          "$[3\\times3]\\times2$",
+          "-",
+          "$128 \\times 8 \\times 8$",
+          ""
+        ],
+        [
+          "ReLU, mean pool",
+          "_",
+          "-",
+          "128",
+          ""
+        ],
+        [
+          "Linear",
+          "-",
+          "-",
+          "1",
+          ""
+        ]
+      ],
+      "markdown": "| Critic $D(x)$   |                     |          |                           |  |\n|-----------------|---------------------|----------|---------------------------|--|\n|                 | Kernel size         | Resample | Output shape              |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 16 \\times 16$ |  |\n| Residual block  | $[3\\times3]\\times2$ | Down     | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ |          | $128 \\times 8 \\times 8$   |  |\n| Residual block  | $[3\\times3]\\times2$ | -        | $128 \\times 8 \\times 8$   |  |\n| ReLU, mean pool | _                   | -        | 128                       |  |\n| Linear          | -                   | -        | 1                         |  |\n"
+    }
+  ],
+  "figures": [
+    {
+      "figure_id": "figure_1",
+      "image_key": "_page_2_Figure_5.jpeg",
+      "caption": "Weight clipping (c = 0.001)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_2",
+      "image_key": "_page_5_Figure_0.jpeg",
+      "caption": "Different GAN architectures trained with different methods. We only succeeded in training every architecture with a shared set of hyperparameters using WGAN-GP.",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_3",
+      "image_key": "_page_6_Figure_0.jpeg",
+      "caption": "![](_page_6_Figure_1.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_4",
+      "image_key": "_page_7_Picture_0.jpeg",
+      "caption": "Samples of  $128 \\times 128$  LSUN bedrooms. We believe these samples are at least comparable to the best published results so far.",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_5",
+      "image_key": "_page_8_Figure_0.jpeg",
+      "caption": "![](_page_8_Figure_1.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_6",
+      "image_key": "_page_14_Picture_2.jpeg",
+      "caption": "![](_page_14_Picture_3.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_7",
+      "image_key": "_page_15_Picture_1.jpeg",
+      "caption": "![](_page_15_Picture_3.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_8",
+      "image_key": "_page_15_Picture_5.jpeg",
+      "caption": "Method: DCGAN Method: DCGAN",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_9",
+      "image_key": "_page_15_Picture_7.jpeg",
+      "caption": "G: 4-layer 512-dim ReLU MLP No normalization in either G or D",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_10",
+      "image_key": "_page_15_Picture_9.jpeg",
+      "caption": "Method: DCGAN Method: DCGAN Gated multiplicative nonlinearities tanh nonlinearities",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_11",
+      "image_key": "_page_15_Picture_11.jpeg",
+      "caption": "![](_page_16_Picture_0.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_12",
+      "image_key": "_page_16_Picture_2.jpeg",
+      "caption": "101-layer ResNet G and D G: DCGAN, D: DCGAN",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_13",
+      "image_key": "_page_16_Picture_4.jpeg",
+      "caption": "Method: LSGAN Method: LSGAN",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_14",
+      "image_key": "_page_16_Picture_6.jpeg",
+      "caption": "G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_15",
+      "image_key": "_page_16_Picture_8.jpeg",
+      "caption": "![](_page_16_Picture_10.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_16",
+      "image_key": "_page_17_Picture_0.jpeg",
+      "caption": "![](_page_17_Picture_2.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_17",
+      "image_key": "_page_17_Picture_4.jpeg",
+      "caption": "![](_page_17_Picture_6.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_18",
+      "image_key": "_page_17_Picture_8.jpeg",
+      "caption": "G: 4-layer 512-dim ReLU MLP No normalization in either G or D",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_19",
+      "image_key": "_page_17_Picture_10.jpeg",
+      "caption": "Method: WGAN with clipping Method: WGAN with clipping",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_20",
+      "image_key": "_page_18_Picture_0.jpeg",
+      "caption": "Method: WGAN with clipping Method: WGAN with clipping Gated multiplicative nonlinearities tanh nonlinearities",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_21",
+      "image_key": "_page_18_Picture_2.jpeg",
+      "caption": "![](_page_18_Picture_4.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_22",
+      "image_key": "_page_18_Picture_6.jpeg",
+      "caption": "![](_page_18_Picture_8.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_23",
+      "image_key": "_page_18_Picture_10.jpeg",
+      "caption": "Method: WGAN-GP (ours) Method: WGAN-GP (ours) G: No BN and const. filter count G: 4-layer 512-dim ReLU MLP",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_24",
+      "image_key": "_page_19_Picture_0.jpeg",
+      "caption": "Method: WGAN-GP (ours) Method: WGAN-GP (ours)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_25",
+      "image_key": "_page_19_Picture_2.jpeg",
+      "caption": "No normalization in either G or D Gated multiplicative nonlinearities",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    },
+    {
+      "figure_id": "figure_26",
+      "image_key": "_page_19_Picture_4.jpeg",
+      "caption": "![](_page_19_Picture_6.jpeg)",
+      "alt_text": "",
+      "context_before": "",
+      "context_after": ""
+    }
+  ],
+  "stats": {
+    "total_chunks": 113,
+    "text_chunks": 80,
+    "tables_extracted": 7,
+    "images_extracted": 37,
+    "figure_chunks_created": 26,
+    "figures_with_vision": 26,
+    "markdown_chars": 50851,
+    "processing_time_seconds": 356.72
+  }
+}

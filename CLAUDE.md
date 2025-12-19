@@ -47,7 +47,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 **Multi-Strategy Retrieval**
 - Three approaches: semantic (vector), keyword (BM25), hybrid (combined)
 - Strategy selection based on corpus characteristics + query analysis
-- RAG-Fusion pattern: Strategy-agnostic expansions → select best strategy → use for ALL variants (differs from PreQRAG parallel multi-strategy approach)
+- RAG-Fusion pattern: Strategy-agnostic expansions → optimize lead variant (expansions[0]) for selected strategy → RRF fusion across all variants
 - RRF-based multi-query fusion: Reciprocal Rank Fusion aggregates rankings across query variants BEFORE reranking (3-5% MRR improvement)
 - Two-stage reranking applied to RRF-fused results for final relevance scoring
 

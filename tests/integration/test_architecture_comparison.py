@@ -857,10 +857,10 @@ def test_architecture_comparison(
     # Load golden dataset with adaptive k_final
     print(f"[*] Loading {dataset_type} golden dataset...")
     if dataset_type == "standard":
-        dataset_path = "evaluation/golden_set_standard.json"
+        dataset_path = "evaluation/golden_set_standard_v2.json"
         k_final = 4  # Optimal for 1-3 chunk questions
     else:  # hard
-        dataset_path = "evaluation/golden_set_hard.json"
+        dataset_path = "evaluation/golden_set_hard_v2.json"
         k_final = 6  # Adaptive retrieval for 3-5 chunk questions
 
     dataset_manager = GoldenDatasetManager(dataset_path)
@@ -898,7 +898,7 @@ def test_architecture_comparison(
     print(f"PRE-BUILD: Initializing retriever once for all tiers (k_final={k_final})")
     print(f"{'='*80}")
     print("    This avoids re-ingesting PDFs for each tier (saves 40-50% time)")
-    shared_retriever = setup_retriever(k_final=k_final)
+    shared_retriever = setup_retriever(from_marker_json=True, k_final=k_final)
 
     # Inject into all variant modules
     basic_module.adaptive_retriever = shared_retriever

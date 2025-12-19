@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/c4168ac9-3eb0-45dc-be67-895299d8a97e
 
 ## Key Results
 
-- **2.3x retrieval accuracy** (F1@4: 13.1% -> 29.6%) with budget models only
+- **83% retrieval improvement** (F1@4: 17.3% → 31.7%) with budget models only
 - Demonstrates architectural value independent of model quality
 - [Full evaluation details](#evaluation)
 
@@ -104,7 +104,7 @@ The Advanced tier implements 17 features across retrieval, generation, and evalu
 <details>
 <summary><strong>Document & Corpus Profiling</strong></summary>
 
-- LLM-based profiling of documents before chunking
+- LLM-based profiling of documents
 - Analyzes technical density, document types, and domain characteristics
 - Informs retrieval strategy selection
 </details>
@@ -113,8 +113,8 @@ The Advanced tier implements 17 features across retrieval, generation, and evalu
 <summary><strong>Query Processing</strong></summary>
 
 - **Conversational Rewriting**: Transforms follow-up queries into self-contained questions
-- **Query Expansion**: Generates 3 variations (technical implementation, practical applications, conceptual principles)
-- **Strategy-Specific Optimization**: Keyword -> specific terms; Semantic -> conceptual phrasing
+- **Query Expansion**: Generates 3 variations with query-type detection (comparison, adaptation, other)
+- **Strategy-Specific Optimization**: Keyword (exact terms) / Semantic (conceptual) / Hybrid (balanced)
 </details>
 
 <details>
@@ -226,7 +226,7 @@ MODEL_TIER=premium   # Maximum quality
 - **Vector Store**: FAISS
 - **Lexical Search**: BM25
 - **LLMs**: OpenAI GPT-4o-mini/GPT-5-mini/GPT-5.1/GPT-5-nano (configurable)
-- **PDF Processing**: PyMuPDF
+- **PDF Processing**: Marker (layout-aware, table/figure extraction, OCR-capable)
 - **Reranking**: sentence-transformers (CrossEncoder)
 - **Hallucination Detection**: HHEM-2.1-Open (vectara/hallucination_evaluation_model)
 - **Package Manager**: uv
@@ -242,8 +242,8 @@ MODEL_TIER=premium   # Maximum quality
 
 | Dataset | Questions | Avg Chunks | Cross-Doc | Query Types |
 |---------|-----------|------------|-----------|-------------|
-| **Standard** | 20 | 1.9 | 10% | factual, conceptual, procedural, comparative |
-| **Hard** | 10 | 4.6 | 50% | procedural, comparative (multi-document) |
+| **Standard** | 20 | 2.1 | 10% | factual, conceptual, procedural, comparative |
+| **Hard** | 10 | 4.7 | 50% | procedural, comparative (multi-document) |
 
 ### Architecture Comparison Results
 
@@ -251,21 +251,25 @@ All tiers use **budget models** (GPT-4o-mini only) to isolate architectural impr
 
 #### Standard Dataset (20 questions, k=4)
 
-| Tier | Precision@4 | Recall@4 | F1@4 | MRR | nDCG@4 |
-|------|-----|-----|------|-----|--------|
-| Basic | 10.0% | 23.8% | 13.1% | 0.204 | 0.191 |
-| Intermediate | 17.5% | 40.0% | 23.0% | 0.425 | 0.384 |
-| Advanced | 20.0% | 43.3% | 25.9% | 0.550 | 0.443 |
-| **Multi-Agent** | **23.8%** | **47.1%** | **29.6%** | **0.558** | **0.464** |
+| Tier | F1@4 | MRR | nDCG@4 | Groundedness |
+|------|------|-----|--------|--------------|
+| Basic | 17.3% | 0.254 | 0.236 | 48.6% |
+| Intermediate | 22.7% | 0.450 | 0.343 | 70.7% |
+| Advanced | 29.3% | 0.600 | 0.484 | 64.1% |
+| **Multi-Agent** | **31.7%** | **0.600** | **0.497** | **76.6%** |
+
+*Maximum achievable F1@4 is 64.6% (dataset avg: 2.1 relevant docs/question). Multi-Agent achieves 49% of ceiling.*
 
 #### Hard Dataset (10 questions, k=6, multi-document)
 
-| Tier | Precision@6 | Recall@6 | F1@6 | MRR | nDCG@6 |
-|------|-----|-----|------|-----|--------|
-| Basic | 25.0% | 35.6% | 29.0% | 0.553 | 0.365 |
-| Intermediate | 23.3% | 33.1% | 27.0% | 0.533 | 0.358 |
-| Advanced | 28.3% | 38.4% | 32.1% | 0.600 | 0.422 |
-| **Multi-Agent** | **31.7%** | **42.3%** | **35.7%** | **0.667** | **0.464** |
+| Tier | F1@6 | MRR | nDCG@6 | Groundedness |
+|------|------|-----|--------|--------------|
+| Basic | 22.0% | 0.458 | 0.300 | 60.4% |
+| Intermediate | 25.6% | 0.408 | 0.293 | 62.5% |
+| Advanced | 32.5% | **0.750** | 0.460 | **88.9%** |
+| **Multi-Agent** | **38.7%** | 0.633 | **0.480** | 87.0% |
+
+*Maximum achievable F1@6 is 84.8% (dataset avg: 4.7 relevant docs/question). Multi-Agent achieves 46% of ceiling.*
 
 ## Future Improvements
 

@@ -1225,7 +1225,7 @@ def route_after_evaluation(state: MultiAgentRAGState) -> Literal["answer_generat
         return END
 
     generation_attempts = state.get("generation_attempts", 0)
-    if generation_attempts < 2:  # reduce from 3 to 2 to quicken test
+    if generation_attempts < 3:
         print(f"\nRouting: answer_generation (attempt {generation_attempts + 1}/3)")
         return "answer_generation"
 

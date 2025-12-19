@@ -809,6 +809,108 @@ This directory contains compiled research documents from Perplexity.ai and other
 
 ---
 
+### 22. HyDE RAG Implementation
+
+**File:** `HyDE RAG implementation.md`
+
+**Purpose:** Best practices for prompting LLMs to generate hypothetical documents for HyDE (Hypothetical Document Embeddings) retrieval technique
+
+**When to Use:**
+- Implementing HyDE retrieval to improve semantic search quality
+- Designing prompts that generate corpus-aligned hypothetical documents
+- Optimizing hypothetical document generation for different domain types (legal, technical, code)
+
+**Key Sections:**
+- Core heuristic: Optimize for semantic density, not factual accuracy
+- Corpus style mirroring (medical journals, legal documents, code, technical docs)
+- Embedding window constraints (512 tokens, 100-300 words optimal)
+- Prompt templates for different scenarios (general knowledge, domain-specific, technical support, code)
+- System prompts and parameter settings (temperature 0.7-0.9, max tokens 300)
+- Multi-hypothesis N-voting technique for ambiguous queries
+
+**Implementation Status:**
+- [IMPLEMENTED] HyDE variant in multi-agent architecture (`src/orchestration/multi_agent_graph.py`)
+- [REFERENCE] Prompt engineering patterns for hypothetical document generation
+- [APPLICABLE] Domain-specific prompt templates for different corpus types
+
+**Related Code:**
+- `src/orchestration/multi_agent_graph.py` - HyDE RAG variant implementation
+- `src/retrieval/query_optimization.py` - Query expansion utilities
+
+**Notes:** HyDE flips the retrieval problem: instead of matching short queries to long documents, generate a hypothetical answer and match that to real documents. Key insight: the generated document doesn't need to be factually accurate--it needs to contain the semantic patterns, keywords, and jargon that match your target corpus.
+
+---
+
+### 23. Best Practices for LLM-as-Judge Reranking
+
+**File:** `Best Practices for LLM-as-Judge Reranking in RAG Pipelines.md`
+
+**Purpose:** Comprehensive guide to LLM-based reranking covering precision/recall trade-offs, common pitfalls, query-type-aware criteria, and production two-stage reranking patterns
+
+**When to Use:**
+- Designing LLM reranking prompts with appropriate precision/recall balance
+- Understanding and avoiding common LLM reranker pitfalls (decision boundary bias, score miscalibration)
+- Implementing query-type-aware reranking (factual vs conceptual vs hybrid queries)
+- Building production two-stage reranking pipelines (Cross-Encoder + LLM-as-Judge)
+
+**Key Sections:**
+- Precision vs recall in prompt design (10-point rubric, threshold mechanisms, asymmetric penalties)
+- Common pitfalls (15-20% decision boundary disagreement, score drift, hallucination via unsupported claims)
+- Query-type-aware criteria (factual: precision@top-3, conceptual: recall@K, hybrid: two-criteria rubric)
+- Two-stage production patterns (Cross-Encoder for recall -> LLM-as-Judge for precision)
+- Parallel pointwise reranking with round-robin batching (8x cost reduction)
+- Rubric design principles (few-shot grounding, threshold as tuning knob, boundary case evaluation)
+
+**Implementation Status:**
+- [IMPLEMENTED] LLM-as-judge reranking in `src/retrieval/retrievers.py`
+- [IMPLEMENTED] Two-stage reranking (CrossEncoder stage 1, LLM stage 2) in `src/retrieval/retrievers.py`
+- [ALIGNED] Relevance scoring with structured output in evaluation
+- [REFERENCE] Production patterns for parallel reranking and cost optimization
+
+**Related Code:**
+- `src/retrieval/retrievers.py` - LLM reranking implementation
+- `src/retrieval/hybrid_reranker.py` - Hybrid reranking strategies
+- `src/orchestration/nodes.py` - Document grading with relevance assessment
+
+**Notes:** Complements Document 8 (CrossEncoder Implementation) with LLM-as-Judge specific patterns. Key findings: 10-point rubrics with threshold 5+ preserve recall while maintaining precision; parallel pointwise reranking achieves 8x cost reduction; boundary cases (scores 5-7) are high-risk for misclassification and benefit from keeping rather than filtering.
+
+---
+
+### 24. Marker PDF Parsing - Complete Implementation Guide
+
+**File:** `Marker PDF Parsing - Complete Implementation Guide.md`
+
+**Purpose:** Comprehensive guide for implementing Marker PDF parsing in local RAG pipelines, covering hardware optimization, chunking strategies, vision LLM integration, and retrieval parameters
+
+**When to Use:**
+- Implementing Marker PDF parsing on resource-constrained systems (16GB RAM, CPU-only)
+- Integrating vision LLMs for figure description generation
+- Designing chunking strategies for tables and figures
+- Optimizing chunk size and retrieval k parameters for academic PDFs
+
+**Key Sections:**
+- Hardware optimization for 16GB RAM (OCR engine selection, worker configuration, memory management)
+- Vision LLM integration (Claude Haiku vs MiniCPM-V, inline description embedding)
+- Table chunking (full-table vs row-based, header repetition, academic paper considerations)
+- Figure chunking (caption + AI description + context, 84.4% page-level retrieval accuracy)
+- Chunk size recommendations (700-900 characters with semantic boundaries, NOT 1000)
+- Retrieval k parameter optimization (k=4-6 initially, RRF hybrid retrieval, cross-encoder reranking)
+
+**Implementation Status:**
+- [REFERENCE] Configuration patterns for Marker on CPU-only systems
+- [REFERENCE] Vision LLM integration workflow for figure descriptions
+- [APPLICABLE] Chunking strategies for tables and figures
+- [ALIGNED] Current chunking approach with semantic boundaries validated
+
+**Related Code:**
+- `src/preprocessing/loaders.py` - PDF loading (current PyMuPDF implementation)
+- `src/preprocessing/marker_preprocessing.ipynb` - Marker preprocessing notebook
+- Future: Enhanced Marker-based PDF processing pipeline
+
+**Notes:** Marker provides production-ready markdown with proper table formatting, LaTeX equations, and preserved document structure. Key trade-off: Marker requires careful configuration on CPU-only systems (OCRmyPDF engine, --workers 1, pre-filtering) but produces higher quality output than simpler extractors. Complements Document 10 (RAG OCR Research Papers) with practical implementation guidance.
+
+---
+
 ## Quick Reference Guide
 
 **Task** → **Recommended Document**
@@ -870,6 +972,18 @@ This directory contains compiled research documents from Perplexity.ai and other
 | Merge multi-agent outputs | Merging and Ranking in Multi-Agent RAG (Document 20) | `src/orchestration/nodes.py` |
 | Design multi-agent RAG architecture | Multi-Agent RAG Research (Document 21) | Future: Multi-agent graph variant |
 | Query decomposition patterns | Multi-Agent RAG Research (Document 21) | Future: Multi-agent graph variant |
+| Implement HyDE retrieval | HyDE RAG Implementation (Document 22) | `src/orchestration/multi_agent_graph.py` |
+| Design HyDE prompts for different domains | HyDE RAG Implementation (Document 22) | `src/retrieval/query_optimization.py` |
+| Multi-hypothesis generation for ambiguous queries | HyDE RAG Implementation (Document 22) | `src/orchestration/multi_agent_graph.py` |
+| Design LLM reranking prompts | Best Practices for LLM-as-Judge Reranking (Document 23) | `src/retrieval/retrievers.py` |
+| Balance precision vs recall in reranking | Best Practices for LLM-as-Judge Reranking (Document 23) | `src/retrieval/retrievers.py` |
+| Implement two-stage reranking pipeline | Best Practices for LLM-as-Judge Reranking (Document 23) | `src/retrieval/retrievers.py`, `src/retrieval/hybrid_reranker.py` |
+| Query-type-aware reranking criteria | Best Practices for LLM-as-Judge Reranking (Document 23) | `src/orchestration/nodes.py` |
+| Configure Marker PDF parsing | Marker PDF Parsing (Document 24) | `src/preprocessing/marker_preprocessing.ipynb` |
+| Optimize Marker for CPU-only systems | Marker PDF Parsing (Document 24) | `src/preprocessing/loaders.py` |
+| Integrate vision LLMs for figure descriptions | Marker PDF Parsing (Document 24) | Future: Vision LLM integration |
+| Design table/figure chunking strategies | Marker PDF Parsing (Document 24) | `src/preprocessing/loaders.py` |
+| Optimize chunk size and retrieval k | Marker PDF Parsing (Document 24) | `src/preprocessing/loaders.py` |
 
 ---
 
@@ -897,5 +1011,5 @@ See `../CLAUDE.md` for comprehensive links to official documentation
 
 ---
 
-*Last Updated: 2025-12-01 (Added: HHEM-2.1-Open Guide (9b) -> 22 total documents)*
+*Last Updated: 2025-12-16 (Added: HyDE RAG Implementation (22), LLM-as-Judge Reranking (23), Marker PDF Parsing (24) -> 25 total documents)*
 *Note: This guide uses ASCII-only characters per project guidelines (no emojis/unicode)*

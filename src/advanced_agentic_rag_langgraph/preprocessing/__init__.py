@@ -1,4 +1,5 @@
 """Preprocessing modules for document and query processing"""
 
-# Will be populated when modules are implemented
-__all__ = []
+from .json_chunk_loader import MarkerJSONLoader
+
+__all__ = ["MarkerJSONLoader"]

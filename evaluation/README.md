@@ -2,6 +2,26 @@
 
 This directory contains the golden datasets for offline evaluation of the Advanced Agentic RAG system.
 
+## Dataset Versions
+
+### v2 (Current) - Marker PDF Processing
+- **Files:** `golden_set_standard_v2.json`, `golden_set_hard_v2.json`
+- **Preprocessing:** [Marker](https://github.com/VikParuchuri/marker) with Google Colab GPU (OCR-capable, not required for digital-born PDFs)
+- **Chunks:** `corpus_chunks/marker_json_v2/` (1,295 text chunks from 10 documents)
+- **Chunk ID format:** `{source}_chunk_{index}` (e.g., `Attention Is All You Need.pdf_chunk_20`)
+- **Benefits:**
+  - Table extraction (~96% vs 0% with PyMuPDF)
+  - Figure extraction with Vision LLM descriptions (GPT-4o-mini)
+  - Layout-aware processing with clean markdown output
+- **Notebook:** `src/advanced_agentic_rag_langgraph/preprocessing/marker_preprocessing.ipynb`
+
+> **Note on Figures:** Figure descriptions are extracted via GPT-4o-mini vision and stored in chunk metadata. They are excluded from the default retrieval index to maintain golden set evaluation consistency. The loader supports `include_figures=True` for multimodal retrieval use cases.
+
+### v1 (Legacy) - PyMuPDF Processing
+- **Files:** `golden_set_standard.json`, `golden_set_hard.json`
+- **Preprocessing:** PyMuPDF with RecursiveCharacterTextSplitter
+- **Note:** Chunk IDs differ from v2; use v2 for current evaluations
+
 ## Two-Tier Evaluation Strategy
 
 The evaluation uses a **two-tier dataset approach** to demonstrate both baseline competence and advanced capabilities.
