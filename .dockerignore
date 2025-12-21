@@ -1,0 +1,64 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv
+venv/
+ENV/
+.eggs/
+*.egg-info/
+*.egg
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Testing
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development files
+.env
+.env.local
+.env.*.local
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Evaluation logs (keep corpus_chunks)
+evaluation/*.json
+evaluation/*.md
+evaluation/*.txt
+evaluation/test_log_*
+
+# Large files not needed in container
+*.pdf
+
+# Build artifacts
+dist/
+build/
+*.whl
+
+# Claude plans
+.claude/
+
+# References (documentation)
+references/

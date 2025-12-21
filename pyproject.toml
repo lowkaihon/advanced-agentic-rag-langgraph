@@ -23,6 +23,16 @@ dependencies = [
     "sentence-transformers>=3.0.0",
     "langgraph-cli[inmem]>=0.4.7",
     "marker-pdf>=1.10.0",
+    # API dependencies
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    # Azure dependencies (for Phase 2)
+    "azure-search-documents>=11.6.0",
+    "azure-identity>=1.19.0",
+    # Observability
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+    "opentelemetry-instrumentation-fastapi>=0.49b0",
 ]
 
 [build-system]
