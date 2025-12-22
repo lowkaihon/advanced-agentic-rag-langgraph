@@ -1,0 +1,100 @@
+# CI/CD Pipeline for Advanced Agentic RAG API
+# Builds Docker image, pushes to ACR, deploys to Azure Container Apps
+
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+
+env:
+  AZURE_RESOURCE_GROUP: rg-agentic-rag
+  ACR_NAME: agenticrag  # Will be suffixed with unique string by Bicep
+  CONTAINER_APP_NAME: aca-agenticrag-api
+  IMAGE_NAME: agenticrag
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get ACR credentials
+        id: acr
+        run: |
+          # Get ACR name (includes unique suffix)
+          ACR_FULL_NAME=$(az acr list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" -o tsv)
+          ACR_LOGIN_SERVER=$(az acr list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].loginServer" -o tsv)
+          echo "acr_name=$ACR_FULL_NAME" >> $GITHUB_OUTPUT
+          echo "acr_login_server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
+
+      - name: Login to ACR
+        uses: azure/docker-login@v2
+        with:
+          login-server: ${{ steps.acr.outputs.acr_login_server }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE_TAG=${{ github.event.inputs.image_tag || 'latest' }}
+          FULL_IMAGE=${{ steps.acr.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${IMAGE_TAG}
+
+          docker build -t ${FULL_IMAGE} .
+          docker push ${FULL_IMAGE}
+
+          # Also tag with commit SHA for traceability
+          SHA_TAG=${{ steps.acr.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker tag ${FULL_IMAGE} ${SHA_TAG}
+          docker push ${SHA_TAG}
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          containerAppName: ${{ env.CONTAINER_APP_NAME }}
+          imageToDeploy: ${{ steps.acr.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
+
+      - name: Get deployment URL
+        run: |
+          APP_URL=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "## Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "API URL: https://${APP_URL}" >> $GITHUB_STEP_SUMMARY
+          echo "Swagger UI: https://${APP_URL}/docs" >> $GITHUB_STEP_SUMMARY
+
+      - name: Health check
+        run: |
+          APP_URL=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+          # Check health endpoint
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${APP_URL}/v1/health" || echo "000")
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "Health check passed!"
+          else
+            echo "Warning: Health check returned status $HTTP_STATUS"
+            echo "The container may still be starting up. Check Azure Portal for details."
+          fi
