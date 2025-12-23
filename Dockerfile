@@ -7,8 +7,10 @@ WORKDIR /app
 # Install uv for fast dependency management
 RUN pip install --no-cache-dir uv
 
-# Copy dependency files
+# Copy dependency files and source (needed for editable install)
 COPY pyproject.toml uv.lock* ./
+COPY README.md ./
+COPY src/ ./src/
 
 # Create virtual environment and install dependencies
 # Use --no-dev to skip development dependencies
