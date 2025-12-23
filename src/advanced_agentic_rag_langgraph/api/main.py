@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     print("Initializing retriever...")
     try:
         if nodes.adaptive_retriever is None:
-            nodes.adaptive_retriever = setup_retriever(verbose=False)
+            nodes.adaptive_retriever = setup_retriever(from_marker_json=True, verbose=False)
         print("Retriever initialized successfully")
     except Exception as e:
         print(f"Warning: Failed to initialize retriever on startup: {e}")
@@ -39,9 +39,38 @@ async def lifespan(app: FastAPI):
     print("Shutting down...")
 
 
+DESCRIPTION = """
+Intelligent document retrieval and question answering using LangGraph.
+
+## Demo Corpus
+
+This demo uses **10 landmark ML/AI research papers**:
+
+| Paper | Area |
+|-------|------|
+| Attention Is All You Need | Transformer architecture |
+| BERT | NLP pre-training |
+| Vision Transformer (ViT) | Computer vision |
+| CLIP | Vision-language |
+| DALL-E 2 | Text-to-image generation |
+| U-Net | Image segmentation |
+| Denoising Diffusion Probabilistic Models | Generative models |
+| Consistency Models | Fast diffusion |
+| WGAN-GP | GAN training |
+| RAPTOR | RAG techniques |
+
+## Features
+
+- Multi-strategy retrieval (semantic/keyword/hybrid)
+- Query expansion with RRF fusion
+- Two-stage reranking (CrossEncoder + LLM)
+- HHEM hallucination detection
+- Self-correction loops with quality gates
+"""
+
 app = FastAPI(
     title="Advanced Agentic RAG API",
-    description="Intelligent document retrieval and question answering using LangGraph",
+    description=DESCRIPTION,
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -122,7 +151,7 @@ async def query_rag(request: QueryRequest):
     # Ensure retriever is initialized
     if nodes.adaptive_retriever is None:
         try:
-            nodes.adaptive_retriever = setup_retriever(verbose=False)
+            nodes.adaptive_retriever = setup_retriever(from_marker_json=True, verbose=False)
         except Exception as e:
             raise HTTPException(
                 status_code=503,
