@@ -180,7 +180,7 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/v1/ready'
                 port: 8000
               }
-              initialDelaySeconds: 60
+              initialDelaySeconds: 90  // Increased for HHEM warmup
               periodSeconds: 10
             }
           ]

@@ -22,7 +22,7 @@ import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize retriever on startup."""
+    """Initialize retriever and warmup HHEM model on startup."""
     # Startup: Initialize retriever
     print("Initializing retriever...")
     try:
@@ -32,6 +32,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Failed to initialize retriever on startup: {e}")
         print("Retriever will be initialized on first request")
+
+    # Warmup HHEM model (triggers JIT compilation, prevents timeout on first inference)
+    print("Warming up HHEM model...")
+    try:
+        nodes.hhem_detector.verify_claim_entailment("test claim", "test context")
+        print("HHEM model warmed up successfully")
+    except Exception as e:
+        print(f"Warning: HHEM warmup failed: {e}")
 
     yield
 

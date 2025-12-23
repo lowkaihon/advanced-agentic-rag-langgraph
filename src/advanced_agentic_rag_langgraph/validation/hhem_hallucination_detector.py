@@ -87,7 +87,7 @@ class HHEMHallucinationDetector:
         # HHEM format: List[Tuple[premise, hypothesis]] = List[Tuple[context, claim]]
         pairs = [(context, claim)]
 
-        with torch.no_grad():
+        with torch.inference_mode():  # Faster than no_grad() for inference
             scores = self.hhem_model.predict(pairs)
 
         # HHEM outputs single consistency score (0-1)
