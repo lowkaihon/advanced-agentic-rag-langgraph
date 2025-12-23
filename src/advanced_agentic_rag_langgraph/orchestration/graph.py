@@ -65,9 +65,10 @@ def route_after_evaluation(state: AdvancedRAGState) -> Literal["answer_generatio
         return END
 
     generation_attempts = state.get("generation_attempts", 0)
+    max_attempts = state.get("max_generation_attempts", 3)  # Default 3, API uses 2
 
-    if generation_attempts < 3:
-        print(f"\nRouting: answer_generation (attempt {generation_attempts + 1}/3)")
+    if generation_attempts < max_attempts:
+        print(f"\nRouting: answer_generation (attempt {generation_attempts + 1}/{max_attempts})")
         return "answer_generation"
     else:
         print(f"\nRouting: END (max attempts reached)")

@@ -2,11 +2,12 @@
 
 import os
 import uuid
-import io
-from contextlib import asynccontextmanager, redirect_stdout
+import json
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 from advanced_agentic_rag_langgraph.api.schemas import (
     QueryRequest,
@@ -135,18 +136,20 @@ async def get_config():
     )
 
 
-@app.post("/v1/query", response_model=QueryResponse, tags=["RAG"])
+@app.post("/v1/query", tags=["RAG"])
 async def query_rag(request: QueryRequest):
     """
-    Query the RAG system with a question.
+    Query the RAG system with a question (streaming response).
 
-    Runs the full agentic RAG pipeline including:
+    Runs the full agentic RAG pipeline with Server-Sent Events (SSE) streaming:
     - Conversational query rewriting
     - Strategy selection (semantic/keyword/hybrid)
     - Query expansion with RRF fusion
     - Two-stage reranking
     - Quality-gated answer generation
     - Hallucination detection (HHEM)
+
+    Returns SSE stream with progress events and final result.
     """
     # Ensure retriever is initialized
     if nodes.adaptive_retriever is None:
@@ -161,7 +164,7 @@ async def query_rag(request: QueryRequest):
     # Generate thread ID if not provided
     thread_id = request.thread_id or str(uuid.uuid4())
 
-    # Initial state
+    # Initial state with reduced generation attempts for API timeout
     initial_state = {
         "user_question": request.question,
         "baseline_query": request.question,
@@ -173,6 +176,7 @@ async def query_rag(request: QueryRequest):
         "retrieval_quality_score": 0.0,
         "is_answer_sufficient": False,
         "retrieval_attempts": 0,
+        "max_generation_attempts": 2,  # Reduced from 3 for API timeout
         "final_answer": "",
         "confidence_score": 0.0,
     }
@@ -180,38 +184,54 @@ async def query_rag(request: QueryRequest):
     # Config with thread
     config = {"configurable": {"thread_id": thread_id}}
 
-    try:
-        # Run graph (suppress verbose output)
-        with redirect_stdout(io.StringIO()):
+    def generate_sse():
+        """Generator for Server-Sent Events stream."""
+        try:
+            # Stream graph execution with progress events
             for step in advanced_rag_graph.stream(
                 initial_state, config=config, stream_mode="updates"
             ):
-                pass
+                # Extract node name from step
+                node_name = list(step.keys())[0] if step else "unknown"
+                # Send progress event
+                event = {"event": "progress", "node": node_name}
+                yield f"data: {json.dumps(event)}\n\n"
 
-        # Get final state
-        final_state = advanced_rag_graph.get_state(config)
-        final_values = final_state.values
+            # Get final state
+            final_state = advanced_rag_graph.get_state(config)
+            final_values = final_state.values
 
-        return QueryResponse(
-            answer=final_values.get("final_answer", "No answer generated"),
-            confidence_score=final_values.get("confidence_score", 0.0),
-            retrieval_quality_score=final_values.get("retrieval_quality_score", 0.0),
-            retrieval_attempts=final_values.get("retrieval_attempts", 0),
-            retrieval_strategy=final_values.get("retrieval_strategy", "hybrid"),
-            query_rewritten=(
-                final_values.get("active_query") != final_values.get("baseline_query")
-            ),
-            query_variations=len(final_values.get("query_expansions", [])),
-            thread_id=thread_id,
-            has_hallucination=final_values.get("has_hallucination", False),
-            unsupported_claims=final_values.get("unsupported_claims"),
-        )
+            # Build final result
+            result = {
+                "event": "complete",
+                "data": {
+                    "answer": final_values.get("final_answer", "No answer generated"),
+                    "confidence_score": final_values.get("confidence_score", 0.0),
+                    "retrieval_quality_score": final_values.get("retrieval_quality_score", 0.0),
+                    "retrieval_attempts": final_values.get("retrieval_attempts", 0),
+                    "retrieval_strategy": final_values.get("retrieval_strategy", "hybrid"),
+                    "query_rewritten": final_values.get("active_query") != final_values.get("baseline_query"),
+                    "query_variations": len(final_values.get("query_expansions", [])),
+                    "thread_id": thread_id,
+                    "has_hallucination": final_values.get("has_hallucination", False),
+                    "unsupported_claims": final_values.get("unsupported_claims"),
+                }
+            }
+            yield f"data: {json.dumps(result)}\n\n"
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing query: {str(e)}",
-        )
+        except Exception as e:
+            error_event = {"event": "error", "message": str(e)}
+            yield f"data: {json.dumps(error_event)}\n\n"
+
+    return StreamingResponse(
+        generate_sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
 
 
 # Root redirect to docs

@@ -56,7 +56,8 @@ class AdvancedRAGState(TypedDict):
     unsupported_claims: Optional[list[str]]  # Specific claims failing HHEM verification (for targeted regeneration)
 
     # === GENERATION RETRY (Unified retry handling) ===
-    generation_attempts: Optional[int]  # Generation attempt counter (max 3 total attempts = initial + 2 retries, resets per user question)
+    max_generation_attempts: Optional[int]  # Configurable limit (default: 3, API uses 2 for timeout)
+    generation_attempts: Optional[int]  # Generation attempt counter (resets per user question)
     retry_feedback: Optional[str]  # Combined groundedness + quality feedback for regeneration
     previous_answer: Optional[str]  # Previous answer for retry context (enables targeted correction)
 
