@@ -30,15 +30,18 @@ class QueryResponse(BaseModel):
     answer: str = Field(..., description="The generated answer")
     confidence_score: float = Field(..., ge=0, le=1, description="Answer confidence (0-1)")
     retrieval_quality_score: float = Field(..., ge=0, le=1, description="Retrieval quality (0-1)")
+    groundedness_score: float = Field(..., ge=0, le=1, description="HHEM groundedness score (0-1)")
     retrieval_attempts: int = Field(..., ge=0, description="Number of retrieval attempts")
+    generation_attempts: int = Field(..., ge=1, description="Number of generation attempts used")
     retrieval_strategy: str = Field(..., description="Strategy used: semantic, keyword, or hybrid")
     query_rewritten: bool = Field(..., description="Whether the query was rewritten")
-    query_variations: int = Field(..., ge=0, description="Number of query expansions used")
-    thread_id: str = Field(..., description="Thread ID for follow-up questions")
     has_hallucination: bool = Field(False, description="Whether hallucination was detected")
     unsupported_claims: Optional[list[str]] = Field(
         None, description="Claims not supported by retrieved documents"
     )
+    sources: list[str] = Field(..., description="Source document filenames")
+    top_chunks: list[str] = Field(..., description="Top retrieved chunks (truncated)")
+    processing_time_seconds: float = Field(..., ge=0, description="Total processing time in seconds")
 
 
 class HealthResponse(BaseModel):

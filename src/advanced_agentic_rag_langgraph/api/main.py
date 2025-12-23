@@ -1,13 +1,12 @@
 """FastAPI application for Advanced Agentic RAG."""
 
 import os
+import time
 import uuid
-import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
 
 from advanced_agentic_rag_langgraph.api.schemas import (
     QueryRequest,
@@ -136,20 +135,20 @@ async def get_config():
     )
 
 
-@app.post("/v1/query", tags=["RAG"])
+@app.post("/v1/query", response_model=QueryResponse, tags=["RAG"])
 async def query_rag(request: QueryRequest):
     """
-    Query the RAG system with a question (streaming response).
+    Query the RAG system with a question.
 
-    Runs the full agentic RAG pipeline with Server-Sent Events (SSE) streaming:
+    Runs the full agentic RAG pipeline:
     - Conversational query rewriting
     - Strategy selection (semantic/keyword/hybrid)
     - Query expansion with RRF fusion
-    - Two-stage reranking
-    - Quality-gated answer generation
-    - Hallucination detection (HHEM)
+    - Two-stage reranking (CrossEncoder + LLM)
+    - Quality-gated answer generation with retry
+    - HHEM hallucination detection
 
-    Returns SSE stream with progress events and final result.
+    Returns the answer along with quality metrics and source information.
     """
     # Ensure retriever is initialized
     if nodes.adaptive_retriever is None:
@@ -160,9 +159,6 @@ async def query_rag(request: QueryRequest):
                 status_code=503,
                 detail=f"Failed to initialize retriever: {str(e)}",
             )
-
-    # Generate thread ID if not provided
-    thread_id = request.thread_id or str(uuid.uuid4())
 
     # Initial state with reduced generation attempts for API timeout
     initial_state = {
@@ -181,57 +177,61 @@ async def query_rag(request: QueryRequest):
         "confidence_score": 0.0,
     }
 
-    # Config with thread
+    # Config with thread (auto-generated for checkpointing)
+    thread_id = request.thread_id or str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
 
-    def generate_sse():
-        """Generator for Server-Sent Events stream."""
-        try:
-            # Stream graph execution with progress events
-            for step in advanced_rag_graph.stream(
-                initial_state, config=config, stream_mode="updates"
-            ):
-                # Extract node name from step
-                node_name = list(step.keys())[0] if step else "unknown"
-                # Send progress event
-                event = {"event": "progress", "node": node_name}
-                yield f"data: {json.dumps(event)}\n\n"
+    try:
+        # Run graph synchronously with timing
+        start_time = time.time()
+        for _ in advanced_rag_graph.stream(
+            initial_state, config=config, stream_mode="updates"
+        ):
+            pass  # Process all steps
+        processing_time = time.time() - start_time
 
-            # Get final state
-            final_state = advanced_rag_graph.get_state(config)
-            final_values = final_state.values
+        # Get final state
+        final_state = advanced_rag_graph.get_state(config)
+        final_values = final_state.values
 
-            # Build final result
-            result = {
-                "event": "complete",
-                "data": {
-                    "answer": final_values.get("final_answer", "No answer generated"),
-                    "confidence_score": final_values.get("confidence_score", 0.0),
-                    "retrieval_quality_score": final_values.get("retrieval_quality_score", 0.0),
-                    "retrieval_attempts": final_values.get("retrieval_attempts", 0),
-                    "retrieval_strategy": final_values.get("retrieval_strategy", "hybrid"),
-                    "query_rewritten": final_values.get("active_query") != final_values.get("baseline_query"),
-                    "query_variations": len(final_values.get("query_expansions", [])),
-                    "thread_id": thread_id,
-                    "has_hallucination": final_values.get("has_hallucination", False),
-                    "unsupported_claims": final_values.get("unsupported_claims"),
-                }
-            }
-            yield f"data: {json.dumps(result)}\n\n"
+        # Extract sources and chunks from unique_docs_list
+        unique_docs = final_values.get("unique_docs_list", [])
+        sources = []
+        top_chunks = []
+        seen_sources = set()
+        for doc in unique_docs[:4]:  # Top 4 chunks
+            # Extract source filename
+            source = doc.metadata.get("source", "Unknown")
+            if source not in seen_sources:
+                sources.append(source)
+                seen_sources.add(source)
+            # Truncate chunk content
+            content = doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content
+            top_chunks.append(content)
 
-        except Exception as e:
-            error_event = {"event": "error", "message": str(e)}
-            yield f"data: {json.dumps(error_event)}\n\n"
+        return QueryResponse(
+            answer=final_values.get("final_answer", "No answer generated"),
+            confidence_score=final_values.get("confidence_score", 0.0),
+            retrieval_quality_score=final_values.get("retrieval_quality_score", 0.0),
+            groundedness_score=final_values.get("groundedness_score", 0.0),
+            retrieval_attempts=final_values.get("retrieval_attempts", 0),
+            generation_attempts=final_values.get("generation_attempts", 1),
+            retrieval_strategy=final_values.get("retrieval_strategy", "hybrid"),
+            query_rewritten=(
+                final_values.get("active_query") != final_values.get("baseline_query")
+            ),
+            has_hallucination=final_values.get("has_hallucination", False),
+            unsupported_claims=final_values.get("unsupported_claims"),
+            sources=sources,
+            top_chunks=top_chunks,
+            processing_time_seconds=round(processing_time, 2),
+        )
 
-    return StreamingResponse(
-        generate_sse(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # Disable nginx buffering
-        }
-    )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error processing query: {str(e)}",
+        )
 
 
 # Root redirect to docs
