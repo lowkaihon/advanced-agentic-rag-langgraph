@@ -35,6 +35,12 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
 ENV PYTHONUNBUFFERED=1
 
+# Prevent OpenMP/MKL deadlocks in containers (fixes HHEM hanging)
+ENV OMP_NUM_THREADS=1
+ENV MKL_NUM_THREADS=1
+ENV NUMEXPR_NUM_THREADS=1
+ENV TOKENIZERS_PARALLELISM=false
+
 # Expose port
 EXPOSE 8000
 
