@@ -143,8 +143,8 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'rag-api'
           image: '${acr.properties.loginServer}/${baseName}:${imageTag}'
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('2')
+            memory: '4Gi'
           }
           env: [
             {
