@@ -6,6 +6,7 @@ from langchain_core.messages import HumanMessage
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import torch
+import gc
 import json
 import re
 import logging
@@ -54,6 +55,12 @@ class HHEMHallucinationDetector:
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
 
+    def _cleanup_memory(self):
+        """Force garbage collection to prevent memory buildup in Azure containers."""
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     def decompose_into_claims(self, answer: str) -> List[str]:
         """Decompose answer into atomic factual claims using LLM."""
         from advanced_agentic_rag_langgraph.prompts import get_prompt
@@ -89,6 +96,9 @@ class HHEMHallucinationDetector:
 
         with torch.inference_mode():  # Faster than no_grad() for inference
             scores = self.hhem_model.predict(pairs)
+
+        # Clean up to prevent memory buildup between inferences
+        self._cleanup_memory()
 
         # HHEM outputs single consistency score (0-1)
         # Higher = more consistent with context
@@ -169,6 +179,9 @@ class HHEMHallucinationDetector:
         supported_count = sum(supported_flags)
         groundedness_score = supported_count / total_claims if total_claims > 0 else 1.0
         reasoning = f"Verified {total_claims} claims against {len(chunks)} chunks: {supported_count} supported, {len(unsupported_claims)} unsupported"
+
+        # Final cleanup after all claims processed
+        self._cleanup_memory()
 
         return {
             "claims": claims,
