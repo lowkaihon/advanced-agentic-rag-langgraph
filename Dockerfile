@@ -45,11 +45,19 @@ ENV TOKENIZERS_PARALLELISM=false
 ENV HF_HOME=/app/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 
-# Pre-download HHEM model and tokenizer at build time (bake into image)
+# Pre-download ALL HuggingFace models at build time (bake into image)
 # This avoids runtime downloads that hang in Azure Container Apps
-RUN python -c "from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
-    AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True); \
-    AutoTokenizer.from_pretrained('google/flan-t5-base')"
+# Models: HHEM (hallucination), flan-t5-base tokenizer, CrossEncoder (reranking)
+RUN python -c "\
+from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
+from sentence_transformers import CrossEncoder; \
+print('Downloading HHEM model...'); \
+AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True); \
+print('Downloading flan-t5-base tokenizer...'); \
+AutoTokenizer.from_pretrained('google/flan-t5-base'); \
+print('Downloading CrossEncoder model...'); \
+CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2'); \
+print('All models downloaded successfully')"
 
 # Force offline mode - no network calls at runtime
 ENV HF_HUB_OFFLINE=1
