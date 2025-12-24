@@ -41,6 +41,20 @@ ENV MKL_NUM_THREADS=1
 ENV NUMEXPR_NUM_THREADS=1
 ENV TOKENIZERS_PARALLELISM=false
 
+# Set HuggingFace cache to persistent location in image
+ENV HF_HOME=/app/.cache/huggingface
+ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
+
+# Pre-download HHEM model and tokenizer at build time (bake into image)
+# This avoids runtime downloads that hang in Azure Container Apps
+RUN python -c "from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
+    AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True); \
+    AutoTokenizer.from_pretrained('google/flan-t5-base')"
+
+# Force offline mode - no network calls at runtime
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+
 # Expose port
 EXPOSE 8000
 
