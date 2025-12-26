@@ -14,6 +14,13 @@ param imageTag string = 'latest'
 @secure()
 param openaiApiKey string = ''
 
+@description('Vectara API Key for HHEM hallucination detection')
+@secure()
+param vectaraApiKey string = ''
+
+@description('Vectara Customer ID for HHEM hallucination detection')
+param vectaraCustomerId string = ''
+
 @description('Model tier for the RAG system')
 @allowed(['budget', 'balanced', 'premium'])
 param modelTier string = 'budget'
@@ -135,6 +142,10 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'openai-api-key'
           value: !empty(openaiApiKey) ? openaiApiKey : 'placeholder-replace-me'
         }
+        {
+          name: 'vectara-api-key'
+          value: !empty(vectaraApiKey) ? vectaraApiKey : 'placeholder-replace-me'
+        }
       ]
     }
     template: {
@@ -150,6 +161,14 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'OPENAI_API_KEY'
               secretRef: 'openai-api-key'
+            }
+            {
+              name: 'VECTARA_API_KEY'
+              secretRef: 'vectara-api-key'
+            }
+            {
+              name: 'VECTARA_CUSTOMER_ID'
+              value: vectaraCustomerId
             }
             {
               name: 'MODEL_TIER'
@@ -180,7 +199,7 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/v1/ready'
                 port: 8000
               }
-              initialDelaySeconds: 90  // Increased for HHEM warmup
+              initialDelaySeconds: 30  // Reduced - HHEM now uses Vectara API
               periodSeconds: 10
             }
           ]

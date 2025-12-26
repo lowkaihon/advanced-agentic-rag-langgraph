@@ -1,18 +1,15 @@
-"""HHEM-2.1-Open hallucination detector: claim decomposition + per-chunk consistency verification."""
+"""HHEM hallucination detector using Vectara's managed API."""
 
 from typing import TypedDict, List
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
-import torch
-import ctypes
-import json
+import requests
+import os
 import re
 import logging
 
-# Suppress HuggingFace transformers warnings about custom model config (HHEMv2Config)
-logging.getLogger("transformers.configuration_utils").setLevel(logging.ERROR)
+logger = logging.getLogger(__name__)
 
 
 class ClaimDecomposition(TypedDict):
@@ -21,26 +18,70 @@ class ClaimDecomposition(TypedDict):
     reasoning: str
 
 
+class VectaraHHEMClient:
+    """Client for Vectara's HHEM managed API (HHEM-2.3)."""
+
+    API_URL = "https://api.vectara.io/v2/evaluate_factual_consistency"
+
+    def __init__(self, api_key: str = None, customer_id: str = None):
+        """Initialize with Vectara API key and customer ID."""
+        self.api_key = api_key or os.getenv("VECTARA_API_KEY")
+        self.customer_id = customer_id or os.getenv("VECTARA_CUSTOMER_ID")
+
+        if not self.api_key:
+            raise ValueError("VECTARA_API_KEY environment variable not set")
+        if not self.customer_id:
+            raise ValueError("VECTARA_CUSTOMER_ID environment variable not set")
+
+        self.headers = {
+            "Content-Type": "application/json",
+            "customer-id": self.customer_id,
+            "x-api-key": self.api_key
+        }
+
+    def evaluate(self, generated_text: str, source_texts: List[str]) -> dict:
+        """Evaluate factual consistency of generated text against source texts.
+
+        Args:
+            generated_text: The claim/response to evaluate
+            source_texts: List of source contexts to check against
+
+        Returns:
+            dict with score (0-1), p_consistent, p_inconsistent
+        """
+        payload = {
+            "generated_text": generated_text,
+            "source_texts": source_texts
+        }
+
+        try:
+            response = requests.post(
+                self.API_URL,
+                headers=self.headers,
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Vectara API error: {e}")
+            # Return neutral score on API failure
+            return {"score": 0.5, "p_consistent": 0.5, "p_inconsistent": 0.5}
+
+
 class HHEMHallucinationDetector:
-    """HHEM-based hallucination detector. Score 0=hallucination, 1=consistent."""
+    """HHEM-based hallucination detector using Vectara's managed API.
+
+    Score 0=hallucination, 1=consistent.
+    """
 
     def __init__(
         self,
-        hhem_model_name: str = "vectara/hallucination_evaluation_model",
         llm_model: str = None,
         entailment_threshold: float = 0.5
     ):
-        """Initialize with HHEM model, LLM for claims, and support threshold (default 0.5)."""
-        # HHEM-2.1 requires AutoModel, not CrossEncoder (shifted away from SentenceTransformers)
-        self.hhem_model = AutoModelForSequenceClassification.from_pretrained(
-            hhem_model_name,
-            trust_remote_code=True
-        )
-        self.hhem_model.eval()  # Set to evaluation mode for inference
-
-        # Tokenizer for input truncation (HHEM max sequence length is 512 tokens)
-        # HHEM uses custom config that AutoTokenizer can't map, but it's based on FLAN-T5-Base
-        self.tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+        """Initialize with Vectara API client and LLM for claim decomposition."""
+        self.vectara_client = VectaraHHEMClient()
 
         spec = get_model_for_task("hhem_claim_decomposition")
         llm_model = llm_model or spec.name
@@ -48,27 +89,12 @@ class HHEMHallucinationDetector:
         self.llm = ChatOpenAI(
             model=llm_model,
             temperature=spec.temperature,
-            max_tokens=1024,  # Safety net: prevent runaway generation
+            max_tokens=1024,
             reasoning_effort=spec.reasoning_effort,
             verbosity=spec.verbosity
         )
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
-
-    def _truncate_pair(self, claim: str, context: str) -> tuple:
-        """Truncate context to fit within HHEM's 512 token limit."""
-        MAX_TOTAL_TOKENS = 500
-
-        claim_tokens = self.tokenizer.encode(claim, add_special_tokens=False)
-        context_tokens = self.tokenizer.encode(context, add_special_tokens=False)
-
-        max_context_tokens = MAX_TOTAL_TOKENS - len(claim_tokens)
-
-        if len(context_tokens) > max_context_tokens:
-            context_tokens = context_tokens[:max_context_tokens]
-            context = self.tokenizer.decode(context_tokens, skip_special_tokens=True)
-
-        return (context, claim)
 
     def decompose_into_claims(self, answer: str) -> List[str]:
         """Decompose answer into atomic factual claims using LLM."""
@@ -81,17 +107,13 @@ class HHEMHallucinationDetector:
             return result["claims"]
         except Exception as e:
             print(f"Warning: Claim decomposition failed: {e}. Using fallback.")
-            # Fallback: Split by sentences and periods
             return [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
 
     def verify_claim_entailment(self, claim: str, context: str) -> dict:
-        """Verify single claim against context using HHEM. Auto-truncates to 512 token limit."""
-        pair = self._truncate_pair(claim, context)
+        """Verify single claim against context using Vectara HHEM API."""
+        result = self.vectara_client.evaluate(claim, [context])
 
-        with torch.inference_mode():
-            scores = self.hhem_model.predict([pair])
-
-        consistency_score = float(scores[0])
+        consistency_score = result.get("score", 0.5)
         supported = consistency_score >= self.entailment_threshold
 
         return {
@@ -102,7 +124,10 @@ class HHEMHallucinationDetector:
         }
 
     def verify_groundedness(self, answer: str, chunks: List[str]) -> dict:
-        """Verify answer groundedness via per-chunk claim verification. Returns groundedness_score."""
+        """Verify answer groundedness via claim verification against all chunks.
+
+        Key optimization: Vectara API accepts all chunks in one call per claim.
+        """
         if not answer or not chunks:
             return {
                 "claims": [],
@@ -127,43 +152,27 @@ class HHEMHallucinationDetector:
                 "reasoning": "No claims extracted from answer"
             }
 
-        # Build all (context, claim) pairs for batch inference
-        all_pairs = []
-        for claim in claims:
-            for chunk in chunks:
-                truncated_pair = self._truncate_pair(claim, chunk)
-                all_pairs.append(truncated_pair)
-
-        # SINGLE batch inference call (was N claims x M chunks individual calls)
-        with torch.inference_mode():
-            all_scores = self.hhem_model.predict(all_pairs)
-
-        # Reconstruct per-claim results from batch scores
-        num_chunks = len(chunks)
         claim_details = []
         entailment_scores = []
         supported_flags = []
         unsupported_claims = []
 
-        for claim_idx, claim in enumerate(claims):
-            # Extract scores for this claim (consecutive in batch)
-            start_idx = claim_idx * num_chunks
-            chunk_scores = [float(all_scores[start_idx + i]) for i in range(num_chunks)]
-
-            max_score = max(chunk_scores)
-            best_chunk_idx = chunk_scores.index(max_score)
-            supported = max_score >= self.entailment_threshold
+        for claim in claims:
+            # Vectara API accepts all chunks at once - no need to loop
+            result = self.vectara_client.evaluate(claim, chunks)
+            score = result.get("score", 0.5)
+            supported = score >= self.entailment_threshold
 
             claim_details.append({
                 "claim": claim,
-                "entailment_score": max_score,
+                "entailment_score": score,
                 "label": "supported" if supported else "unsupported",
                 "supported": supported,
-                "best_chunk_idx": best_chunk_idx,
-                "chunk_scores": chunk_scores
+                "best_chunk_idx": 0,  # API doesn't return which chunk matched
+                "chunk_scores": [score]  # Single aggregated score from API
             })
 
-            entailment_scores.append(max_score)
+            entailment_scores.append(score)
             supported_flags.append(supported)
 
             if not supported:
@@ -173,13 +182,6 @@ class HHEMHallucinationDetector:
         supported_count = sum(supported_flags)
         groundedness_score = supported_count / total_claims if total_claims > 0 else 1.0
         reasoning = f"Verified {total_claims} claims against {len(chunks)} chunks: {supported_count} supported, {len(unsupported_claims)} unsupported"
-
-        # Release memory to OS (glibc malloc_trim) - fixes Azure hang on 2nd evaluation
-        try:
-            libc = ctypes.CDLL("libc.so.6")
-            libc.malloc_trim(0)
-        except OSError:
-            pass  # Windows/non-glibc systems
 
         return {
             "claims": claims,
