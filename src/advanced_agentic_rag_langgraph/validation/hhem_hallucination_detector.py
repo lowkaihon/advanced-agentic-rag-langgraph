@@ -55,6 +55,21 @@ class HHEMHallucinationDetector:
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
 
+    def _truncate_pair(self, claim: str, context: str) -> tuple:
+        """Truncate context to fit within HHEM's 512 token limit."""
+        MAX_TOTAL_TOKENS = 500
+
+        claim_tokens = self.tokenizer.encode(claim, add_special_tokens=False)
+        context_tokens = self.tokenizer.encode(context, add_special_tokens=False)
+
+        max_context_tokens = MAX_TOTAL_TOKENS - len(claim_tokens)
+
+        if len(context_tokens) > max_context_tokens:
+            context_tokens = context_tokens[:max_context_tokens]
+            context = self.tokenizer.decode(context_tokens, skip_special_tokens=True)
+
+        return (context, claim)
+
     def decompose_into_claims(self, answer: str) -> List[str]:
         """Decompose answer into atomic factual claims using LLM."""
         from advanced_agentic_rag_langgraph.prompts import get_prompt
@@ -70,34 +85,17 @@ class HHEMHallucinationDetector:
             return [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
 
     def verify_claim_entailment(self, claim: str, context: str) -> dict:
-        """Verify claim against context using HHEM. Auto-truncates to 512 token limit."""
-        # Token budget: 512 max - 5 special tokens ([CLS], [SEP], etc) - 7 safety margin = 500
-        MAX_TOTAL_TOKENS = 500
+        """Verify single claim against context using HHEM. Auto-truncates to 512 token limit."""
+        pair = self._truncate_pair(claim, context)
 
-        # Tokenize to count tokens
-        claim_tokens = self.tokenizer.encode(claim, add_special_tokens=False)
-        context_tokens = self.tokenizer.encode(context, add_special_tokens=False)
+        with torch.inference_mode():
+            scores = self.hhem_model.predict([pair])
 
-        # Calculate max context tokens (prioritize claim, truncate context if needed)
-        max_context_tokens = MAX_TOTAL_TOKENS - len(claim_tokens)
-
-        if len(context_tokens) > max_context_tokens:
-            context_tokens = context_tokens[:max_context_tokens]
-            context = self.tokenizer.decode(context_tokens, skip_special_tokens=True)
-
-        # HHEM format: List[Tuple[premise, hypothesis]] = List[Tuple[context, claim]]
-        pairs = [(context, claim)]
-
-        with torch.inference_mode():  # Faster than no_grad() for inference
-            scores = self.hhem_model.predict(pairs)
-
-        # HHEM outputs single consistency score (0-1)
-        # Higher = more consistent with context
         consistency_score = float(scores[0])
         supported = consistency_score >= self.entailment_threshold
 
         return {
-            "entailment_score": consistency_score,  # Keep key for compatibility
+            "entailment_score": consistency_score,
             "consistency_score": consistency_score,
             "label": "supported" if supported else "unsupported",
             "supported": supported
@@ -129,26 +127,31 @@ class HHEMHallucinationDetector:
                 "reasoning": "No claims extracted from answer"
             }
 
+        # Build all (context, claim) pairs for batch inference
+        all_pairs = []
+        for claim in claims:
+            for chunk in chunks:
+                truncated_pair = self._truncate_pair(claim, chunk)
+                all_pairs.append(truncated_pair)
+
+        # SINGLE batch inference call (was N claims x M chunks individual calls)
+        with torch.inference_mode():
+            all_scores = self.hhem_model.predict(all_pairs)
+
+        # Reconstruct per-claim results from batch scores
+        num_chunks = len(chunks)
         claim_details = []
         entailment_scores = []
         supported_flags = []
         unsupported_claims = []
 
-        for claim in claims:
-            # Per-chunk verification: check claim against each chunk, take max score
-            chunk_scores = []
-            best_chunk_idx = 0
-            best_score = 0.0
+        for claim_idx, claim in enumerate(claims):
+            # Extract scores for this claim (consecutive in batch)
+            start_idx = claim_idx * num_chunks
+            chunk_scores = [float(all_scores[start_idx + i]) for i in range(num_chunks)]
 
-            for idx, chunk in enumerate(chunks):
-                verification = self.verify_claim_entailment(claim, chunk)
-                score = verification["consistency_score"]
-                chunk_scores.append(score)
-                if score > best_score:
-                    best_score = score
-                    best_chunk_idx = idx
-
-            max_score = max(chunk_scores) if chunk_scores else 0.0
+            max_score = max(chunk_scores)
+            best_chunk_idx = chunk_scores.index(max_score)
             supported = max_score >= self.entailment_threshold
 
             claim_details.append({
