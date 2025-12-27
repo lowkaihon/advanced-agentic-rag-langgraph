@@ -13,6 +13,9 @@
     },
     "modelTier": {
       "value": "budget"
+    },
+    "hhemBackend": {
+      "value": "vectara"
     }
   }
 }

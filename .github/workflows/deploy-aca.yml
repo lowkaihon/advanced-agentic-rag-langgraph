@@ -69,6 +69,20 @@ jobs:
           containerAppName: ${{ env.CONTAINER_APP_NAME }}
           imageToDeploy: ${{ steps.acr.outputs.acr_login_server }}/${{ env.IMAGE_NAME }}:${{ github.event.inputs.image_tag || 'latest' }}
 
+      - name: Update Container App Configuration
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --set-env-vars \
+              HHEM_BACKEND=vectara \
+              VECTARA_CUSTOMER_ID="${{ secrets.VECTARA_CUSTOMER_ID }}" \
+              MODEL_TIER=budget \
+            --secrets \
+              vectara-api-key="${{ secrets.VECTARA_API_KEY }}" \
+            --replace-env-vars \
+              VECTARA_API_KEY=secretref:vectara-api-key
+
       - name: Get deployment URL
         run: |
           APP_URL=$(az containerapp show \
