@@ -1,10 +1,14 @@
-"""HHEM hallucination detector using Vectara's managed API."""
+"""HHEM hallucination detector with pluggable backends (local model or Vectara API).
 
-from typing import TypedDict, List
+Backend selection via HHEM_BACKEND environment variable:
+- HHEM_BACKEND=local (default): Local HuggingFace model, works forever, no API keys needed
+- HHEM_BACKEND=vectara: Vectara managed API (HHEM-2.3), faster, requires API credentials
+"""
+
+from typing import TypedDict, List, Protocol
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-import requests
 import os
 import re
 import logging
@@ -18,13 +22,100 @@ class ClaimDecomposition(TypedDict):
     reasoning: str
 
 
-class VectaraHHEMClient:
-    """Client for Vectara's HHEM managed API (HHEM-2.3)."""
+class HHEMBackend(Protocol):
+    """Protocol for HHEM backend implementations."""
 
+    def evaluate_claim(self, claim: str, contexts: List[str]) -> float:
+        """Evaluate claim against contexts, return consistency score 0-1."""
+        ...
+
+
+class LocalHHEMBackend:
+    """Local HHEM-2.1-Open backend using HuggingFace transformers.
+
+    Works forever without API keys. Uses batch inference for efficiency.
+    """
+
+    display_name = "HHEM-2.1-Open (local)"
+
+    def __init__(self, model_name: str = "vectara/hallucination_evaluation_model"):
+        """Initialize local HHEM model with batch inference."""
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        import torch
+        import ctypes
+
+        # Suppress HuggingFace transformers warnings about custom model config (HHEMv2Config)
+        logging.getLogger("transformers.configuration_utils").setLevel(logging.ERROR)
+
+        self.hhem_model = AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            trust_remote_code=True
+        )
+        self.hhem_model.eval()
+
+        # Tokenizer for input truncation (HHEM max sequence length is 512 tokens)
+        # HHEM uses custom config, but it's based on FLAN-T5-Base
+        self.tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+        self.torch = torch
+        self.ctypes = ctypes
+
+    def _truncate_pair(self, claim: str, context: str) -> tuple:
+        """Truncate context to fit within HHEM's 512 token limit."""
+        MAX_TOTAL_TOKENS = 500
+
+        claim_tokens = self.tokenizer.encode(claim, add_special_tokens=False)
+        context_tokens = self.tokenizer.encode(context, add_special_tokens=False)
+
+        max_context_tokens = MAX_TOTAL_TOKENS - len(claim_tokens)
+
+        if len(context_tokens) > max_context_tokens:
+            context_tokens = context_tokens[:max_context_tokens]
+            context = self.tokenizer.decode(context_tokens, skip_special_tokens=True)
+
+        return (context, claim)
+
+    def evaluate_claim(self, claim: str, contexts: List[str]) -> float:
+        """Evaluate claim against all contexts, return max consistency score.
+
+        Uses batch inference for efficiency.
+        """
+        if not contexts:
+            return 0.5
+
+        # Build all (context, claim) pairs for batch inference
+        all_pairs = [self._truncate_pair(claim, ctx) for ctx in contexts]
+
+        # Single batch inference call
+        with self.torch.inference_mode():
+            scores = self.hhem_model.predict(all_pairs)
+
+        # Return max score across all contexts
+        max_score = max(float(s) for s in scores)
+
+        # Release memory to OS (glibc malloc_trim) - fixes Azure hang on 2nd evaluation
+        try:
+            libc = self.ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+        except OSError:
+            pass  # Windows/non-glibc systems
+
+        return max_score
+
+
+class VectaraHHEMBackend:
+    """Vectara managed HHEM-2.3 API backend.
+
+    Faster, zero memory footprint, but requires API credentials and has usage limits.
+    """
+
+    display_name = "HHEM-2.3 (API)"
     API_URL = "https://api.vectara.io/v2/evaluate_factual_consistency"
 
     def __init__(self, api_key: str = None, customer_id: str = None):
-        """Initialize with Vectara API key and customer ID."""
+        """Initialize with Vectara API credentials."""
+        import requests
+
+        self.requests = requests
         self.api_key = api_key or os.getenv("VECTARA_API_KEY")
         self.customer_id = customer_id or os.getenv("VECTARA_CUSTOMER_ID")
 
@@ -39,49 +130,77 @@ class VectaraHHEMClient:
             "x-api-key": self.api_key
         }
 
-    def evaluate(self, generated_text: str, source_texts: List[str]) -> dict:
-        """Evaluate factual consistency of generated text against source texts.
+    def evaluate_claim(self, claim: str, contexts: List[str]) -> float:
+        """Evaluate claim against all contexts using Vectara API.
 
-        Args:
-            generated_text: The claim/response to evaluate
-            source_texts: List of source contexts to check against
-
-        Returns:
-            dict with score (0-1), p_consistent, p_inconsistent
+        API accepts all contexts in one call (efficient).
         """
+        if not contexts:
+            return 0.5
+
         payload = {
-            "generated_text": generated_text,
-            "source_texts": source_texts
+            "generated_text": claim,
+            "source_texts": contexts
         }
 
         try:
-            response = requests.post(
+            response = self.requests.post(
                 self.API_URL,
                 headers=self.headers,
                 json=payload,
                 timeout=30
             )
             response.raise_for_status()
-            return response.json()
-        except requests.exceptions.RequestException as e:
+            result = response.json()
+            return result.get("score", 0.5)
+        except self.requests.exceptions.RequestException as e:
             logger.error(f"Vectara API error: {e}")
-            # Return neutral score on API failure
-            return {"score": 0.5, "p_consistent": 0.5, "p_inconsistent": 0.5}
+            return 0.5  # Neutral score on API failure
+
+
+def create_hhem_backend() -> HHEMBackend:
+    """Factory function to create HHEM backend based on HHEM_BACKEND env var.
+
+    Returns:
+        LocalHHEMBackend if HHEM_BACKEND=local (default)
+        VectaraHHEMBackend if HHEM_BACKEND=vectara
+    """
+    backend_type = os.getenv("HHEM_BACKEND", "local").lower()
+
+    if backend_type == "vectara":
+        backend = VectaraHHEMBackend()
+        print(f"Using Vectara HHEM API backend (HHEM-2.3)")
+        return backend
+    else:
+        backend = LocalHHEMBackend()
+        print(f"Using local HHEM backend (HHEM-2.1-Open)")
+        return backend
 
 
 class HHEMHallucinationDetector:
-    """HHEM-based hallucination detector using Vectara's managed API.
+    """HHEM-based hallucination detector with pluggable backends.
 
     Score 0=hallucination, 1=consistent.
+
+    Backend selection via HHEM_BACKEND environment variable:
+    - local (default): HuggingFace model, works forever
+    - vectara: Managed API, faster but requires credentials
     """
 
     def __init__(
         self,
         llm_model: str = None,
-        entailment_threshold: float = 0.5
+        entailment_threshold: float = 0.5,
+        backend: HHEMBackend = None
     ):
-        """Initialize with Vectara API client and LLM for claim decomposition."""
-        self.vectara_client = VectaraHHEMClient()
+        """Initialize with HHEM backend and LLM for claim decomposition.
+
+        Args:
+            llm_model: Model for claim decomposition (default from model_config)
+            entailment_threshold: Score threshold for claim support (default 0.5)
+            backend: HHEM backend instance (default from create_hhem_backend())
+        """
+        self.backend = backend or create_hhem_backend()
 
         spec = get_model_for_task("hhem_claim_decomposition")
         llm_model = llm_model or spec.name
@@ -95,6 +214,11 @@ class HHEMHallucinationDetector:
         )
         self.structured_llm = self.llm.with_structured_output(ClaimDecomposition)
         self.entailment_threshold = entailment_threshold
+
+    @property
+    def backend_display_name(self) -> str:
+        """Get user-friendly backend name for logging."""
+        return getattr(self.backend, 'display_name', type(self.backend).__name__)
 
     def decompose_into_claims(self, answer: str) -> List[str]:
         """Decompose answer into atomic factual claims using LLM."""
@@ -110,10 +234,8 @@ class HHEMHallucinationDetector:
             return [s.strip() for s in re.split(r'[.!?]+', answer) if s.strip()]
 
     def verify_claim_entailment(self, claim: str, context: str) -> dict:
-        """Verify single claim against context using Vectara HHEM API."""
-        result = self.vectara_client.evaluate(claim, [context])
-
-        consistency_score = result.get("score", 0.5)
+        """Verify single claim against context using HHEM backend."""
+        consistency_score = self.backend.evaluate_claim(claim, [context])
         supported = consistency_score >= self.entailment_threshold
 
         return {
@@ -126,7 +248,9 @@ class HHEMHallucinationDetector:
     def verify_groundedness(self, answer: str, chunks: List[str]) -> dict:
         """Verify answer groundedness via claim verification against all chunks.
 
-        Key optimization: Vectara API accepts all chunks in one call per claim.
+        Both backends optimize multi-context evaluation:
+        - Local: Batch inference (all claim-context pairs in one call)
+        - Vectara: API accepts all contexts in one request per claim
         """
         if not answer or not chunks:
             return {
@@ -158,9 +282,8 @@ class HHEMHallucinationDetector:
         unsupported_claims = []
 
         for claim in claims:
-            # Vectara API accepts all chunks at once - no need to loop
-            result = self.vectara_client.evaluate(claim, chunks)
-            score = result.get("score", 0.5)
+            # Backend handles multi-context evaluation efficiently
+            score = self.backend.evaluate_claim(claim, chunks)
             supported = score >= self.entailment_threshold
 
             claim_details.append({
@@ -168,8 +291,8 @@ class HHEMHallucinationDetector:
                 "entailment_score": score,
                 "label": "supported" if supported else "unsupported",
                 "supported": supported,
-                "best_chunk_idx": 0,  # API doesn't return which chunk matched
-                "chunk_scores": [score]  # Single aggregated score from API
+                "best_chunk_idx": 0,  # Backend abstraction doesn't expose per-chunk scores
+                "chunk_scores": [score]  # Aggregated score
             })
 
             entailment_scores.append(score)

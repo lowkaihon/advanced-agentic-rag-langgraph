@@ -25,6 +25,14 @@ conversational_rewriter = ConversationalRewriter()
 strategy_selector = StrategySelector()
 hhem_detector = HHEMHallucinationDetector()
 
+# Print HHEM backend info at module load
+print(f"\n{'='*60}")
+print(f"HHEM HALLUCINATION DETECTOR INITIALIZED")
+print(f"Backend: {hhem_detector.backend_display_name}")
+backend_mode = "Offline, no API keys required" if "local" in hhem_detector.backend_display_name.lower() else "Online, faster inference (~200-500ms)"
+print(f"Mode: {backend_mode}")
+print(f"{'='*60}\n")
+
 
 # ============ STRUCTURED OUTPUT SCHEMAS ============
 
@@ -754,7 +762,7 @@ Return:
     groundedness_score = groundedness_result.get("groundedness_score", 1.0)
     has_hallucination = groundedness_score < 0.8
     unsupported_claims = groundedness_result.get("unsupported_claims", [])
-    print(f"Groundedness: {groundedness_score:.0%}")
+    print(f"Groundedness: {groundedness_score:.0%} ({hhem_detector.backend_display_name})")
 
     # ==== 3. QUALITY CHECK (LLM-as-judge) ====
 

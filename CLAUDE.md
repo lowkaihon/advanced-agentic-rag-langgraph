@@ -53,7 +53,7 @@ This system demonstrates advanced RAG patterns that remain stable across impleme
 
 **Evaluation & Quality Assurance**
 - Two-stage reranking (applied after RRF fusion): CrossEncoder (stage 1, top-10) → LLM-as-judge (stage 2, top-4)
-- HHEM-based hallucination detection: Claim decomposition → vectara/hallucination_evaluation_model (HHEM-2.1-Open) verification → hallucination feedback lists specific unsupported claims for targeted regeneration
+- HHEM-based hallucination detection with pluggable backends: Claim decomposition → HHEM verification (local: HHEM-2.1-Open model, vectara: HHEM-2.3 managed API) → hallucination feedback lists specific unsupported claims for targeted regeneration. Default local backend works forever without API keys; Vectara backend faster (~200-500ms) but requires credentials.
 - Comprehensive metrics: F1@K, Precision@K, Recall@K, MRR, nDCG
 - Golden datasets: 30 validated examples across 2 datasets (Standard: 20, Hard: 10) with graded relevance (0-3 scale)
 - Retrieval quality evaluation: Issue-specific detection (missing_key_info, partial_coverage, incomplete_context, wrong_domain, off_topic)
@@ -93,8 +93,14 @@ This project uses **uv** for dependency management. Do not use pip or conda.
 ### Setup
 ```bash
 uv sync                              # Install/sync all dependencies
-cp .env.example .env                 # Create environment file (add OPENAI_API_KEY + MODEL_TIER)
+cp .env.example .env                 # Create environment file (add OPENAI_API_KEY + MODEL_TIER + HHEM_BACKEND)
 ```
+
+**HHEM Backend Selection**: The system supports two backends for hallucination detection:
+- `HHEM_BACKEND=local` (default): Local HuggingFace model (HHEM-2.1-Open), works forever, no API keys needed
+- `HHEM_BACKEND=vectara`: Vectara managed API (HHEM-2.3), faster (~200-500ms), requires `VECTARA_API_KEY` and `VECTARA_CUSTOMER_ID`
+
+For portfolio demos, use `local` backend. For Azure production, use `vectara` backend (faster, avoids timeout issues).
 
 ### Python Cache Management
 

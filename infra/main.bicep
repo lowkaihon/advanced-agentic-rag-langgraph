@@ -14,12 +14,16 @@ param imageTag string = 'latest'
 @secure()
 param openaiApiKey string = ''
 
-@description('Vectara API Key for HHEM hallucination detection')
+@description('Vectara API Key for HHEM hallucination detection (Vectara backend)')
 @secure()
 param vectaraApiKey string = ''
 
-@description('Vectara Customer ID for HHEM hallucination detection')
+@description('Vectara Customer ID for HHEM hallucination detection (Vectara backend)')
 param vectaraCustomerId string = ''
+
+@description('HHEM backend: local (HuggingFace model) or vectara (managed API)')
+@allowed(['local', 'vectara'])
+param hhemBackend string = 'vectara'
 
 @description('Model tier for the RAG system')
 @allowed(['budget', 'balanced', 'premium'])
@@ -171,6 +175,10 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
               value: vectaraCustomerId
             }
             {
+              name: 'HHEM_BACKEND'
+              value: hhemBackend
+            }
+            {
               name: 'MODEL_TIER'
               value: modelTier
             }
@@ -199,7 +207,7 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
                 path: '/v1/ready'
                 port: 8000
               }
-              initialDelaySeconds: 30  // Reduced - HHEM now uses Vectara API
+              initialDelaySeconds: 90  // Increased for HHEM local model warmup (default: vectara needs 30s)
               periodSeconds: 10
             }
           ]

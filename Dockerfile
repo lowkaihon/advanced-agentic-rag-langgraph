@@ -35,7 +35,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH="/app/src"
 ENV PYTHONUNBUFFERED=1
 
-# Prevent OpenMP/MKL deadlocks in containers
+# Prevent OpenMP/MKL deadlocks in containers (fixes HHEM local backend hanging)
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
 ENV NUMEXPR_NUM_THREADS=1
@@ -45,13 +45,19 @@ ENV TOKENIZERS_PARALLELISM=false
 ENV HF_HOME=/app/.cache/huggingface
 ENV TRANSFORMERS_CACHE=/app/.cache/huggingface
 
-# Pre-download CrossEncoder model at build time (for reranking)
-# HHEM now uses Vectara managed API - no local model needed
+# Pre-download HuggingFace models at build time (baked into image)
+# HHEM: Local backend (default) for hallucination detection
+# CrossEncoder: Reranking (always needed)
 RUN python -c "\
+from transformers import AutoModelForSequenceClassification, AutoTokenizer; \
 from sentence_transformers import CrossEncoder; \
+print('Downloading HHEM model for local backend...'); \
+AutoModelForSequenceClassification.from_pretrained('vectara/hallucination_evaluation_model', trust_remote_code=True); \
+print('Downloading flan-t5-base tokenizer...'); \
+AutoTokenizer.from_pretrained('google/flan-t5-base'); \
 print('Downloading CrossEncoder model...'); \
 CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2'); \
-print('CrossEncoder model downloaded successfully')"
+print('All models downloaded successfully')"
 
 # Force offline mode for HuggingFace - no runtime downloads
 ENV HF_HUB_OFFLINE=1
