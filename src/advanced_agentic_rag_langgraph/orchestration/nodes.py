@@ -764,7 +764,36 @@ Return:
     unsupported_claims = groundedness_result.get("unsupported_claims", [])
     print(f"Groundedness: {groundedness_score:.0%} ({hhem_detector.backend_display_name})")
 
+    # EARLY EXIT: Skip quality check if hallucination detected (efficiency optimization)
+    if has_hallucination:
+        print(f"Hallucination detected - skipping quality check (efficiency optimization)")
+        print(f"{'='*60}\n")
+
+        retry_feedback = (
+            f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
+            f"Unsupported claims: {', '.join(unsupported_claims)}\n\n"
+            f"Fix: ONLY state facts explicitly in retrieved context. "
+            f"If information is missing, acknowledge the limitation rather than "
+            f"adding unsupported details."
+        )
+
+        return {
+            "is_answer_sufficient": False,
+            "groundedness_score": groundedness_score,
+            "has_hallucination": True,
+            "unsupported_claims": unsupported_claims,
+            "retry_feedback": retry_feedback,
+            "previous_answer": answer,
+            "is_refusal": False,
+            # Quality fields: None (not evaluated)
+            "confidence_score": None,
+            "answer_quality_reasoning": "Skipped (hallucination detected)",
+            "answer_quality_issues": [],
+            "messages": [AIMessage(content=f"Hallucination: {groundedness_score:.0%} grounded, quality check skipped")],
+        }
+
     # ==== 3. QUALITY CHECK (LLM-as-judge) ====
+    # Only executes when no hallucination detected
 
     retrieval_quality_issues = state.get("retrieval_quality_issues", [])
     has_missing_info = any(issue in retrieval_quality_issues for issue in ["partial_coverage", "missing_key_info", "incomplete_context"])
@@ -822,28 +851,20 @@ Return:
         print(f"Issues: {', '.join(quality_issues)}")
 
     # ==== 4. COMBINED DECISION ====
+    # Note: If hallucination was detected, we already returned early (line 768)
+    # So at this point, has_hallucination is guaranteed to be False
 
-    has_issues = has_hallucination or not is_quality_sufficient
+    has_issues = not is_quality_sufficient
 
-    # Build unified feedback for retry - PRIORITIZE groundedness over quality
-    retry_feedback_parts = []
-    if has_hallucination:
-        # Hallucination detected: Only give grounding feedback (ignore quality issues)
-        # Rationale: Quality can't improve until grounding is fixed; mixed feedback is contradictory
-        retry_feedback_parts.append(
-            f"HALLUCINATION DETECTED ({groundedness_score:.0%} grounded):\n"
-            f"Unsupported claims: {', '.join(unsupported_claims)}\n"
-            f"Fix: ONLY state facts explicitly in retrieved context. If information is missing, acknowledge the limitation rather than adding unsupported details."
-        )
-    elif not is_quality_sufficient:
+    # Build feedback for quality issues (hallucination case handled by early return)
+    retry_feedback = ""
+    if not is_quality_sufficient:
         # No hallucination, but quality issues: Safe to push for improvements
-        retry_feedback_parts.append(
+        retry_feedback = (
             f"QUALITY ISSUES:\n"
             f"Problems: {', '.join(quality_issues)}\n"
             f"Fix: {get_quality_fix_guidance(quality_issues)}"
         )
-
-    retry_feedback = "\n\n".join(retry_feedback_parts) if retry_feedback_parts else ""
 
     print(f"Combined decision: {'RETRY' if has_issues else 'SUFFICIENT'}")
     print(f"{'='*60}\n")
@@ -851,8 +872,8 @@ Return:
     return {
         "is_answer_sufficient": not has_issues,
         "groundedness_score": groundedness_score,
-        "has_hallucination": has_hallucination,
-        "unsupported_claims": unsupported_claims,
+        "has_hallucination": False,  # Always False here (early exit handles True case)
+        "unsupported_claims": [],  # No unsupported claims if no hallucination
         "confidence_score": confidence,
         "answer_quality_reasoning": reasoning,
         "answer_quality_issues": quality_issues,

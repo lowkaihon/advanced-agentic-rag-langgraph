@@ -75,7 +75,7 @@ The system autonomously plans next steps based on intermediate results:
 - **PreQRAG**: Strategy-specific query optimization (13-14% MRR improvement)
 - **RAG-Fusion**: Multi-query retrieval with RRF ranking fusion (3-5% MRR improvement)
 - **vRAG-Eval**: Answer quality evaluation with adaptive thresholds (65%/50% based on retrieval quality)
-- **Hallucination Detection**: Claim decomposition + HHEM-2.1-Open verification (outperforms GPT-4)
+- **Hallucination Detection**: Claim decomposition + HHEM verification with pluggable backends (local HHEM-2.1-Open or Vectara HHEM-2.3 API)
 
 ## Architecture Overview
 
@@ -155,9 +155,11 @@ The Advanced tier implements 17 features across retrieval, generation, and evalu
 <details>
 <summary><strong>HHEM-Based Hallucination Detection</strong></summary>
 
+- Pluggable backend architecture: Local HuggingFace model (HHEM-2.1-Open) or Vectara managed API (HHEM-2.3)
 - Claim decomposition: LLM extracts individual claims from answers
-- HHEM verification: vectara/hallucination_evaluation_model (HHEM-2.1-Open) validates each claim
-- Groundedness threshold: 0.5 (unsupported claims trigger regeneration)
+- HHEM verification: Each claim validated against retrieved contexts
+- Groundedness threshold: 0.8 (scores below 80% trigger regeneration)
+- Backend selection via HHEM_BACKEND environment variable (local/vectara)
 </details>
 
 <details>
@@ -230,7 +232,7 @@ MODEL_TIER=premium   # Maximum quality
 - **LLMs**: OpenAI GPT-4o-mini/GPT-5-mini/GPT-5.1/GPT-5-nano (configurable)
 - **PDF Processing**: Marker (layout-aware, table/figure extraction, OCR-capable)
 - **Reranking**: sentence-transformers (CrossEncoder)
-- **Hallucination Detection**: HHEM-2.1-Open (vectara/hallucination_evaluation_model)
+- **Hallucination Detection**: HHEM-2.1-Open (local) or HHEM-2.3 (Vectara API, deployed)
 - **Package Manager**: uv
 
 ## Evaluation
