@@ -192,7 +192,7 @@ def conversational_rewrite_node(state: dict) -> dict:
 
         # Reset output state
         "final_answer": None,
-        "confidence_score": None,
+        "confidence_score": 0.0,
     }
 
 # ============ QUERY OPTIMIZATION STAGE ============
@@ -785,8 +785,8 @@ Return:
             "retry_feedback": retry_feedback,
             "previous_answer": answer,
             "is_refusal": False,
-            # Quality fields: None (not evaluated)
-            "confidence_score": None,
+            # Quality fields: 0.0 (not evaluated, hallucination detected)
+            "confidence_score": 0.0,
             "answer_quality_reasoning": "Skipped (hallucination detected)",
             "answer_quality_issues": [],
             "messages": [AIMessage(content=f"Hallucination: {groundedness_score:.0%} grounded, quality check skipped")],
@@ -831,7 +831,7 @@ Return:
             "is_relevant": True,
             "is_complete": False,
             "is_accurate": True,
-            "confidence_score": 50,
+            "confidence_score": 50.0,
             "reasoning": f"Evaluation failed: {e}",
             "issues": ["evaluation_error"]
         }

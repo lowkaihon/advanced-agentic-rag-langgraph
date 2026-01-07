@@ -219,9 +219,9 @@ async def query_rag(request: QueryRequest):
 
         return QueryResponse(
             answer=final_values.get("final_answer", "No answer generated"),
-            confidence_score=final_values.get("confidence_score", 0.0),
-            retrieval_quality_score=final_values.get("retrieval_quality_score", 0.0),
-            groundedness_score=final_values.get("groundedness_score", 0.0),
+            confidence_score=final_values.get("confidence_score") or 0.0,
+            retrieval_quality_score=final_values.get("retrieval_quality_score") or 0.0,
+            groundedness_score=final_values.get("groundedness_score") or 0.0,
             retrieval_attempts=final_values.get("retrieval_attempts", 0),
             generation_attempts=final_values.get("generation_attempts", 1),
             retrieval_strategy=final_values.get("retrieval_strategy", "hybrid"),
