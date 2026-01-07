@@ -16,7 +16,7 @@ class QueryRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "question": "What is multi-head attention and how does it work?",
+                    "question": "What is attention mechanism?",
                     "thread_id": None,
                 }
             ]
