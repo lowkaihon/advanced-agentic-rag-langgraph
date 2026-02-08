@@ -1,5 +1,5 @@
 // Azure Infrastructure for Advanced Agentic RAG API
-// Deploys: Log Analytics, App Insights, ACR, Key Vault, ACA Environment, ACA App
+// Deploys: Log Analytics, App Insights, ACR, Key Vault, Redis Cache (optional), ACA Environment, ACA App
 
 @description('Location for all resources')
 param location string = resourceGroup().location
@@ -29,6 +29,15 @@ param hhemBackend string = 'vectara'
 @allowed(['budget', 'balanced', 'premium'])
 param modelTier string = 'budget'
 
+@description('Enable Redis semantic cache for query-level caching')
+param cacheEnabled bool = false
+
+@description('Cache similarity threshold (0-1)')
+param cacheSimilarityThreshold string = '0.95'
+
+@description('Corpus version for cache namespacing')
+param corpusVersion string = 'v1'
+
 // Resource naming
 var uniqueSuffix = uniqueString(resourceGroup().id)
 var acrName = '${baseName}${uniqueSuffix}'
@@ -37,6 +46,7 @@ var logAnalyticsName = 'log-${baseName}'
 var appInsightsName = 'appi-${baseName}'
 var acaEnvName = 'acaenv-${baseName}'
 var acaAppName = 'aca-${baseName}-api'
+var redisName = 'redis-${baseName}-${take(uniqueSuffix, 8)}'
 
 // Log Analytics Workspace (required by ACA)
 resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
@@ -98,6 +108,22 @@ resource openaiSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empt
   }
 }
 
+// Azure Cache for Redis (Basic C0 - cost effective for portfolio)
+resource redisCache 'Microsoft.Cache/redis@2024-03-01' = if (cacheEnabled) {
+  name: redisName
+  location: location
+  properties: {
+    sku: {
+      name: 'Basic'
+      capacity: 0
+      family: 'C'
+    }
+    enableNonSslPort: false
+    minimumTlsVersion: '1.2'
+    redisVersion: '6'
+  }
+}
+
 // Container Apps Environment
 resource acaEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: acaEnvName
@@ -150,6 +176,10 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
           name: 'vectara-api-key'
           value: !empty(vectaraApiKey) ? vectaraApiKey : 'placeholder-replace-me'
         }
+        {
+          name: 'redis-connection-string'
+          value: cacheEnabled ? 'rediss://:${redisCache.listKeys().primaryKey}@${redisCache.properties.hostName}:${redisCache.properties.sslPort}/0' : ''
+        }
       ]
     }
     template: {
@@ -189,6 +219,22 @@ resource acaApp 'Microsoft.App/containerApps@2024-03-01' = {
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: appInsights.properties.ConnectionString
+            }
+            {
+              name: 'CACHE_ENABLED'
+              value: string(cacheEnabled)
+            }
+            {
+              name: 'REDIS_URL'
+              secretRef: 'redis-connection-string'
+            }
+            {
+              name: 'CACHE_SIMILARITY_THRESHOLD'
+              value: cacheSimilarityThreshold
+            }
+            {
+              name: 'CORPUS_VERSION'
+              value: corpusVersion
             }
           ]
           probes: [
@@ -261,3 +307,4 @@ output acaAppName string = acaApp.name
 output keyVaultName string = keyVault.name
 output appInsightsName string = appInsights.name
 output resourceGroupName string = resourceGroup().name
+output redisName string = cacheEnabled ? redisCache.name : ''

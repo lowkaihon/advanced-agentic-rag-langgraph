@@ -11,6 +11,9 @@ class QueryRequest(BaseModel):
     thread_id: Optional[str] = Field(
         None, description="Thread ID for multi-turn conversations. Auto-generated if not provided."
     )
+    use_cache: bool = Field(
+        True, description="Use semantic cache for faster responses on repeated/similar questions"
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -18,6 +21,7 @@ class QueryRequest(BaseModel):
                 {
                     "question": "What is attention mechanism?",
                     "thread_id": None,
+                    "use_cache": True,
                 }
             ]
         }
@@ -42,6 +46,8 @@ class QueryResponse(BaseModel):
     sources: list[str] = Field(..., description="Source document filenames")
     top_chunks: list[str] = Field(..., description="Top retrieved chunks (truncated)")
     processing_time_seconds: float = Field(..., ge=0, description="Total processing time in seconds")
+    cache_hit: bool = Field(False, description="Whether response was served from semantic cache")
+    cache_similarity: Optional[float] = Field(None, description="Similarity score of cache match (0-1)")
 
 
 class HealthResponse(BaseModel):

@@ -33,6 +33,9 @@ dependencies = [
     "opentelemetry-api>=1.28.0",
     "opentelemetry-sdk>=1.28.0",
     "opentelemetry-instrumentation-fastapi>=0.49b0",
+    # Semantic cache
+    "redis>=5.0.0",
+    "numpy>=1.24.0",
 ]
 
 [build-system]
@@ -45,3 +48,8 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests/integration"]
 addopts = "-v"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

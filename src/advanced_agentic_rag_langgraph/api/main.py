@@ -17,7 +17,11 @@ from advanced_agentic_rag_langgraph.api.schemas import (
 )
 from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
 from advanced_agentic_rag_langgraph.core import setup_retriever
+from advanced_agentic_rag_langgraph.utils.semantic_cache import SemanticCache
 import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
+
+# Module-level cache instance (initialized in lifespan)
+semantic_cache: SemanticCache = None
 
 
 @asynccontextmanager
@@ -32,6 +36,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"Warning: Failed to initialize retriever on startup: {e}")
         print("Retriever will be initialized on first request")
+
+    # Initialize semantic cache
+    global semantic_cache
+    semantic_cache = SemanticCache()
+    if semantic_cache.available:
+        print("Semantic cache initialized (Redis connected)")
+    else:
+        print("Semantic cache disabled (CACHE_ENABLED=false or Redis unavailable)")
 
     # Warmup HHEM model (triggers JIT compilation, prevents timeout on first inference)
     print("Warming up HHEM model...")
@@ -158,6 +170,18 @@ async def query_rag(request: QueryRequest):
 
     Returns the answer along with quality metrics and source information.
     """
+    # Check semantic cache first (only if user opted in)
+    if request.use_cache and semantic_cache and semantic_cache.available:
+        start_time = time.time()
+        cached = semantic_cache.lookup(request.question)
+        if cached:
+            lookup_time = time.time() - start_time
+            response_data = cached["response"]
+            response_data["cache_hit"] = True
+            response_data["cache_similarity"] = cached["similarity"]
+            response_data["processing_time_seconds"] = round(lookup_time, 2)
+            return QueryResponse(**response_data)
+
     # Ensure retriever is initialized
     if nodes.adaptive_retriever is None:
         try:
@@ -217,7 +241,7 @@ async def query_rag(request: QueryRequest):
             content = doc.page_content[:500] + "..." if len(doc.page_content) > 500 else doc.page_content
             top_chunks.append(content)
 
-        return QueryResponse(
+        response_fields = dict(
             answer=final_values.get("final_answer", "No answer generated"),
             confidence_score=final_values.get("confidence_score") or 0.0,
             retrieval_quality_score=final_values.get("retrieval_quality_score") or 0.0,
@@ -235,11 +259,34 @@ async def query_rag(request: QueryRequest):
             processing_time_seconds=round(processing_time, 2),
         )
 
+        # Store in semantic cache (only if user opted in)
+        if request.use_cache and semantic_cache and semantic_cache.available:
+            semantic_cache.store(request.question, response_fields)
+
+        return QueryResponse(**response_fields)
+
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Error processing query: {str(e)}",
         )
+
+
+@app.get("/v1/cache/stats", tags=["Cache"])
+async def cache_stats():
+    """Get semantic cache statistics (hit rate, size, etc.)."""
+    if semantic_cache is None:
+        return {"enabled": False, "available": False}
+    return semantic_cache.get_stats()
+
+
+@app.post("/v1/cache/flush", tags=["Cache"])
+async def cache_flush():
+    """Flush all cached entries for current corpus version."""
+    if semantic_cache is None or not semantic_cache.available:
+        return {"flushed": 0, "message": "Cache not available"}
+    count = semantic_cache.flush()
+    return {"flushed": count, "message": f"Flushed {count} cache entries"}
 
 
 # Root redirect to docs

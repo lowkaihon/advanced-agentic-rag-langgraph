@@ -292,11 +292,22 @@ def setup_retriever(
 
 
 def reset_retriever():
-    """Reset singleton retriever instance (useful for testing)."""
+    """Reset singleton retriever instance and flush semantic cache (useful for testing)."""
     global _retriever_instance, _corpus_stats, _document_profiles
     _retriever_instance = None
     _corpus_stats = None
     _document_profiles = None
+
+    # Flush semantic cache if available (corpus may have changed)
+    try:
+        from advanced_agentic_rag_langgraph.utils.semantic_cache import SemanticCache
+        cache = SemanticCache()
+        if cache.available:
+            count = cache.flush()
+            if count > 0:
+                print(f"Flushed {count} semantic cache entries")
+    except Exception:
+        pass
 
 
 def get_corpus_stats() -> Dict:
