@@ -8,17 +8,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from advanced_agentic_rag_langgraph.api.schemas import (
+from agentic_rag.api.schemas import (
     QueryRequest,
     QueryResponse,
     HealthResponse,
     ReadyResponse,
     ConfigResponse,
 )
-from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
-from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.utils.semantic_cache import SemanticCache
-import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
+from agentic_rag.orchestration import advanced_rag_graph
+from agentic_rag.core import setup_retriever
+from agentic_rag.utils.semantic_cache import SemanticCache
+import agentic_rag.orchestration.nodes as nodes
 
 # Module-level cache instance (initialized in lifespan)
 semantic_cache: SemanticCache = None

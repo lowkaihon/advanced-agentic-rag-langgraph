@@ -145,8 +145,8 @@ uv sync                              # Sync after updating pyproject.toml
 ### Common Tasks
 ```bash
 # Load PDFs for retrieval
-uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retriever; setup_retriever()"  # All PDFs
-uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retriever; setup_retriever(pdfs='filename.pdf')"  # Specific PDF
+uv run python -c "from agentic_rag.core import setup_retriever; setup_retriever()"  # All PDFs
+uv run python -c "from agentic_rag.core import setup_retriever; setup_retriever(pdfs='filename.pdf')"  # Specific PDF
 ```
 
 ### Test File Organization
@@ -162,12 +162,12 @@ uv run python -c "from advanced_agentic_rag_langgraph.core import setup_retrieve
 
 ### Import Best Practices
 
-**Package name**: `advanced_agentic_rag_langgraph` (after `uv sync`)
+**Package name**: `agentic_rag` (after `uv sync`)
 
 **Correct imports**:
 ```python
-from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+from agentic_rag.core import setup_retriever
+from agentic_rag.orchestration.graph import advanced_rag_graph
 ```
 
 **Wrong**: `from src.core import ...` (ModuleNotFoundError)
@@ -177,8 +177,8 @@ from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_grap
 
 **File paths**: Use same package-based resolution for project files:
 ```python
-import advanced_agentic_rag_langgraph
-PROJECT_ROOT = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
+import agentic_rag
+PROJECT_ROOT = Path(agentic_rag.__file__).parent.parent.parent
 ```
 
 ## Quick Reference by Task

@@ -1,4 +1,4 @@
-# src/advanced_agentic_rag_langgraph/preprocessing/json_chunk_loader.py
+# src/agentic_rag/preprocessing/json_chunk_loader.py
 
 from pathlib import Path
 from typing import List, Tuple
@@ -11,8 +11,8 @@ class MarkerJSONLoader:
 
     def __init__(self, json_dir: str | Path = None):
         if json_dir is None:
-            import advanced_agentic_rag_langgraph
-            project_root = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
+            import agentic_rag
+            project_root = Path(agentic_rag.__file__).parent.parent.parent
             json_dir = project_root / "evaluation" / "corpus_chunks" / "marker_json_v2"
         self.json_dir = Path(json_dir)
 

@@ -1,4 +1,4 @@
-# Multi-stage Dockerfile for Advanced Agentic RAG API
+# Multi-stage Dockerfile for Agentic RAG API
 # Stage 1: Builder - Install dependencies
 FROM python:3.11-slim AS builder
 
@@ -71,4 +71,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')" || exit 1
 
 # Run the API
-CMD ["uvicorn", "advanced_agentic_rag_langgraph.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "agentic_rag.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

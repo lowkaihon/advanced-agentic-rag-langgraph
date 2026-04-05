@@ -2,7 +2,7 @@
 
 from typing import List, Dict, Tuple
 from langchain_core.documents import Document
-from advanced_agentic_rag_langgraph.preprocessing.document_profiler import DocumentProfiler
+from agentic_rag.preprocessing.document_profiler import DocumentProfiler
 
 
 class DocumentLoader:

@@ -1,6 +1,6 @@
-from advanced_agentic_rag_langgraph.orchestration import advanced_rag_graph
-from advanced_agentic_rag_langgraph.core import setup_retriever
-import advanced_agentic_rag_langgraph.orchestration.nodes as nodes
+from agentic_rag.orchestration import advanced_rag_graph
+from agentic_rag.core import setup_retriever
+import agentic_rag.orchestration.nodes as nodes
 import uuid
 import io
 from contextlib import redirect_stdout

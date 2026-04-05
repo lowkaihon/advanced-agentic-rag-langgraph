@@ -4,7 +4,7 @@ from typing import TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.documents import Document
 from langchain_core.messages import HumanMessage
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core.model_config import get_model_for_task
 
 
 class DocumentScore(TypedDict):
@@ -87,7 +87,7 @@ class MultiAgentMergeReRanker:
         Uses set-wise selection to ensure coverage across all facets of
         comparative/multi-hop queries.
         """
-        from advanced_agentic_rag_langgraph.prompts import get_prompt
+        from agentic_rag.prompts import get_prompt
 
         # Build document ID mapping
         doc_id_map = {f"doc_{i}": doc for i, doc in enumerate(candidate_docs)}
@@ -166,7 +166,7 @@ class MultiAgentMergeReRanker:
         fallback_scores: list[float] = None,
     ) -> tuple[list[Document], list[float] | None]:
         """Score documents individually (simple queries, precision-optimized)."""
-        from advanced_agentic_rag_langgraph.prompts import get_prompt
+        from agentic_rag.prompts import get_prompt
 
         # Build document ID mapping (index-based for score lookup)
         doc_id_map = {f"doc_{i}": i for i, doc in enumerate(candidate_docs)}

@@ -8,7 +8,7 @@ Backend selection via HHEM_BACKEND environment variable:
 from typing import TypedDict, List, Protocol
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core.model_config import get_model_for_task
 import os
 import re
 import logging
@@ -222,7 +222,7 @@ class HHEMHallucinationDetector:
 
     def decompose_into_claims(self, answer: str) -> List[str]:
         """Decompose answer into atomic factual claims using LLM."""
-        from advanced_agentic_rag_langgraph.prompts import get_prompt
+        from agentic_rag.prompts import get_prompt
 
         decomposition_prompt = get_prompt("hhem_claim_decomposition", answer=answer)
 

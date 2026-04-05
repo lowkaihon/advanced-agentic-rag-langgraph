@@ -13,7 +13,7 @@ This directory contains the golden datasets for offline evaluation of the Advanc
   - Table extraction (~96% vs 0% with PyMuPDF)
   - Figure extraction with Vision LLM descriptions (GPT-4o-mini)
   - Layout-aware processing with clean markdown output
-- **Notebook:** `src/advanced_agentic_rag_langgraph/preprocessing/marker_preprocessing.ipynb`
+- **Notebook:** `src/agentic_rag/preprocessing/marker_preprocessing.ipynb`
 
 > **Note on Figures:** Figure descriptions are extracted via GPT-4o-mini vision and stored in chunk metadata. They are excluded from the default retrieval index to maintain golden set evaluation consistency. The loader supports `include_figures=True` for multimodal retrieval use cases.
 

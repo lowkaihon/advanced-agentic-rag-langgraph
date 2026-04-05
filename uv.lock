@@ -17,7 +17,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "advanced-agentic-rag-langgraph"
+name = "agentic-rag-langgraph"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

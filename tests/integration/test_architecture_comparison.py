@@ -55,7 +55,7 @@ warnings.filterwarnings("ignore", message=".*langsmith.*")
 logging.getLogger("langsmith").setLevel(logging.CRITICAL)
 logging.getLogger("langchain").setLevel(logging.WARNING)
 
-from advanced_agentic_rag_langgraph.variants import (
+from agentic_rag.variants import (
     basic_rag_graph,
     hyde_rag_graph,
     intermediate_rag_graph,
@@ -63,19 +63,19 @@ from advanced_agentic_rag_langgraph.variants import (
     multi_agent_rag_graph,
 )
 # Import modules to access global adaptive_retriever variables
-import advanced_agentic_rag_langgraph.variants.basic_rag_graph as basic_module
-import advanced_agentic_rag_langgraph.variants.hyde_rag_graph as hyde_module
-import advanced_agentic_rag_langgraph.variants.intermediate_rag_graph as intermediate_module
-import advanced_agentic_rag_langgraph.orchestration.nodes as advanced_module
-import advanced_agentic_rag_langgraph.variants.multi_agent_rag_graph as multi_agent_module
-from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
-from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import (
+import agentic_rag.variants.basic_rag_graph as basic_module
+import agentic_rag.variants.hyde_rag_graph as hyde_module
+import agentic_rag.variants.intermediate_rag_graph as intermediate_module
+import agentic_rag.orchestration.nodes as advanced_module
+import agentic_rag.variants.multi_agent_rag_graph as multi_agent_module
+from agentic_rag.core import setup_retriever
+from agentic_rag.evaluation.golden_dataset import GoldenDatasetManager, compare_answers
+from agentic_rag.evaluation.retrieval_metrics import (
     calculate_retrieval_metrics,
     calculate_ndcg,
 )
-from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
-from advanced_agentic_rag_langgraph.core.model_config import get_current_tier, TIER_METADATA
+from agentic_rag.validation import HHEMHallucinationDetector
+from agentic_rag.core.model_config import get_current_tier, TIER_METADATA
 
 
 # ========== TIER CONFIGURATION ==========

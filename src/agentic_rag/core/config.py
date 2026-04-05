@@ -2,10 +2,10 @@ import os
 from pathlib import Path
 from typing import Dict, List
 from dotenv import load_dotenv
-from advanced_agentic_rag_langgraph.retrieval import AdaptiveRetriever
-from advanced_agentic_rag_langgraph.preprocessing.pdf_loader import PDFDocumentLoader
-from advanced_agentic_rag_langgraph.preprocessing.profiling_pipeline import DocumentLoader
-from advanced_agentic_rag_langgraph.preprocessing.json_chunk_loader import MarkerJSONLoader
+from agentic_rag.retrieval import AdaptiveRetriever
+from agentic_rag.preprocessing.pdf_loader import PDFDocumentLoader
+from agentic_rag.preprocessing.profiling_pipeline import DocumentLoader
+from agentic_rag.preprocessing.json_chunk_loader import MarkerJSONLoader
 from langchain_core.documents import Document
 
 load_dotenv()
@@ -21,8 +21,8 @@ _retriever_instance = None
 _corpus_stats = None
 _document_profiles = None
 
-import advanced_agentic_rag_langgraph
-PROJECT_ROOT = Path(advanced_agentic_rag_langgraph.__file__).parent.parent.parent
+import agentic_rag
+PROJECT_ROOT = Path(agentic_rag.__file__).parent.parent.parent
 DOCS_DIR = PROJECT_ROOT / "docs"
 
 
@@ -300,7 +300,7 @@ def reset_retriever():
 
     # Flush semantic cache if available (corpus may have changed)
     try:
-        from advanced_agentic_rag_langgraph.utils.semantic_cache import SemanticCache
+        from agentic_rag.utils.semantic_cache import SemanticCache
         cache = SemanticCache()
         if cache.available:
             count = cache.flush()

@@ -5,9 +5,9 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core import setup_retriever
+from agentic_rag.utils.env import is_langgraph_api_environment
+from agentic_rag.core.model_config import get_model_for_task
 
 
 # ========== STATE SCHEMA ==========

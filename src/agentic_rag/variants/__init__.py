@@ -12,17 +12,17 @@ All variants use the same BUDGET model tier (gpt-4o-mini) to isolate
 architectural improvements from model quality differences.
 """
 
-from advanced_agentic_rag_langgraph.variants.basic_rag_graph import (
+from agentic_rag.variants.basic_rag_graph import (
     basic_rag_graph,
 )
-from advanced_agentic_rag_langgraph.variants.hyde_rag_graph import (
+from agentic_rag.variants.hyde_rag_graph import (
     hyde_rag_graph,
 )
-from advanced_agentic_rag_langgraph.variants.intermediate_rag_graph import (
+from agentic_rag.variants.intermediate_rag_graph import (
     intermediate_rag_graph,
 )
-from advanced_agentic_rag_langgraph.variants.advanced_rag_graph import advanced_rag_graph
-from advanced_agentic_rag_langgraph.variants.multi_agent_rag_graph import multi_agent_rag_graph
+from agentic_rag.variants.advanced_rag_graph import advanced_rag_graph
+from agentic_rag.variants.multi_agent_rag_graph import multi_agent_rag_graph
 
 __all__ = [
     "basic_rag_graph",

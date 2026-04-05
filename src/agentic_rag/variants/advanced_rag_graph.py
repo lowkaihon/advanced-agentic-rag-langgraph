@@ -53,6 +53,6 @@ Routing Functions:
 All features use BUDGET model tier (gpt-4o-mini) for fair comparison.
 """
 
-from advanced_agentic_rag_langgraph.orchestration.graph import advanced_rag_graph
+from agentic_rag.orchestration.graph import advanced_rag_graph
 
 __all__ = ["advanced_rag_graph"]

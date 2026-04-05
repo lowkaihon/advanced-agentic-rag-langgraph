@@ -3,7 +3,7 @@
 from typing import List, Dict, Tuple
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core.model_config import get_model_for_task
 
 
 class ConversationalRewriter:

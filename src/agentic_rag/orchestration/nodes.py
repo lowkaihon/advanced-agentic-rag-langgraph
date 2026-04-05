@@ -1,21 +1,21 @@
 from typing import TypedDict, Literal
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, ToolMessage, BaseMessage
-from advanced_agentic_rag_langgraph.retrieval import (
+from agentic_rag.retrieval import (
     expand_query,
     AdaptiveRetriever,
     LLMMetadataReRanker,
     SemanticRetriever,
 )
-from advanced_agentic_rag_langgraph.retrieval.strategy_selection import StrategySelector
-from advanced_agentic_rag_langgraph.core import setup_retriever, get_corpus_stats
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-from advanced_agentic_rag_langgraph.preprocessing.query_processing import ConversationalRewriter
-from advanced_agentic_rag_langgraph.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
-from advanced_agentic_rag_langgraph.validation import HHEMHallucinationDetector
-from advanced_agentic_rag_langgraph.retrieval.query_optimization import optimize_query_for_strategy, rewrite_query
-from advanced_agentic_rag_langgraph.prompts import get_prompt
-from advanced_agentic_rag_langgraph.prompts.answer_generation import get_answer_generation_prompts
+from agentic_rag.retrieval.strategy_selection import StrategySelector
+from agentic_rag.core import setup_retriever, get_corpus_stats
+from agentic_rag.core.model_config import get_model_for_task
+from agentic_rag.preprocessing.query_processing import ConversationalRewriter
+from agentic_rag.evaluation.retrieval_metrics import calculate_retrieval_metrics, calculate_ndcg
+from agentic_rag.validation import HHEMHallucinationDetector
+from agentic_rag.retrieval.query_optimization import optimize_query_for_strategy, rewrite_query
+from agentic_rag.prompts import get_prompt
+from agentic_rag.prompts.answer_generation import get_answer_generation_prompts
 import re
 import json
 

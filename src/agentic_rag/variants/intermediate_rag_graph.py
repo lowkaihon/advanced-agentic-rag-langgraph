@@ -27,11 +27,11 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
-from advanced_agentic_rag_langgraph.core import setup_retriever
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
-from advanced_agentic_rag_langgraph.utils.env import is_langgraph_api_environment
-from advanced_agentic_rag_langgraph.retrieval import expand_query
-from advanced_agentic_rag_langgraph.retrieval.cross_encoder_reranker import CrossEncoderReRanker
+from agentic_rag.core import setup_retriever
+from agentic_rag.core.model_config import get_model_for_task
+from agentic_rag.utils.env import is_langgraph_api_environment
+from agentic_rag.retrieval import expand_query
+from agentic_rag.retrieval.cross_encoder_reranker import CrossEncoderReRanker
 
 
 # ========== STATE SCHEMA ==========

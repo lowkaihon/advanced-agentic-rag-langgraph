@@ -1,7 +1,7 @@
 """Prompt template system with model-specific variant support (GPT-4o vs GPT-5)."""
 
 from typing import Optional
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core.model_config import get_model_for_task
 
 
 def get_prompt(task_name: str, **kwargs) -> str:

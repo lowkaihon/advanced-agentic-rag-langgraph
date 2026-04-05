@@ -2,7 +2,7 @@
 
 from typing import Dict, Literal, Tuple, TypedDict
 from langchain_openai import ChatOpenAI
-from advanced_agentic_rag_langgraph.core.model_config import get_model_for_task
+from agentic_rag.core.model_config import get_model_for_task
 
 
 class StrategyDecision(TypedDict):
